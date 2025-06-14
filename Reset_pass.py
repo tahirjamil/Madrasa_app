@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 import random
 import requests
 import pymysql
@@ -10,7 +10,6 @@ import datetime
 app = Flask(__name__)
 CORS(app)
 
-# DB connection
 conn = pymysql.connect(
     host='localhost',
     user='tahir',
@@ -42,7 +41,7 @@ def send_sms(phone, code):
         response = requests.post(TEXTBELT_URL, {
             'phone': phone,
             'message': f"Your verification code is: {code}",
-            'key': 'textbelt'  # Free: 1/day; buy key for production
+            'key': 'textbelt'
         })
         result = response.json()
         return result.get("success", False)
@@ -127,41 +126,60 @@ def reset_password():
     phone = data.get("phone")
     fullname = data.get("fullname")
     user_code = data.get("code")
+    old_password = data.get("old_password")
     new_password = data.get("new_password")
+    hashed_password = generate_password_hash(new_password)
 
-    if not all([phone, fullname, user_code, new_password]):
+    if not all([phone, fullname, new_password]):
         return jsonify({"message": "All fields required"}), 400
+    
+    if not old_password:
+        try:
+            cursor.execute("""
+                SELECT code, created_at FROM verifications 
+                WHERE phone = %s 
+                ORDER BY created_at DESC 
+                LIMIT 1
+            """, (phone,))
+            result = cursor.fetchone()
 
-    try:
-        cursor.execute("""
-            SELECT code, created_at FROM verifications 
-            WHERE phone = %s 
-            ORDER BY created_at DESC 
-            LIMIT 1
-        """, (phone,))
-        result = cursor.fetchone()
+            if not result:
+                return jsonify({"message": "No code found"}), 404
 
-        if not result:
-            return jsonify({"message": "No code found"}), 404
+            db_code = result["code"]
+            created_at = result["created_at"]
+            now = datetime.datetime.now()
 
-        db_code = result["code"]
-        created_at = result["created_at"]
-        now = datetime.datetime.now()
+            if (now - created_at).total_seconds() > CODE_EXPIRY_MINUTES * 60:
+                return jsonify({"message": "Code expired"}), 410
 
-        if (now - created_at).total_seconds() > CODE_EXPIRY_MINUTES * 60:
-            return jsonify({"message": "Code expired"}), 410
+            if int(user_code) != db_code:
+                return jsonify({"message": "Code mismatched"}), 400
 
-        if int(user_code) != db_code:
-            return jsonify({"message": "Code mismatched"}), 400
+            cursor.execute("UPDATE users SET password = %s WHERE fullname = %s AND phone = %s",
+                        (hashed_password, fullname, phone))
+            conn.commit()
+            return jsonify({"message": "Password reset successful"}), 200
 
-        hashed_password = generate_password_hash(new_password)
+        except Exception as e:
+            return jsonify({"message": f"Error: {str(e)}"}), 500
+        
+    cursor.execute(
+        "SELECT password FROM users WHERE phone = %s AND fullname = %s",
+        (phone, fullname)
+    )
+    result = cursor.fetchone()
+    if not result:
+        return jsonify({"message": "User not found"}), 404
+
+    if check_password_hash(result['password'], old_password):
         cursor.execute("UPDATE users SET password = %s WHERE fullname = %s AND phone = %s",
-                       (hashed_password, fullname, phone))
+                        (hashed_password, fullname, phone))
+        
         conn.commit()
         return jsonify({"message": "Password reset successful"}), 200
-
-    except Exception as e:
-        return jsonify({"message": f"Error: {str(e)}"}), 500
+    else:
+        return jsonify({"message": "Incorrect password"}), 401
 
 
 if __name__ == "__main__":

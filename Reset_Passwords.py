@@ -1,18 +1,17 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
 import requests
 import datetime
-from mysql import connect_to_db, create_tables
+from pymysql.cursors import DictCursor
+from mysql import connect_to_db
 
-app = Flask(__name__)
-CORS(app)
+# Blueprint
+reset_routes = Blueprint("reset_routes", __name__)
 
 # ====== MySQL Connection ======
 conn = connect_to_db()
-create_tables()
-cursor = conn.cursor()
+cursor = conn.cursor(DictCursor)
 
 TEXTBELT_URL = "https://textbelt.com/text"
 CODE_EXPIRY_MINUTES = 10
@@ -37,7 +36,7 @@ def send_sms(phone, code):
         return False
 
 
-@app.route("/send_code", methods=["POST"])
+@reset_routes.route("/send_code", methods=["POST"])
 def send_code():
     data = request.get_json()
     phone = data.get("phone")
@@ -70,7 +69,7 @@ def send_code():
         return jsonify({"message": f"Error: {str(e)}"}), 500
 
 
-@app.route("/check_code", methods=["POST"])
+@reset_routes.route("/check_code", methods=["POST"])
 def check_code():
     data = request.get_json()
     phone = data.get("phone")
@@ -107,7 +106,7 @@ def check_code():
         return jsonify({"message": f"Error: {str(e)}"}), 500
 
 
-@app.route("/reset_password", methods=["POST"])
+@reset_routes.route("/reset_password", methods=["POST"])
 def reset_password():
     data = request.get_json()
     phone = data.get("phone")
@@ -167,7 +166,3 @@ def reset_password():
         return jsonify({"message": "Password reset successful"}), 200
     else:
         return jsonify({"message": "Incorrect password"}), 401
-
-
-if __name__ == "__main__":
-    app.run(debug=True)

@@ -1,18 +1,17 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Blueprint, request, jsonify, current_app, send_from_directory
 import pymysql
 import os
+import pymysql.cursors
 from werkzeug.utils import secure_filename
-from mysql import connect_to_db, create_tables
+from mysql import connect_to_db
 
 # ========== Config ==========
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
-app = Flask(__name__)
-CORS(app)
+people_routes = Blueprint('people_routes', __name__)
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# Make sure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 BASE_URL = "http://localhost:5000/"
@@ -20,31 +19,41 @@ BASE_URL = "http://localhost:5000/"
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/uploads/<filename>')
+@people_routes.route('/uploads/<filename>')
 def uploaded_file(filename):
-    return app.send_static_file(os.path.join('uploads', filename))
+    # Serve the uploaded files
+    return send_from_directory(current_app.config['UPLOAD_FOLDER'], filename)
 
-# ====== MySQL Connection ======
-conn = connect_to_db()
-create_tables()
+# ====== Helper Functions ======
 
-# ========== Helper Functions ==========
+def get_db_connection():
+    return connect_to_db()
+
 def get_id(phone, fullname):
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
-        result = cursor.fetchone()
-        return result['id'] if result else None
+    conn = get_db_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
+            result = cursor.fetchone()
+            return result['id'] if result else None
+    finally:
+        conn.close()
 
 def insert_person(fields: dict):
-    with conn.cursor() as cursor:
-        columns = ', '.join(fields.keys())
-        placeholders = ', '.join(['%s'] * len(fields))
-        sql = f"INSERT INTO people ({columns}) VALUES ({placeholders})"
-        cursor.execute(sql, list(fields.values()))
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            columns = ', '.join(fields.keys())
+            placeholders = ', '.join(['%s'] * len(fields))
+            sql = f"INSERT INTO people ({columns}) VALUES ({placeholders})"
+            cursor.execute(sql, list(fields.values()))
         conn.commit()
+    finally:
+        conn.close()
 
-# ========== Route ==========
-@app.route('/people', methods=['POST'])
+# ========== Routes ==========
+
+@people_routes.route('/people', methods=['POST'])
 def add_person():
     data = request.form
     image = request.files.get('image')
@@ -52,6 +61,10 @@ def add_person():
     fullname = data.get('fullname')
     phone = data.get('phone')
     acc_type = data.get('acc_type')
+
+    if not fullname or not phone or not acc_type:
+        return jsonify({"message": "fullname, phone and acc_type are required"}), 400
+
     id = get_id(phone, fullname)
 
     if not id:
@@ -62,18 +75,25 @@ def add_person():
         "acc_type": acc_type
     }
 
-    # ========== Image Handling ==========
-    if image and allowed_file(image.filename):
-        filename = secure_filename(f"{id}_{image.filename}")
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        image.save(image_path)
-        fields["image_path"] = BASE_URL + image_path.replace("\\", "/")
-    elif image:
-        return jsonify({"message": "Invalid image file format"}), 400
+    # Handle image upload
+    if image:
+        if allowed_file(image.filename):
+            filename = secure_filename(f"{id}_{image.filename}")
+            upload_folder = current_app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
+            image_path = os.path.join(upload_folder, filename)
+            try:
+                image.save(image_path)
+            except Exception as e:
+                return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
+            # Construct the URL relative to /uploads route
+            fields["image_path"] = BASE_URL + 'uploads/' + filename
+        else:
+            return jsonify({"message": "Invalid image file format"}), 400
 
-    def f(k): return data.get(k)
+    def f(k): 
+        return data.get(k)
 
-    # ========== Account Type Handling ==========
+    # Validate and fill fields based on acc_type
     if acc_type == 'Student':
         required = [
             'name_en', 'name_bn', 'name_ar', 'date_of_birth',
@@ -81,10 +101,11 @@ def add_person():
             'source_of_information', 'present_address', 'permanent_address',
             'father_name_en', 'father_name_bn', 'father_name_ar',
             'mother_name_en', 'mother_name_bn', 'mother_name_ar',
-            'class', 'phone', 'image_path'
+            'class', 'phone'
         ]
+        # Image is optional here, so not included in required
         if not all(f(k) for k in required):
-            return jsonify({"message": "All fields required for Student"}), 400
+            return jsonify({"message": "All required fields must be provided for Student"}), 400
         fields.update({k: f(k) for k in required})
 
     elif acc_type in ['Teacher', 'Admin', 'Staff']:
@@ -94,10 +115,10 @@ def add_person():
             'title', 'present_address', 'permanent_address',
             'father_name_en', 'father_name_bn', 'father_name_ar',
             'mother_name_en', 'mother_name_bn', 'mother_name_ar',
-            'class', 'phone', 'image_path'
+            'class', 'phone'
         ]
         if not all(f(k) for k in required):
-            return jsonify({"message": f"All fields required for {acc_type}"}), 400
+            return jsonify({"message": f"All required fields must be provided for {acc_type}"}), 400
 
         fields.update({
             "name_en": f("name_en"),
@@ -117,8 +138,7 @@ def add_person():
             "mother_name_bn": f("mother_name_bn"),
             "mother_name_ar": f("mother_name_ar"),
             "class": f("class"),
-            "phone": f("phone"),
-            "image_path": fields.get("image_path")
+            "phone": f("phone")
         })
 
     elif acc_type == 'Guest':
@@ -134,8 +154,6 @@ def add_person():
             "blood_group", "gender"
         ]
         fields.update({k: f(k) for k in optional if f(k)})
-        if fields.get("image_path"):
-            fields["image_path"] = fields.get("image_path")
 
     else:
         return jsonify({"message": "Invalid Account type"}), 400
@@ -145,17 +163,22 @@ def add_person():
         return jsonify({"message": f"{acc_type} profile added successfully", "id": id}), 201
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409
+    except Exception as e:
+        return jsonify({"message": f"Database error: {str(e)}"}), 500
 
-@app.route('/members', methods=['GET'])
+
+@people_routes.route('/members', methods=['GET'])
 def get_info():
-    with conn.cursor() as cursor:
-        cursor.execute("""
-            SELECT name_en, name_bn, name_ar, permanent_address, phone, image_path
-            FROM people
-        """)
-        members = cursor.fetchall()
-    return jsonify(members), 200
-
-# ========== Main ==========
-if __name__ == '__main__':
-    app.run(debug=True)
+    conn = get_db_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("""
+                SELECT name_en, name_bn, name_ar, permanent_address, phone, image_path
+                FROM people
+            """)
+            members = cursor.fetchall()
+        return jsonify(members), 200
+    except Exception as e:
+        return jsonify({"message": f"Database error: {str(e)}"}), 500
+    finally:
+        conn.close()

@@ -1,11 +1,13 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+# User_Routes.py
+from flask import Blueprint, request, jsonify
 from datetime import datetime
-from mysql import connect_to_db, create_tables
+from mysql import connect_to_db
+
+# ====== Blueprint Setup ======
+additional_routes = Blueprint('additional_routes', __name__)
 
 # ====== MySQL Connection ======
 conn = connect_to_db()
-create_tables()
 
 # ====== Fee Calculation Function ======
 def calculate_fees(class_name, gender, special_food, reduce_fee, food):
@@ -38,12 +40,8 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
 
     return total - reduce_fee
 
-# ====== Flask App Setup ======
-app = Flask(__name__)
-CORS(app)
-
 # ====== Payment Fee Info ======
-@app.route('/payment', methods=['POST'])
+@additional_routes.route('/payment', methods=['POST'])
 def payment():
     data = request.get_json()
     phone = data.get('phone')
@@ -80,7 +78,7 @@ def payment():
     return jsonify({"fees": fees, "due_months": due_months}), 200
 
 # ====== Save Payment Transaction ======
-@app.route('/transaction', methods=['POST'])
+@additional_routes.route('/transaction', methods=['POST'])
 def transaction():
     data = request.get_json()
     phone = data.get('phone')
@@ -114,7 +112,7 @@ def transaction():
     return jsonify({"message": "Transaction successful"}), 201
 
 # ====== Save Donation ======
-@app.route('/donation', methods=['POST'])
+@additional_routes.route('/donation', methods=['POST'])
 def donation():
     data = request.get_json()
     phone = data.get('phone')
@@ -144,7 +142,7 @@ def donation():
     return jsonify({"message": "Donation successful"}), 201
 
 # ====== Get Transaction History ======
-@app.route('/get_transactions', methods=['GET'])
+@additional_routes.route('/get_transactions', methods=['GET'])
 def get_transactions():
     phone = request.args.get('phone')
     fullname = request.args.get('fullname')
@@ -166,7 +164,3 @@ def get_transactions():
         return jsonify({"message": "No transactions found"}), 404
 
     return jsonify(transactions), 200
-
-# ====== Run App ======
-if __name__ == "__main__":
-    app.run(debug=True)

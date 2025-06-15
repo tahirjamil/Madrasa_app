@@ -3,29 +3,16 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
 import requests
-import pymysql
-from pymysql.cursors import DictCursor
 import datetime
+from mysql import connect_to_db, create_tables
 
 app = Flask(__name__)
 CORS(app)
 
-conn = pymysql.connect(
-    host='localhost',
-    user='tahir',
-    password='tahir',
-    database='madrashadb',
-    cursorclass=DictCursor
-)
+# ====== MySQL Connection ======
+conn = connect_to_db()
+create_tables()
 cursor = conn.cursor()
-
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS verifications (
-    phone VARCHAR(20),
-    code INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
 
 TEXTBELT_URL = "https://textbelt.com/text"
 CODE_EXPIRY_MINUTES = 10

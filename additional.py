@@ -1,41 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import pymysql
-from pymysql.cursors import DictCursor
 from datetime import datetime
+from mysql import connect_to_db, create_tables
 
 # ====== MySQL Connection ======
-conn = pymysql.connect(
-    host='localhost',
-    user='tahir',
-    password='tahir',
-    database='madrashadb',
-    cursorclass=DictCursor
-)
-
-# ====== Create Tables (Run Once on Start) ======
-with conn.cursor() as cursor:
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS payment (
-            id INT PRIMARY KEY,
-            food BOOLEAN NOT NULL,
-            special_food BOOLEAN NOT NULL,
-            reduce_fee INT DEFAULT 0,
-            due_months INT NOT NULL
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            transaction_id INT PRIMARY KEY AUTO_INCREMENT,
-            id INT NOT NULL,
-            type ENUM('payment', 'donation') NOT NULL,
-            month VARCHAR(50),
-            amount INT NOT NULL,
-            date DATE NOT NULL DEFAULT CURRENT_DATE,
-            FOREIGN KEY (id) REFERENCES users(id)
-        )
-    """)
-    conn.commit()
+conn = connect_to_db()
+create_tables()
 
 # ====== Fee Calculation Function ======
 def calculate_fees(class_name, gender, special_food, reduce_fee, food):

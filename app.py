@@ -43,6 +43,10 @@ app.register_blueprint(admin_routes, url_prefix='/admin')
 def status():
     return render_template('Server_Status.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
 @app.route("/")
 def home():
     return render_template("home.html", current_year=datetime.now().year)

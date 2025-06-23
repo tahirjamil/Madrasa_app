@@ -112,6 +112,7 @@ def create_object():
         conn.close()
 
     return redirect(url_for('admin_routes.admin_dashboard'))
+
 @admin_routes.route('/members')
 def members():
     return render_template("admin/members.html")
@@ -119,10 +120,6 @@ def members():
 @admin_routes.route('/routine')
 def routine():
     return render_template("admin/routine.html")
-
-@admin_routes.route('/notice')
-def notice():
-    return render_template("admin/notice.html")
 
 @admin_routes.route('/events')
 def events():

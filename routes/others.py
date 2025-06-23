@@ -1,4 +1,3 @@
-# User_Routes.py
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from mysql import connect_to_db
@@ -142,10 +141,11 @@ def donation():
     return jsonify({"message": "Donation successful"}), 201
 
 # ====== Get Transaction History ======
-@additional_routes.route('/get_transactions', methods=['GET'])
+@additional_routes.route('/get_transactions', methods=['POST'])
 def get_transactions():
-    phone = request.args.get('phone')
-    fullname = request.args.get('fullname')
+    data = request.get_json()
+    phone = data.get('phone')
+    fullname = data.get('fullname')
 
     if not phone or not fullname:
         return jsonify({"error": "Phone and fullname are required"}), 400

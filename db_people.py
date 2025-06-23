@@ -2,16 +2,17 @@ from flask import Blueprint, request, jsonify, current_app, send_from_directory
 import pymysql
 import os
 import pymysql.cursors
+from PIL import Image
+import io
 from werkzeug.utils import secure_filename
 from mysql import connect_to_db
 
 # ========== Config ==========
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = os.path.join('uploads', 'people_img')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 people_routes = Blueprint('people_routes', __name__)
 
-# Make sure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 BASE_URL = "http://localhost:5000/"
@@ -19,7 +20,7 @@ BASE_URL = "http://localhost:5000/"
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@people_routes.route('/uploads/<filename>')
+@people_routes.route('/uploads/people_img/<filename>')
 def uploaded_file(filename):
     # Serve the uploaded files
     return send_from_directory(current_app.config['UPLOAD_FOLDER'], filename)
@@ -53,7 +54,7 @@ def insert_person(fields: dict):
 
 # ========== Routes ==========
 
-@people_routes.route('/people', methods=['POST'])
+@people_routes.route('/add_people', methods=['POST'])
 def add_person():
     data = request.form
     image = request.files.get('image')
@@ -76,19 +77,24 @@ def add_person():
     }
 
     # Handle image upload
-    if image:
+    if image and image.filename:
         if allowed_file(image.filename):
-            filename = secure_filename(f"{id}_{image.filename}")
+            filename_base = f"{id}_{os.path.splitext(secure_filename(image.filename))[0]}"
+            filename = filename_base + ".webp"  # save as .webp
             upload_folder = current_app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
             image_path = os.path.join(upload_folder, filename)
+        
             try:
-                image.save(image_path)
+                img = Image.open(image.stream)
+                img.save(image_path, "WEBP")
+                
             except Exception as e:
                 return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
-            # Construct the URL relative to /uploads route
-            fields["image_path"] = BASE_URL + 'uploads/' + filename
-        else:
-            return jsonify({"message": "Invalid image file format"}), 400
+            
+            fields["image_path"] = BASE_URL + 'uploads/people_img/' + filename
+    else:
+        return jsonify({"message": "Invalid image file format"}), 400
+
 
     def f(k): 
         return data.get(k)
@@ -167,15 +173,24 @@ def add_person():
         return jsonify({"message": f"Database error: {str(e)}"}), 500
 
 
-@people_routes.route('/members', methods=['GET'])
+@people_routes.route('/members', methods=['POST'])
 def get_info():
+    data = request.get_json()
+    lastfetched = data.get('lastfetched')
+
     conn = get_db_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("""
-                SELECT name_en, name_bn, name_ar, permanent_address, phone, image_path
-                FROM people
-            """)
+            if lastfetched:
+                cursor.execute("""
+                    SELECT name_en, name_bn, name_ar, permanent_address, phone, image_path
+                    FROM people WHERE updated_at > %s
+                """, (lastfetched,))
+            else:
+                cursor.execute("""
+                    SELECT name_en, name_bn, name_ar, permanent_address, phone, image_path
+                    FROM people
+                """)
             members = cursor.fetchall()
         return jsonify(members), 200
     except Exception as e:

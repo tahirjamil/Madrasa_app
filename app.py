@@ -1,70 +1,46 @@
-from flask import Flask
+from flask import Flask, render_template
 from flask_cors import CORS
 from mysql import create_tables
-from Users_Backend import user_routes
-from Additional_Features import additional_routes
-from Reset_Passwords import reset_routes
-from People_DB import people_routes
 from waitress import serve
 import os
 
+# Routes
+from routes.users import user_routes
+from routes.others import additional_routes
+from routes.pass_reset import reset_routes
+from db_people import people_routes
+from routes.routine import routine_routes
+from admin.admin_route import admin_routes
+
 app = Flask(__name__)
 CORS(app)
-print("Flask App created")
 
 # Config for uploads
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = os.path.join('uploads', 'people_img')
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Initialize DB tables
 create_tables()
-print("Successfully Created all tables")
 
-# Register Blueprints
+# Registered Blueprints
 app.register_blueprint(user_routes)
 app.register_blueprint(additional_routes)
 app.register_blueprint(reset_routes)
 app.register_blueprint(people_routes)
-print("Blueprints Registered")
+app.register_blueprint(routine_routes)
+app.register_blueprint(admin_routes)
 
 # Home route showing server status
 @app.route("/")
 def home():
-    return """
-    <html>
-        <head>
-            <title>Server Status</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    background-color: #f9f9f9;
-                    color: #333;
-                    text-align: center;
-                    padding: 50px;
-                }
-                .status {
-                    font-size: 24px;
-                    color: green;
-                    margin-top: 20px;
-                }
-                code {
-                    background-color: #eee;
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                }
-            </style>
-        </head>
-        <body>
-            <h1>🚀 Server is Running</h1>
-            <div class="status">All systems operational</div>
-            <p>Visit <code>/register</code>, <code>/login</code>, or other endpoints as needed.</p>
-        </body>
-    </html>
-    """
+    return render_template('Server_Status.html')
 
 if __name__ == "__main__":
     if os.environ.get("FLASK_ENV") == "development":
         print("Starting Flask dev server at http://0.0.0.0:8000")
+        print("You can check server status at http://localhost:8000")
         app.run(debug=True, host="0.0.0.0", port=8000)
     else:
         print("Starting production server with Waitress at http://0.0.0.0:8000")
+        print("You can check server status at http://localhost:8000")
         serve(app, host="0.0.0.0", port=8000)

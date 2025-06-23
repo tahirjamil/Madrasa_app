@@ -35,7 +35,8 @@ def create_tables():
                 food BOOLEAN NOT NULL,
                 special_food BOOLEAN NOT NULL,
                 reduce_fee INT DEFAULT 0,
-                due_months INT NOT NULL
+                due_months INT NOT NULL,
+                FOREIGN KEY (id) REFERENCES users(id)
             )
         """)
 
@@ -48,7 +49,8 @@ def create_tables():
                 month VARCHAR(50),
                 amount INT NOT NULL,
                 date DATE NOT NULL,
-                FOREIGN KEY (id) REFERENCES users(id)
+                FOREIGN KEY (id) REFERENCES users(id),
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
 
@@ -87,8 +89,44 @@ def create_tables():
                 mother_name_ar VARCHAR(255),
                 class VARCHAR(100),
                 phone VARCHAR(15) NOT NULL,
+                available BOOLEAN DEFAULT 1,
+                title_or_degree INT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 image_path TEXT,
-                acc_type ENUM('Admin', 'Student', 'Teacher', 'Staff', 'Guest')
+                acc_type ENUM('Admin', 'Student', 'Teacher', 'Staff', 'Guest'),
+                FOREIGN KEY (id) REFERENCES users(id)
+            )
+        """)
+
+        # Routine table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS routine (
+                routine_id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT,
+                gender ENUM('Male', 'Female') NOT NULL,
+                class_group VARCHAR(20) NOT NULL,
+                class_level VARCHAR(30) NOT NULL,
+                weekday ENUM('saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday') NOT NULL,
+                subject_en VARCHAR(100),
+                subject_bn VARCHAR(100),
+                subject_ar VARCHAR(100),
+                name_en VARCHAR(100),
+                name_bn VARCHAR(100),
+                name_ar VARCHAR(100),
+                serial INT NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES people(user_id)
+            )
+        """)
+
+        # Kitab table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS book (
+                book_id INT PRIMARY KEY AUTO_INCREMENT,
+                name_en VARCHAR(50),
+                name_bn VARCHAR(50),
+                name_ar VARCHAR(50),
+                class VARCHAR(50)
             )
         """)
 

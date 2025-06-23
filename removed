@@ -1,0 +1,47 @@
+# def validate_password(password):
+#     if len(password) < 8 or len(password) > 20:
+#         return jsonify({"message": "Password should be between 8 and 20 characters"}), 400
+#     if not any(c.isdigit() for c in password):
+#         return jsonify({"message": "Password should contain at least 1 digit"}), 400
+#     return None
+
+
+
+# @api_auth_routes.route("/check_code", methods=["POST"])
+# def check_code():
+#     CODE_EXPIRY_MINUTES = 10
+#     data = request.get_json()
+#     phone = data.get("phone")
+#     user_code = data.get("code")
+
+#     if not phone or not user_code:
+#         return jsonify({"message": "Phone and code required"}), 400
+
+#     try:
+#         with conn.cursor() as cursor:
+#             cursor.execute("""
+#                 SELECT code, created_at FROM verifications 
+#                 WHERE phone = %s 
+#                 ORDER BY created_at DESC 
+#                 LIMIT 1
+#             """, (phone,))
+#             result = cursor.fetchone()
+
+#             if not result:
+#                 return jsonify({"message": "No code found"}), 404
+
+#             db_code = result["code"]
+#             created_at = result["created_at"]
+#             now = datetime.datetime.now()
+
+#             if (now - created_at).total_seconds() > CODE_EXPIRY_MINUTES * 60:
+#                 return jsonify({"message": "Code expired"}), 410
+
+#             if int(user_code) == db_code:
+#                 return jsonify({"status": "success"}), 200
+#             else:
+#                 return jsonify({"message": "Code mismatched"}), 400
+
+#     except Exception as e:
+#         return jsonify({"message": f"Error: {str(e)}"}), 500
+    

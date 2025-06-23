@@ -4,7 +4,7 @@ import random
 import requests
 import datetime
 from pymysql.cursors import DictCursor
-from mysql import connect_to_db
+from database import connect_to_db
 
 # Blueprint
 reset_routes = Blueprint("reset_routes", __name__)

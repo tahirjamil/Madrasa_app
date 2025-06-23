@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime
-from mysql import connect_to_db
+from database import connect_to_db
 
 # ====== Blueprint Setup ======
 additional_routes = Blueprint('additional_routes', __name__)

@@ -5,7 +5,7 @@ import pymysql.cursors
 from PIL import Image
 import io
 from werkzeug.utils import secure_filename
-from mysql import connect_to_db
+from database import connect_to_db
 
 # ========== Config ==========
 UPLOAD_FOLDER = os.path.join('uploads', 'people_img')

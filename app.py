@@ -1,19 +1,21 @@
 from flask import Flask, render_template
 from flask_cors import CORS
-from mysql import create_tables
+from database import create_tables
 from waitress import serve
 import os
 
 # Routes
-from routes.users import user_routes
-from routes.others import additional_routes
-from routes.pass_reset import reset_routes
+from routes.api.auth import user_routes
+from routes.api.others import additional_routes
+from routes.api.pass_reset import reset_routes
 from db_people import people_routes
-from routes.routine import routine_routes
-from admin.admin_route import admin_routes
+from routes.api.routine import routine_routes
+from routes.admin_routes import admin_blueprint
 
 app = Flask(__name__)
 CORS(app)
+
+app.secret_key = 'super-secret-key'
 
 # Config for uploads
 app.config['UPLOAD_FOLDER'] = os.path.join('uploads', 'people_img')
@@ -28,7 +30,7 @@ app.register_blueprint(additional_routes)
 app.register_blueprint(reset_routes)
 app.register_blueprint(people_routes)
 app.register_blueprint(routine_routes)
-app.register_blueprint(admin_routes)
+app.register_blueprint(admin_blueprint, url_prefix='/admin')
 
 # Home route showing server status
 @app.route("/")

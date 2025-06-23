@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from mysql import connect_to_db
+from database import connect_to_db
 
 #-----------MySQL Connection-------------
 conn = connect_to_db()

@@ -9,12 +9,12 @@ from logger import log_event
 from config import Config
 
 # ========== Config ==========
-UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
+IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 other_routes = Blueprint('other_routes', __name__)
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(IMG_UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -92,7 +92,7 @@ def add_person():
         if allowed_file(image.filename):
             filename_base = f"{id}_{os.path.splitext(secure_filename(image.filename))[0]}"
             filename = filename_base + ".webp"  # save as .webp
-            upload_folder = current_app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
+            upload_folder = current_app.config.get('UPLOAD_FOLDER', IMG_UPLOAD_FOLDER)
             image_path = os.path.join(upload_folder, filename)
         
             try:

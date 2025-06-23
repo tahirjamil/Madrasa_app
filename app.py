@@ -3,6 +3,7 @@ from flask_cors import CORS
 from database import create_tables
 from waitress import serve
 import os
+from datetime import datetime
 from config import Config
 
 # API Routes
@@ -19,7 +20,7 @@ CORS(app)
 
 # Config for Uploads
 app.config.from_object(Config)
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
 
 # Create Tables
 with app.app_context():
@@ -38,16 +39,20 @@ app.register_blueprint(other_routes)
 app.register_blueprint(admin_routes, url_prefix='/admin')
 
 # Home route showing server status
+@app.route("/status")
+def status():
+    return render_template('Server_Status.html')
+
 @app.route("/")
 def home():
-    return render_template('Server_Status.html')
+    return render_template("home.html", current_year=datetime.now().year)
 
 if __name__ == "__main__":
     if os.environ.get("FLASK_ENV") == "development":
         print("Starting Flask dev server at http://0.0.0.0:8000")
-        print("You can check server status at http://localhost:8000")
+        print("You can check server status at http://localhost:8000/status")
         app.run(debug=True, host="0.0.0.0", port=8000)
     else:
         print("Starting production server with Waitress at http://0.0.0.0:8000")
-        print("You can check server status at http://localhost:8000")
+        print("You can check server status at http://localhost:8000/status")
         serve(app, host="0.0.0.0", port=8000)

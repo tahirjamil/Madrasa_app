@@ -1,27 +1,15 @@
-from flask import session, redirect, url_for, request, render_template
+from flask import request, session, redirect, url_for, render_template
+from . import admin_routes  # Use blueprint from __init__.py
 
-ADMIN_USERNAME = 'admin'
-ADMIN_PASSWORD = 'admin123'
-
-def login_required(view_func):
-    def wrapped_view(*args, **kwargs):
-        if 'admin_logged_in' not in session:
-            return redirect(url_for('admin.login', next=request.path))
-        return view_func(*args, **kwargs)
-    wrapped_view.__name__ = view_func.__name__
-    return wrapped_view
-
+@admin_routes.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        if request.form['username'] == 'admin' and request.form['password'] == 'admin123':
             session['admin_logged_in'] = True
-            next_page = request.args.get('next') or url_for('admin.dashboard')
-            return redirect(next_page)
-        return render_template('admin/login.html', error='Invalid credentials')
-    return render_template('admin/login.html')
+            return redirect(url_for('admin_routes.admin_dashboard'))
+    return render_template("admin/login.html")
 
-def logout():
-    session.pop('admin_logged_in', None)
-    return redirect(url_for('admin.login'))
+@admin_routes.route('/logout')
+def admin_logout():
+    session.pop("admin_logged_in", None)
+    return redirect(url_for("admin_routes.login"))

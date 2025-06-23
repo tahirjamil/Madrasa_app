@@ -1,36 +1,41 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, current_app
 from flask_cors import CORS
 from database import create_tables
 from waitress import serve
 import os
+from config import Config
 
-# Routes
-from routes.api.auth import user_routes
-from routes.api.others import additional_routes
-from routes.api.pass_reset import reset_routes
-from db_people import people_routes
-from routes.api.routine import routine_routes
-from routes.admin_routes import admin_blueprint
+# API Routes
+from routes.api.auth import api_auth_routes
+from routes.api.payments import payment_routes
+from routes.api.additionals import other_routes
+
+# Web Routes
+from routes.admin_routes import admin_routes
 
 app = Flask(__name__)
 CORS(app)
 
-app.secret_key = 'super-secret-key'
 
-# Config for uploads
-app.config['UPLOAD_FOLDER'] = os.path.join('uploads', 'people_img')
+# Config for Uploads
+app.config.from_object(Config)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Initialize DB tables
-create_tables()
+# Create Tables
+with app.app_context():
+    create_tables()
 
-# Registered Blueprints
-app.register_blueprint(user_routes)
-app.register_blueprint(additional_routes)
-app.register_blueprint(reset_routes)
-app.register_blueprint(people_routes)
-app.register_blueprint(routine_routes)
-app.register_blueprint(admin_blueprint, url_prefix='/admin')
+@app.errorhandler(404)
+def not_found(e):
+    return render_template('404.html'), 404
+
+# Registered API Blueprints
+app.register_blueprint(api_auth_routes)
+app.register_blueprint(payment_routes)
+app.register_blueprint(other_routes)
+
+# Registered Web Blueprints
+app.register_blueprint(admin_routes, url_prefix='/admin')
 
 # Home route showing server status
 @app.route("/")

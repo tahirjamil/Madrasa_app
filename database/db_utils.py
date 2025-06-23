@@ -1,16 +1,16 @@
-# db_utils.py
-
+from flask import current_app
 import pymysql
-from pymysql.cursors import DictCursor
+import pymysql.cursors
 
 # Centralized DB Connection
 def connect_to_db():
     return pymysql.connect(
-        host='localhost',
-        user='tahir',
-        password='tahir',
-        database='madrasadb',
-        cursorclass=DictCursor
+        host=current_app.config['MYSQL_HOST'],
+        user=current_app.config['MYSQL_USER'],
+        password=current_app.config['MYSQL_PASSWORD'],
+        db=current_app.config['MYSQL_DB'],
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False
     )
 
 # Table Creation
@@ -127,6 +127,15 @@ def create_tables():
                 name_bn VARCHAR(50),
                 name_ar VARCHAR(50),
                 class VARCHAR(50)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS logs (
+                log_id INT AUTO_INCREMENT PRIMARY KEY,
+                action VARCHAR(100),
+                phone VARCHAR(20),
+                message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 

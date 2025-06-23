@@ -1,30 +1,35 @@
-from flask import render_template
-from .auth import login_required
+from flask import render_template, redirect, url_for, session
+from . import admin_routes
 
-@login_required
-def dashboard():
-    return render_template('admin/dashboard.html')
+@admin_routes.route('/')
+def admin_dashboard():
+    return render_template("admin/dashboard.html")
 
-@login_required
+@admin_routes.route('/members')
 def members():
-    return render_template('admin/members.html')
+    return render_template("admin/members.html")
 
-@login_required
-def notice():
-    return render_template('admin/notice.html')
-
-@login_required
+@admin_routes.route('/routine')
 def routine():
-    return render_template('admin/routine.html')
+    return render_template("admin/routine.html")
 
-@login_required
+@admin_routes.route('/notice')
+def notice():
+    return render_template("admin/notice.html")
+
+@admin_routes.route('/events')
 def events():
-    return render_template('admin/events.html')
+    return render_template("admin/events.html")
 
-@login_required
+@admin_routes.route('/exam_results')
 def exam_results():
-    return render_template('admin/exam_results.html')
+    return render_template("admin/exam_results.html")
 
-@login_required
+@admin_routes.route('/madrasha_pictures')
 def madrasha_pictures():
-    return render_template('admin/madrasha_pictures.html')
+    return render_template("admin/madrasha_pictures.html")
+
+@admin_routes.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('admin_routes.login'))

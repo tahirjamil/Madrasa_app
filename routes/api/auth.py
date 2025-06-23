@@ -3,82 +3,37 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from pymysql.err import IntegrityError
 import datetime
 from database import connect_to_db
-from helpers import validate_fullname, validate_password, send_sms, format_phone_number, generate_code
+from helpers import validate_fullname, validate_password, send_sms, format_phone_number, generate_code, check_code
+from logger import log_event
 
 # Blueprint
 api_auth_routes = Blueprint("api_auth_routes", __name__)
 
-# Connect DB
-conn = connect_to_db()
-
-# Check Code
-def check_code(code, phone):
-    CODE_EXPIRY_MINUTES = 10
-
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT code, created_at FROM verifications 
-                WHERE phone = %s 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """, (phone,))
-            result = cursor.fetchone()
-
-            if not result:
-                return jsonify({"message": "No verification code found"}), 404
-
-            db_code = result["code"]
-            created_at = result["created_at"]
-            now = datetime.datetime.now()
-
-            if (now - created_at).total_seconds() > CODE_EXPIRY_MINUTES * 60:
-                return jsonify({"message": "Verification code expired"}), 410
-
-            if int(code) == db_code:
-                return None
-            else:
-                return jsonify({"message": "Verification code mismatch"}), 400
-
-    except Exception as e:
-        return jsonify({"message": f"Error: {str(e)}"}), 500
-
-
 # ========== Routes ==========
 @api_auth_routes.route("/register", methods=["POST"])
 def register():
+    conn = connect_to_db()
+
     data = request.get_json()
-    fullname = data.get("fullname")
+    fullname = data.get("fullname", "").strip()
     phone = data.get("phone")
     password = data.get("password")
     user_code = data.get("code")
 
     if not fullname or not phone or not password or not user_code:
+        log_event("auth_missing_fields", phone, "Phone or fullname missing")
         return jsonify({"message": "All fields including code are required"}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
         return jsonify({"message": "Invalid phone number format"}), 400
 
+    validate_code = check_code(user_code, formatted_phone)
+    if validate_code:
+        return validate_code
+
+    hashed_password = generate_password_hash(password)
     with conn.cursor() as cursor:
-        cursor.execute("""
-            SELECT code, created_at FROM verifications 
-            WHERE phone = %s 
-            ORDER BY created_at DESC 
-            LIMIT 1
-        """, (formatted_phone,))
-        result = cursor.fetchone()
-
-        if not result:
-            return jsonify({"message": "No verification code found"}), 404
-
-        if (datetime.datetime.now() - result["created_at"]).total_seconds() > 600:
-            return jsonify({"message": "Verification code expired"}), 410
-        if int(user_code) != result["code"]:
-            return jsonify({"message": "Verification code mismatch"}), 400
-
-        hashed_password = generate_password_hash(password)
-
         try:
             cursor.execute(
                 "INSERT INTO users (fullname, phone, password) VALUES (%s, %s, %s)",
@@ -87,7 +42,7 @@ def register():
             conn.commit()
 
             cursor.execute(
-                "SELECT id FROM users WHERE fullname = %s AND phone = %s",
+                "SELECT id FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
                 (fullname, formatted_phone)
             )
             result = cursor.fetchone()
@@ -117,12 +72,15 @@ def register():
 
 @api_auth_routes.route("/login", methods=["POST"])
 def login():
+    conn = connect_to_db()
+
     data = request.get_json()
-    fullname = data.get("fullname")
+    fullname = data.get("fullname", "").strip()
     phone = data.get("phone")
     password = data.get("password")
 
     if not fullname or not phone or not password:
+        log_event("auth_missing_fields", phone, "Phone or fullname missing")
         return jsonify({"message": "All fields are required"}), 400
 
     formatted_phone = format_phone_number(phone)
@@ -131,7 +89,7 @@ def login():
 
     with conn.cursor() as cursor:
         cursor.execute(
-            "SELECT password FROM users WHERE phone = %s AND fullname = %s",
+            "SELECT password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
             (formatted_phone, fullname)
         )
         result = cursor.fetchone()
@@ -146,10 +104,12 @@ def login():
 
 @api_auth_routes.route("/send_code", methods=["POST"])
 def send_verification_code():
+    conn = connect_to_db()
+
     SEND_LIMIT_PER_HOUR = 3
     data = request.get_json()
     phone = data.get("phone")
-    fullname = data.get("fullname")
+    fullname = data.get("fullname").strip()
     password = data.get("password")
 
     if not phone:
@@ -161,11 +121,16 @@ def send_verification_code():
 
     try:
         with conn.cursor() as cursor:
-            if fullname and password:
-                if (v := validate_fullname(fullname)): return v
-                if (v := validate_password(password)): return v
+            if fullname:
+                ok, msg = validate_fullname(fullname)
+                if not ok:
+                    return jsonify({"message": msg}), 400
+            if password:
+                ok, msg = validate_password(password)
+                if not ok:
+                    return jsonify({"message": msg}), 400
 
-                cursor.execute("SELECT * FROM users WHERE phone = %s AND fullname = %s", (formatted_phone, fullname))
+                cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
                 if cursor.fetchone():
                     return jsonify({"message": "User already registered"}), 409
 
@@ -179,7 +144,9 @@ def send_verification_code():
             count = result["recent_count"] if result else 0
 
             if count >= SEND_LIMIT_PER_HOUR:
+                log_event("rate_limit_blocked", phone, "SMS send limit exceeded")
                 return jsonify({"message": "Limit reached. Try again later."}), 429
+
 
             # Send verification code
             code = generate_code()
@@ -189,73 +156,62 @@ def send_verification_code():
         if send_sms(formatted_phone, code):
             return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
         else:
+            log_event("sms_failed", phone, "SMS gateway error")
             return jsonify({"message": "Failed to send SMS"}), 500
+
 
     except Exception as e:
         return jsonify({"message": f"Internal error: {str(e)}"}), 500
 
 
-
-
 @api_auth_routes.route("/reset_password", methods=["POST"])
 def reset_password():
+    conn = connect_to_db()
+    
     data = request.get_json()
     phone = data.get("phone")
-    fullname = data.get("fullname")
+    fullname = data.get("fullname").strip()
     user_code = data.get("code")
     old_password = data.get("old_password")
     new_password = data.get("new_password")
-    hashed_password = generate_password_hash(new_password)
 
+    # Check required fields (except old_password and code, because one of them must be present)
     if not all([phone, fullname, new_password]):
-        return jsonify({"message": "All fields required"}), 400
-    
+        log_event("auth_missing_fields", phone, "Phone or fullname missing")
+        return jsonify({"message": "Phone, Fullname, and New Password are required"}), 400
+
+    formatted_phone = format_phone_number(phone)
+    if not formatted_phone:
+        return jsonify({"message": "Invalid phone number format"}), 400
+
+    # If old password is not provided, use code verification instead
     if not old_password:
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT code, created_at FROM verifications 
-                    WHERE phone = %s 
-                    ORDER BY created_at DESC 
-                    LIMIT 1
-                """, (phone,))
-                result = cursor.fetchone()
+        validate_code = check_code(user_code, formatted_phone)
+        if validate_code:
+            return validate_code
 
-                if not result:
-                    return jsonify({"message": "No code found"}), 404
-
-                db_code = result["code"]
-                created_at = result["created_at"]
-                now = datetime.datetime.now()
-
-                if (now - created_at).total_seconds() > 600:
-                    return jsonify({"message": "Code expired"}), 410
-
-                if int(user_code) != db_code:
-                    return jsonify({"message": "Code mismatched"}), 400
-
-                cursor.execute("UPDATE users SET password = %s WHERE fullname = %s AND phone = %s",
-                            (hashed_password, fullname, phone))
-                conn.commit()
-                return jsonify({"message": "Password reset successful"}), 200
-
-        except Exception as e:
-            return jsonify({"message": f"Error: {str(e)}"}), 500
-    
+    # Fetch the user
     with conn.cursor() as cursor:
         cursor.execute(
-            "SELECT password FROM users WHERE phone = %s AND fullname = %s",
-            (phone, fullname)
+            "SELECT password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+            (formatted_phone, fullname)
         )
         result = cursor.fetchone()
+
         if not result:
             return jsonify({"message": "User not found"}), 404
 
-        if check_password_hash(result['password'], old_password):
-            cursor.execute("UPDATE users SET password = %s WHERE fullname = %s AND phone = %s",
-                            (hashed_password, fullname, phone))
-            
-            conn.commit()
-            return jsonify({"message": "Password reset successful"}), 200
-        else:
-            return jsonify({"message": "Incorrect password"}), 401
+        # If old_password is given, check it
+        if old_password:
+            if not check_password_hash(result['password'], old_password):
+                return jsonify({"message": "Incorrect old password"}), 401
+
+        # Update the password
+        hashed_password = generate_password_hash(new_password)
+        cursor.execute(
+            "UPDATE users SET password = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+            (hashed_password, fullname, formatted_phone)
+        )
+        conn.commit()
+
+    return jsonify({"message": "Password reset successful"}), 200

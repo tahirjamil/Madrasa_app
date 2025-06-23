@@ -10,5 +10,6 @@ def log_event(action, phone, message):
                 (action, phone, message)
             )
             conn.commit()
+            print("Logging successful")
     except Exception as e:
         print("Logging failed:", e)

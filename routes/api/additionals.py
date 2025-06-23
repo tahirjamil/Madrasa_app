@@ -6,9 +6,10 @@ from PIL import Image
 from werkzeug.utils import secure_filename
 from database import connect_to_db
 from logger import log_event
+from config import Config
 
 # ========== Config ==========
-UPLOAD_FOLDER = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'people_img')
+UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 other_routes = Blueprint('other_routes', __name__)
@@ -24,11 +25,9 @@ def uploaded_file(filename):
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'people_img')
     file_path = os.path.join(upload_folder, filename)
 
-    # ✅ block non-existing files
     if not os.path.isfile(file_path):
         return jsonify({"message": "File not found"}), 404
 
-    # ✅ optional: block unsupported file types
     if not filename.rsplit('.', 1)[-1].lower() in {'png', 'jpg', 'jpeg', 'webp'}:
         return jsonify({"message": "File type not allowed"}), 403
 

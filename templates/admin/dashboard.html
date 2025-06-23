@@ -1,5 +1,84 @@
 {% extends "admin/base.html" %}
 {% block title %}Dashboard{% endblock %}
+
 {% block content %}
-  <h2>This is sample page: Dashboard</h2>
+<div class="container">
+  <h2 class="mb-4">Madrasa Database Viewer</h2>
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- DB Selector -->
+  <form method="get" class="mb-4">
+    <label for="db" class="form-label">Select Database:</label>
+    <select name="db" id="db" class="form-select w-auto d-inline" onchange="this.form.submit()">
+      {% for db in databases %}
+        <option value="{{ db }}" {% if db == selected_db %}selected{% endif %}>{{ db }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <!-- Drop DB -->
+  <form action="{{ url_for('admin_routes.drop_object') }}" method="POST" class="mb-4" onsubmit="return confirm('Drop the entire database?');">
+    <input type="hidden" name="type" value="database">
+    <input type="hidden" name="name" value="{{ selected_db }}">
+    <input type="password" name="password" placeholder="Admin Password" required class="form-control form-control-sm d-inline w-auto me-2">
+    <button type="submit" class="btn btn-sm btn-danger">Drop Database</button>
+  </form>
+
+  <!-- Table Viewer -->
+  <h4 class="mt-4">Tables in <code>{{ selected_db }}</code></h4>
+  {% for table, description in tables.items() %}
+    <div class="mt-4">
+      <h5>{{ table }}</h5>
+
+      <!-- Drop Table -->
+      <form action="{{ url_for('admin_routes.drop_object') }}" method="POST" class="mb-2" onsubmit="return confirm('Drop table {{ table }}?');">
+        <input type="hidden" name="type" value="table">
+        <input type="hidden" name="name" value="{{ table }}">
+        <input type="hidden" name="db" value="{{ selected_db }}">
+        <input type="password" name="password" placeholder="Admin Password" required class="form-control form-control-sm d-inline w-auto me-2">
+        <button type="submit" class="btn btn-sm btn-danger">Drop Table</button>
+      </form>
+
+      <!-- Table Description -->
+      <table class="table table-sm table-bordered">
+        <thead>
+          <tr>
+            <th>Field</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>Extra</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in description %}
+          <tr>
+            <td>{{ row[0] }}</td><td>{{ row[1] }}</td><td>{{ row[2] }}</td>
+            <td>{{ row[3] }}</td><td>{{ row[4] }}</td><td>{{ row[5] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+
+  <!-- CREATE COMMAND -->
+  <h4 class="mt-5">Create Table or Database</h4>
+  <form action="{{ url_for('admin_routes.create_object') }}" method="POST" onsubmit="return confirm('Run this MySQL command?');">
+    <div class="mb-2">
+      <input type="text" name="command" placeholder="e.g., CREATE TABLE test (id INT)" required class="form-control">
+    </div>
+    <div class="mb-2">
+      <input type="password" name="password" placeholder="Admin Password" required class="form-control w-auto d-inline me-2">
+      <button type="submit" class="btn btn-success btn-sm">Execute</button>
+    </div>
+  </form>
+</div>
 {% endblock %}

@@ -13,32 +13,36 @@
   <div class="container py-4">
     <h1 class="mb-4">🚦 Server Status</h1>
     <p class="text-muted">
-      Showing the last {{ requests|length }} requests (most recent at bottom).
+      Showing the last {{ requests|length }} requests.
     </p>
     <div class="table-responsive">
       <table class="table table-sm table-striped align-middle">
         <thead class="table-dark">
           <tr>
-            <th scope="col">Time</th>
-            <th scope="col">IP Address</th>
-            <th scope="col">Endpoint</th>
-            <th scope="col">Status</th>
+            <th>Time</th>
+            <th>IP</th>
+            <th>Endpoint</th>
+            <th>Status</th>
+            <th>Method</th>
+            <th>Path</th>
           </tr>
         </thead>
         <tbody>
           {% for req in requests %}
-            <tr>
-              <td>{{ req.time }}</td>
-              <td>{{ req.ip }}</td>
-              <td>{{ req.endpoint }}</td>
-              <td>
-                {% if req.status == 'Allowed' %}
-                  <span class="badge bg-success">Allowed</span>
-                {% else %}
-                  <span class="badge bg-danger">Blocked</span>
-                {% endif %}
-              </td>
-            </tr>
+          <tr>
+            <td>{{ req.time }}</td>
+            <td>{{ req.ip }}</td>
+            <td>{{ req.endpoint }}</td>
+            <td>
+              {% if req.status == 'Allowed' %}
+                <span class="badge bg-success">Allowed</span>
+              {% else %}
+                <span class="badge bg-danger">Blocked</span>
+              {% endif %}
+            </td>
+            <td>{{ req.method }}</td>
+            <td>{{ req.path }}</td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>

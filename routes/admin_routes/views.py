@@ -74,10 +74,6 @@ def admin_dashboard():
                            query_result=query_result,
                            query_error=query_error)
 
-@admin_routes.route('/members')
-def members():
-    return render_template("admin/members.html")
-
 @admin_routes.route('/routine')
 def routine():
     return render_template("admin/routine.html")

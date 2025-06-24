@@ -62,48 +62,52 @@ def create_tables():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # People & Verify Table
 
-        # People Table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS people (
-                user_id INT PRIMARY KEY AUTO_INCREMENT,
-                member_id INT,
-                id INT UNIQUE,
-                student_id INT,
-                name_en VARCHAR(255) NOT NULL,
-                name_bn VARCHAR(255),
-                name_ar VARCHAR(255),
-                date_of_birth DATE,
-                birth_certificate VARCHAR(100),
-                national_id VARCHAR(100),
-                blood_group VARCHAR(20),
-                gender ENUM('Male', 'Female'),
-                title1 VARCHAR(255),
-                title2 VARCHAR(255),
-                source VARCHAR(255),
-                present_address TEXT,
-                address_bn TEXT,
-                address_ar TEXT,
-                permanent_address TEXT,
-                father_or_spouse VARCHAR(255),
-                father_en VARCHAR(255),
-                father_bn VARCHAR(255),
-                father_ar VARCHAR(255),
-                mother_en VARCHAR(255),
-                mother_bn VARCHAR(255),
-                mother_ar VARCHAR(255),
-                class VARCHAR(100),
-                phone VARCHAR(15) NOT NULL,
-                mail TEXT,
-                guardian_number TEXT,
-                available BOOLEAN DEFAULT 1,
-                degree VARCHAR(50),
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                image_path TEXT,
-                acc_type ENUM('admins', 'students', 'teachers', 'staffs', 'others', 'badri_members', 'donors'),
-                FOREIGN KEY (id) REFERENCES users(id)
-            )
-        """)
+        tables = ['people', 'verify']
+        for table in tables:
+
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table} (
+                    user_id INT PRIMARY KEY AUTO_INCREMENT,
+                    member_id INT,
+                    id INT UNIQUE,
+                    student_id INT,
+                    name_en VARCHAR(255) NOT NULL,
+                    name_bn VARCHAR(255),
+                    name_ar VARCHAR(255),
+                    date_of_birth DATE,
+                    birth_certificate VARCHAR(100),
+                    national_id VARCHAR(100),
+                    blood_group VARCHAR(20),
+                    gender ENUM('Male', 'Female'),
+                    title1 VARCHAR(255),
+                    title2 VARCHAR(255),
+                    source VARCHAR(255),
+                    present_address TEXT,
+                    address_bn TEXT,
+                    address_ar TEXT,
+                    permanent_address TEXT,
+                    father_or_spouse VARCHAR(255),
+                    father_en VARCHAR(255),
+                    father_bn VARCHAR(255),
+                    father_ar VARCHAR(255),
+                    mother_en VARCHAR(255),
+                    mother_bn VARCHAR(255),
+                    mother_ar VARCHAR(255),
+                    class VARCHAR(100),
+                    phone VARCHAR(15) NOT NULL,
+                    mail TEXT,
+                    guardian_number TEXT,
+                    available BOOLEAN DEFAULT 1,
+                    degree VARCHAR(50),
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    image_path TEXT,
+                    acc_type ENUM('admins', 'students', 'teachers', 'staffs', 'others', 'badri_members', 'donors'),
+                    FOREIGN KEY (id) REFERENCES users(id)
+                )
+            """)
 
         # Routine table
         cursor.execute("""

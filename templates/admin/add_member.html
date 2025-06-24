@@ -1,0 +1,151 @@
+{% extends "admin/base.html" %}
+{% block title %}Add Member{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">Add New Member</h2>
+  <form method="POST" enctype="multipart/form-data" class="row g-3">
+    <!-- Name Fields -->
+    <div class="col-md-4">
+      <label class="form-label">Name (English)</label>
+      <input type="text" name="name_en" class="form-control" required>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Name (Bengali)</label>
+      <input type="text" name="name_bn" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Name (Arabic)</label>
+      <input type="text" name="name_ar" class="form-control">
+    </div>
+
+    <!-- Identifiers -->
+    <div class="col-md-3">
+      <label class="form-label">Member ID</label>
+      <input type="text" name="member_id" class="form-control">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Student ID</label>
+      <input type="text" name="student_id" class="form-control">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Phone</label>
+      <input type="tel" name="phone" class="form-control" required>
+    </div>
+
+    <!-- Personal Details -->
+    <div class="col-md-4">
+      <label class="form-label">Date of Birth</label>
+      <input type="date" name="date_of_birth" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">National ID</label>
+      <input type="text" name="national_id" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Blood Group</label>
+      <select name="blood_group" class="form-select">
+        <option value="">-- Select --</option>
+        {% for bg in ['A+','A-','B+','B-','AB+','AB-','O+','O-'] %}
+        <option value="{{ bg }}">{{ bg }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Gender</label>
+      <select name="gender" class="form-select">
+        <option value="">-- Select --</option>
+        {% for g in ['Male','Female'] %}
+        <option value="{{ g }}">{{ g }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Academic & Titles -->
+    <div class="col-md-4">
+      <label class="form-label">Degree</label>
+      <input type="text" name="degree" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Title 1</label>
+      <input type="text" name="title1" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Source</label>
+      <input type="text" name="source" class="form-control">
+    </div>
+
+    <!-- Addresses -->
+    <div class="col-12">
+      <label class="form-label">Present Address</label>
+      <textarea name="present_address" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Present Address (Bengali)</label>
+      <textarea name="address_bn" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Present Address (Arabic)</label>
+      <textarea name="address_ar" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Permanent Address</label>
+      <textarea name="permanent_address" class="form-control" rows="2"></textarea>
+    </div>
+
+    <!-- Family & Contact -->
+    <div class="col-md-6">
+      <label class="form-label">Father or Spouse</label>
+      <input type="text" name="father_or_spouse" class="form-control">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Email</label>
+      <input type="email" name="mail" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Father Name (EN)</label>
+      <input type="text" name="father_en" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Father Name (BN)</label>
+      <input type="text" name="father_bn" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Father Name (AR)</label>
+      <input type="text" name="father_ar" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Mother Name (EN)</label>
+      <input type="text" name="mother_en" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Mother Name (BN)</label>
+      <input type="text" name="mother_bn" class="form-control">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Mother Name (AR)</label>
+      <input type="text" name="mother_ar" class="form-control">
+    </div>
+
+    <!-- Account & Image -->
+    <div class="col-md-6">
+      <label class="form-label">Account Type</label>
+      <select name="acc_type" class="form-select" required>
+        <option value="">-- Select --</option>
+        {% for t in types %}
+        <option value="{{ t }}">{{ t.replace('_',' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Upload Image</label>
+    <input type="file" name="image" accept="image/*" class="form-control">
+    </div>
+
+    <div class="col-12 mt-3">
+      <button type="submit" class="btn btn-success">Submit</button>
+      <a href="{{ url_for('admin_routes.members') }}" class="btn btn-secondary ms-2">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

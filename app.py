@@ -27,19 +27,22 @@ with app.app_context():
 
 # ─── Request/Response Logging ───────────────────────────────
 request_response_log = []
-
 @app.before_request
 def log_every_request():
-    # build an entry with request data
+    ip       = request.headers.get("X-Forwarded-For", request.remote_addr)
+    endpoint = request.endpoint or "unknown"
+    blocked  = endpoint.startswith("admin_routes.") and not session.get("admin_logged_in")
+
     entry = {
         "time":     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "ip":       request.headers.get("X-Forwarded-For", request.remote_addr),
+        "ip":       ip,
+        "endpoint": endpoint,
+        "status":   "Blocked" if blocked else "Allowed",
         "method":   request.method,
         "path":     request.path,
-        "req_json": request.get_json(silent=True),
-        "res_json": None,
+        "req_json": request.get_json(silent=True),  # always present
+        "res_json": None,                            # always present
     }
-    # stash it in flask.g so after_request can fill it in
     g.log_entry = entry
     request_response_log.append(entry)
     if len(request_response_log) > 100:
@@ -48,10 +51,13 @@ def log_every_request():
 @app.after_request
 def attach_response_data(response):
     entry = getattr(g, "log_entry", None)
-    if entry and response.content_type.startswith("application/json"):
-        try:
-            entry["res_json"] = response.get_json(silent=True)
-        except Exception:
+    if entry:
+        if response.content_type.startswith("application/json"):
+            try:
+                entry["res_json"] = response.get_json(silent=True)
+            except Exception:
+                entry["res_json"] = None
+        else:
             entry["res_json"] = None
     return response
 

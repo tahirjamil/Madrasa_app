@@ -229,7 +229,7 @@ def get_info():
             members = cursor.fetchall()
         return jsonify({
             "members": members,
-            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("00:00","Z")
+            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
             }), 200
     except Exception as e:
         log_event("get_members_failed", "NULL", str(e))

@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from flask import Flask, render_template, request, session, g
+from flask import Flask, render_template, request, session, g, redirect, url_for
 from flask_cors import CORS
 from dotenv import load_dotenv
 from waitress import serve
@@ -64,10 +64,14 @@ def attach_response_data(response):
 # ─── Status & Info Routes ───────────────────────────────────
 @app.route("/status")
 def status():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
     return render_template("status.html", requests=request_response_log)
 
 @app.route("/info")
 def info():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
     logs = request_response_log[-100:]
     return render_template("info.html", logs=logs)
 

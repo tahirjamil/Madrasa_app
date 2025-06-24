@@ -1,5 +1,5 @@
 import os, json
-from flask import request, render_template, redirect, url_for, flash
+from flask import request, render_template, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
 from datetime import datetime, date
 from . import admin_routes
@@ -38,6 +38,8 @@ def allowed_file(filename):
 
 @admin_routes.route('/notice', methods=['GET', 'POST'])
 def notice_page():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')

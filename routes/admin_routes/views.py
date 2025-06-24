@@ -1,23 +1,28 @@
-from flask import render_template, request, redirect, url_for, session, flash
+from flask import render_template, request, flash, session, redirect, url_for
 import pymysql
 import pymysql.cursors
 from . import admin_routes
 from database import connect_to_db
 import os
 from logger import log_event
-from helpers_admin import backup_table
 
-@admin_routes.route('/')
+
+@admin_routes.route('/', methods=['GET', 'POST'])
 def admin_dashboard():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
     conn = connect_to_db()
     databases = []
     tables = {}
     selected_db = request.args.get('db', 'madrasadb')
+    query_result = None
+    query_error = None
 
     try:
-        with conn.cursor(cursor=pymysql.cursors.Cursor) as cursor:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
             cursor.execute("SHOW DATABASES")
-            databases = [row[0] for row in cursor.fetchall()]
+            databases = [row["Database"] for row in cursor.fetchall()]
 
             if selected_db not in databases:
                 selected_db = databases[0] if databases else None
@@ -25,93 +30,49 @@ def admin_dashboard():
             if selected_db:
                 cursor.execute(f"USE {selected_db}")
                 cursor.execute("SHOW TABLES")
-                table_list = [row[0] for row in cursor.fetchall()]
-
+                table_list = [row[f'Tables_in_{selected_db}'] for row in cursor.fetchall()]
                 for table in table_list:
                     cursor.execute(f"DESCRIBE {table}")
                     tables[table] = cursor.fetchall()
-    except Exception as e:
-        flash(f"Dashboard error: {e}", "danger")
-    finally:
-        conn.close()
 
-    return render_template("admin/dashboard.html", databases=databases, tables=tables, selected_db=selected_db)
+            if request.method == "POST":
+                username = request.form.get('username')
+                password = request.form.get('password')
+                raw_sql = request.form.get('sql', '')
 
+                ADMIN_USER = os.getenv("ADMIN_USERNAME")
+                ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
 
-@admin_routes.route('/drop', methods=['POST'])
-def drop_object():
-    object_type = request.form.get('type')
-    name = request.form.get('name')
-    db = request.form.get('db')
-    password = request.form.get('password')
-    ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
-
-    if password != ADMIN_PASS:
-        flash("Incorrect admin password.", "danger")
-        return redirect(url_for('admin_routes.admin_dashboard', db=db))
-
-    conn = connect_to_db()
-    try:
-        with conn.cursor() as cursor:
-            
-            if object_type == "table":
-                success, msg = backup_table(db, name)
-                if success:
-                    flash(f"✅ Backup saved: {msg}", "info")
-                    log_event("backup_table", name, msg)
-
-                    cursor.execute(f"USE {db}")
-                    cursor.execute(f"DROP TABLE `{name}`")
-                    flash(f"Table '{name}' dropped successfully.", "success")
-                    log_event("drop_table", name, f"From DB: {db}")
-
+                if username != ADMIN_USER or password != ADMIN_PASS:
+                    flash("Unauthorized admin login.", "danger")
                 else:
-                    flash(f"⚠️ Backup failed: {msg}", "warning")
-                    flash(f"Please Use root user to Drop")
-                    log_event("backup_error", name, msg)
-
-
-            elif object_type == "database":
-                flash(f"Database can be dropped only by root user.", "success")
-                log_event("drop_database", name, "tried to delete full DB")
-            conn.commit()
+                    forbidden = ['drop', 'truncate', 'alter', 'rename', 'create database', 'use']
+                    if any(word in raw_sql.lower() for word in forbidden):
+                        flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
+                        log_event("forbidden_query_attempt", username, raw_sql)
+                    else:
+                        try:
+                            cursor.execute(raw_sql)
+                            if cursor.description:  # SELECT-like
+                                query_result = cursor.fetchall()
+                            else:
+                                conn.commit()
+                                query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
+                            log_event("query_run", username, raw_sql)
+                        except Exception as e:
+                            query_error = str(e)
+                            log_event("query_error", username, f"{raw_sql} | {str(e)}")
     except Exception as e:
-        flash(f"Drop error: {e}", "danger")
-        log_event("drop_error", name, str(e))
+        query_error = str(e)
     finally:
         conn.close()
 
-    return redirect(url_for('admin_routes.admin_dashboard'))
-
-
-@admin_routes.route('/create', methods=['POST'])
-def create_object():
-    command = request.form.get('command')
-    password = request.form.get('password')
-    ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
-
-    if password != ADMIN_PASS:
-        flash("Incorrect admin password.", "danger")
-        return redirect(url_for('admin_routes.admin_dashboard'))
-
-    if not command or not command.strip().lower().startswith("create"):
-        flash("Only CREATE commands are allowed.", "danger")
-        return redirect(url_for('admin_routes.admin_dashboard'))
-
-    conn = connect_to_db()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(command)
-            conn.commit()
-            flash("Command executed successfully.", "success")
-            log_event("create_command", "admin", command)
-    except Exception as e:
-        flash(f"MySQL error: {str(e)}", "danger")
-        log_event("create_error", "admin", str(e))
-    finally:
-        conn.close()
-
-    return redirect(url_for('admin_routes.admin_dashboard'))
+    return render_template("admin/dashboard.html",
+                           databases=databases,
+                           tables=tables,
+                           selected_db=selected_db,
+                           query_result=query_result,
+                           query_error=query_error)
 
 @admin_routes.route('/members')
 def members():
@@ -132,8 +93,3 @@ def exam_results():
 @admin_routes.route('/madrasha_pictures')
 def madrasha_pictures():
     return render_template("admin/madrasha_pictures.html")
-
-@admin_routes.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('admin_routes.login'))

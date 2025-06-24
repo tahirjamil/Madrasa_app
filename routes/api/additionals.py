@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from database import connect_to_db
 from logger import log_event
 from config import Config
+from datetime import datetime, timezone
 
 # ========== Config ==========
 IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
@@ -71,28 +72,29 @@ def add_person():
 
     fullname = data.get('fullname')
     phone = data.get('phone')
-    acc_type = data.get('acc_type')
+    get_acc_type = data.get('acc_type')
 
-    if not fullname or not phone or not acc_type:
+    if not fullname or not phone or not get_acc_type:
         log_event("add_people_missing", phone, "Missing fields")
         return jsonify({"message": "fullname, phone and acc_type are required"}), 400
 
-    id = get_id(phone, fullname)
+    person_id = get_id(phone, fullname)
+    acc_type = get_acc_type.lower()
 
-    if not id:
+    if not person_id:
         return jsonify({"message": "ID not found"}), 404
 
     fields = {
-        "id": id,
+        "id": person_id,
         "acc_type": acc_type
     }
 
     # Handle image upload
     if image and image.filename:
         if allowed_file(image.filename):
-            filename_base = f"{id}_{os.path.splitext(secure_filename(image.filename))[0]}"
+            filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
             filename = filename_base + ".webp"  # save as .webp
-            upload_folder = current_app.config.get('UPLOAD_FOLDER', IMG_UPLOAD_FOLDER)
+            upload_folder = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
             image_path = os.path.join(upload_folder, filename)
         
             try:
@@ -107,72 +109,76 @@ def add_person():
                 return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
             
             fields["image_path"] = BASE_URL + 'uploads/people_img/' + filename
-    else:
-        return jsonify({"message": "Invalid image file format"}), 400
+        else:
+            return jsonify({"message": "Invalid image file format"}), 400
 
 
     def f(k): 
         return data.get(k)
 
     # Validate and fill fields based on acc_type
-    if acc_type == 'Student':
+    if acc_type == 'students':
         required = [
             'name_en', 'name_bn', 'name_ar', 'date_of_birth',
-            'birth_certificate_number', 'blood_group', 'gender',
-            'source_of_information', 'present_address', 'permanent_address',
-            'father_name_en', 'father_name_bn', 'father_name_ar',
-            'mother_name_en', 'mother_name_bn', 'mother_name_ar',
-            'class', 'phone'
+            'birth_certificate', 'blood_group', 'gender',
+            'source', 'present_address', 'permanent_address',
+            'father_en', 'father_bn', 'father_ar',
+            'mother_en', 'mother_bn', 'mother_ar',
+            'class', 'phone', 'student_id', 'guardian_number'
         ]
-        # Image is optional here, so not included in required
+    
         if not all(f(k) for k in required):
             return jsonify({"message": "All required fields must be provided for Student"}), 400
         fields.update({k: f(k) for k in required})
 
-    elif acc_type in ['Teacher', 'Admin', 'Staff']:
+        optional = ["mail"]
+        fields.update({k: f(k) for k in optional if f(k)})
+
+    elif acc_type in ['teachers', 'admins']:
         required = [
             'name_en', 'name_bn', 'name_ar', 'date_of_birth',
             'national_id', 'blood_group', 'gender',
-            'title', 'present_address', 'permanent_address',
-            'father_name_en', 'father_name_bn', 'father_name_ar',
-            'mother_name_en', 'mother_name_bn', 'mother_name_ar',
-            'class', 'phone'
+            'title1', 'present_address', 'permanent_address',
+            'father_en', 'father_bn', 'father_ar',
+            'mother_en', 'mother_bn', 'mother_ar',
+            'phone'
         ]
         if not all(f(k) for k in required):
             return jsonify({"message": f"All required fields must be provided for {acc_type}"}), 400
+        fields.update({k: f(k) for k in required})
 
-        fields.update({
-            "name_en": f("name_en"),
-            "name_bn": f("name_bn"),
-            "name_ar": f("name_ar"),
-            "date_of_birth": f("date_of_birth"),
-            "national_id_number": f("national_id"),
-            "blood_group": f("blood_group"),
-            "gender": f("gender"),
-            "title_primary": f("title"),
-            "present_address": f("present_address"),
-            "permanent_address": f("permanent_address"),
-            "father_name_en": f("father_name_en"),
-            "father_name_bn": f("father_name_bn"),
-            "father_name_ar": f("father_name_ar"),
-            "mother_name_en": f("mother_name_en"),
-            "mother_name_bn": f("mother_name_bn"),
-            "mother_name_ar": f("mother_name_ar"),
-            "class": f("class"),
-            "phone": f("phone")
-        })
+        optional = ["degree"]
+        fields.update({k: f(k) for k in optional if f(k)})
 
-    elif acc_type == 'Guest':
-        if not f("name_en") or not f("phone") or not f("father_or_spouse"):
+    elif acc_type == 'staffs':
+        required = [
+            'name_en', 'name_bn', 'name_ar', 'date_of_birth',
+            'national_id', 'blood_group',
+            'title2', 'present_address', 'permanent_address',
+            'father_en', 'father_bn', 'father_ar',
+            'mother_en', 'mother_bn', 'mother_ar',
+            'phone'
+        ]
+        if not all(f(k) for k in required):
+            return jsonify({"message": f"All required fields must be provided for {acc_type}"}), 400
+        fields.update({k: f(k) for k in required})
+
+        optional = ["mail"]
+        fields.update({k: f(k) for k in optional if f(k)})
+        
+
+    elif acc_type in ['others','badri_members','donors']:
+        if not f("name_en") or not f("phone") or not f("father_or_spouse") or not f("date_of_birth"):
             return jsonify({"message": "Name, Phone, and Father/Spouse are required for Guest"}), 400
 
         fields["name_en"] = f("name_en")
         fields["phone"] = f("phone")
         fields["father_or_spouse"] = f("father_or_spouse")
+        fields["date_of_birth"] = f("date_of_birth")
 
         optional = [
-            "source_of_information", "present_address", "date_of_birth",
-            "blood_group", "gender"
+            "source", "present_address", "relation",
+            "blood_group", "gender", "degree", "mail"
         ]
         fields.update({k: f(k) for k in optional if f(k)})
 
@@ -181,7 +187,7 @@ def add_person():
 
     try:
         insert_person(fields)
-        return jsonify({"message": f"{acc_type} profile added successfully", "id": id}), 201
+        return jsonify({"message": f"{acc_type} profile added successfully", "id": person_id}), 201
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409
     except Exception as e:
@@ -194,22 +200,37 @@ def get_info():
     conn = connect_to_db()
 
     data = request.get_json()
-    lastfetched = data.get('lastfetched')
+    lastfetched = data.get('updatedSince')
 
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             if lastfetched:
                 cursor.execute("""
-                    SELECT name_en, name_bn, name_ar, permanent_address, phone, image_path
-                    FROM people WHERE updated_at > %s
+                    SELECT name_en, name_bn, name_ar,
+                    present_address AS address_en, address_bn, address_ar,
+                    degree, 
+                    father_en, father_bn, father_ar, 
+                    blood_group,
+                    phone, image_path AS picUrl, member_id, acc_type AS role,
+                    mail, COALESCE(title1, title2, class) AS title
+                    FROM people WHERE updated_at > %s AND member_id IS NOT NULL
                 """, (lastfetched,))
             else:
                 cursor.execute("""
-                    SELECT name_en, name_bn, name_ar, permanent_address, phone, image_path
-                    FROM people
+                    SELECT name_en, name_bn, name_ar,
+                    present_address AS address_en, address_bn, address_ar,
+                    degree, 
+                    father_en, father_bn, father_ar, 
+                    blood_group,
+                    phone, image_path AS picUrl, member_id, acc_type AS role,
+                    mail, COALESCE(title1, title2, class) AS title
+                    FROM people people WHERE member_id IS NOT NULL
                 """)
             members = cursor.fetchall()
-        return jsonify(members), 200
+        return jsonify({
+            "members": members,
+            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("00:00","Z")
+            }), 200
     except Exception as e:
         log_event("get_members_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {str(e)}"}), 500
@@ -225,7 +246,7 @@ def get_routine():
         return jsonify({"message": "Database connection failed."}), 500
 
     data = request.get_json()
-    lastfetched = data.get("lastfetched")
+    lastfetched = data.get("updatedSince")
 
     try:
         with conn.cursor() as cursor:
@@ -238,3 +259,6 @@ def get_routine():
     except Exception as e:
         log_event("get_routine_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {str(e)}"}), 500
+    finally:
+        conn.close()
+

@@ -3,15 +3,15 @@
 
 {% block content %}
 <div class="container">
-  <h2 class="mb-4">Madrasa Database Viewer</h2>
+  <h2 class="mb-4">Madrasha DB Admin</h2>
 
-  <!-- Flash messages -->
+  <!-- Flash Messages -->
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, message in messages %}
         <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
           {{ message }}
-          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
       {% endfor %}
     {% endif %}
@@ -27,30 +27,59 @@
     </select>
   </form>
 
-  <!-- Drop DB -->
-  <form action="{{ url_for('admin_routes.drop_object') }}" method="POST" class="mb-4" onsubmit="return confirm('Drop the entire database?');">
-    <input type="hidden" name="type" value="database">
-    <input type="hidden" name="name" value="{{ selected_db }}">
-    <input type="password" name="password" placeholder="Admin Password" required class="form-control form-control-sm d-inline w-auto me-2">
-    <button type="submit" class="btn btn-sm btn-danger">Drop Database</button>
+  <!-- MySQL Terminal -->
+  <h4 class="mt-4">Run MySQL Command (no DROP/TRUNCATE)</h4>
+  <form method="POST" class="mb-4">
+    <div class="row g-2">
+      <div class="col-md-8">
+        <input type="text" name="sql" placeholder="e.g., SELECT * FROM users" required class="form-control">
+      </div>
+      <div class="col-md-2">
+        <input type="text" name="username" placeholder="Admin Username" required class="form-control">
+      </div>
+      <div class="col-md-2">
+        <input type="password" name="password" placeholder="Password" required class="form-control">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm mt-2">Execute</button>
   </form>
 
-  <!-- Table Viewer -->
-  <h4 class="mt-4">Tables in <code>{{ selected_db }}</code></h4>
+  <!-- Query Output -->
+  {% if query_result %}
+    <h5>Result:</h5>
+    {% if query_result is string %}
+      <div class="alert alert-success">{{ query_result }}</div>
+    {% elif query_result %}
+      <table class="table table-sm table-bordered">
+        <thead>
+          <tr>
+            {% for col in query_result[0].keys() %}
+              <th>{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in query_result %}
+          <tr>
+            {% for val in row.values() %}
+              <td>{{ val }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  {% endif %}
+
+  {% if query_error %}
+    <div class="alert alert-danger mt-3"><strong>Error:</strong> {{ query_error }}</div>
+  {% endif %}
+
+  <!-- Table Descriptions -->
+  <h4 class="mt-5">Tables in <code>{{ selected_db }}</code></h4>
   {% for table, description in tables.items() %}
     <div class="mt-4">
       <h5>{{ table }}</h5>
-
-      <!-- Drop Table -->
-      <form action="{{ url_for('admin_routes.drop_object') }}" method="POST" class="mb-2" onsubmit="return confirm('Drop table {{ table }}?');">
-        <input type="hidden" name="type" value="table">
-        <input type="hidden" name="name" value="{{ table }}">
-        <input type="hidden" name="db" value="{{ selected_db }}">
-        <input type="password" name="password" placeholder="Admin Password" required class="form-control form-control-sm d-inline w-auto me-2">
-        <button type="submit" class="btn btn-sm btn-danger">Drop Table</button>
-      </form>
-
-      <!-- Table Description -->
       <table class="table table-sm table-bordered">
         <thead>
           <tr>
@@ -60,25 +89,17 @@
         <tbody>
           {% for row in description %}
           <tr>
-            <td>{{ row[0] }}</td><td>{{ row[1] }}</td><td>{{ row[2] }}</td>
-            <td>{{ row[3] }}</td><td>{{ row[4] }}</td><td>{{ row[5] }}</td>
+            <td>{{ row.Field }}</td>
+            <td>{{ row.Type }}</td>
+            <td>{{ row.Null }}</td>
+            <td>{{ row.Key }}</td>
+            <td>{{ row.Default }}</td>
+            <td>{{ row.Extra }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   {% endfor %}
-
-  <!-- CREATE COMMAND -->
-  <h4 class="mt-5">Create Table or Database</h4>
-  <form action="{{ url_for('admin_routes.create_object') }}" method="POST" onsubmit="return confirm('Run this MySQL command?');">
-    <div class="mb-2">
-      <input type="text" name="command" placeholder="e.g., CREATE TABLE test (id INT)" required class="form-control">
-    </div>
-    <div class="mb-2">
-      <input type="password" name="password" placeholder="Admin Password" required class="form-control w-auto d-inline me-2">
-      <button type="submit" class="btn btn-success btn-sm">Execute</button>
-    </div>
-  </form>
 </div>
 {% endblock %}

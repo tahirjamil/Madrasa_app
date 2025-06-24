@@ -5,6 +5,7 @@ from waitress import serve
 import os
 from datetime import datetime
 from config import Config
+from dotenv import load_dotenv
 
 # API Routes
 from routes.api.auth import api_auth_routes
@@ -16,10 +17,12 @@ from routes.admin_routes import admin_routes
 
 app = Flask(__name__)
 CORS(app)
+load_dotenv()
 
 
 # Config for Uploads
 app.config.from_object(Config)
+app.secret_key = os.getenv("SECRET_KEY", "fallback-key")
 os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
 
 # Create Tables

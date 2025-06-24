@@ -1,28 +1,31 @@
-from flask import request, session, redirect, url_for, render_template
-from . import admin_routes  # Use blueprint from __init__.py
+import os
+from flask import render_template, request, redirect, url_for, session
+from . import admin_routes
 
 @admin_routes.route('/login', methods=['GET', 'POST'])
 def login():
+    # Force a clean slate any time someone lands on /admin/login
+    session.clear()
+
+    error = None
     if request.method == 'POST':
-        if request.form['username'] == 'admin' and request.form['password'] == 'admin123':
-            session.clear()
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+
+        if username == ADMIN_USER and password == ADMIN_PASS:
             session['admin_logged_in'] = True
-            session.permanent = False
+            session.permanent = False  # cookie dies on browser close
             return redirect(url_for('admin_routes.admin_dashboard'))
-    return render_template('admin/login.html')
+        else:
+            error = "Invalid credentials"
+
+    return render_template('admin/login.html', error=error)
+
 
 @admin_routes.route('/logout')
 def admin_logout():
-    session.pop("admin_logged_in", None)
-    return redirect(url_for("admin_routes.login"))
-
-def members():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
-    return render_template("admin/members.html")
-
-def routine():
-
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
-    return render_template("admin/members.html")
+    session.clear()  # actually clear the session
+    return redirect(url_for('admin_routes.login'))

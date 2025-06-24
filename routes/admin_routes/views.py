@@ -82,10 +82,6 @@ def routine():
 def events():
     return render_template("admin/events.html")
 
-@admin_routes.route('/exam_results')
-def exam_results():
-    return render_template("admin/exam_results.html")
-
 @admin_routes.route('/madrasha_pictures')
 def madrasha_pictures():
     return render_template("admin/madrasha_pictures.html")

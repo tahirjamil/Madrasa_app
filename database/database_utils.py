@@ -113,7 +113,6 @@ def create_tables():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS routine (
                 routine_id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT,
                 gender ENUM('Male', 'Female') NOT NULL,
                 class_group VARCHAR(20) NOT NULL,
                 class_level VARCHAR(30) NOT NULL,

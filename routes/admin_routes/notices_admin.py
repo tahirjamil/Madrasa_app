@@ -3,7 +3,6 @@ from flask import request, render_template, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
 from datetime import datetime, date
 from . import admin_routes
-from config import Config
 from logger import log_event
 
 NOTICES_DIR = os.path.join('uploads', 'notices')

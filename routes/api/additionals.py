@@ -255,7 +255,10 @@ def get_routine():
             else:
                 cursor.execute("SELECT * FROM routine")
             result = cursor.fetchall()
-            return jsonify(result), 200
+            return jsonify({
+            "members": result,
+            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+            }), 200
     except Exception as e:
         log_event("get_routine_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {str(e)}"}), 500

@@ -247,16 +247,17 @@ def get_routine():
 
     data = request.get_json()
     lastfetched = data.get("updatedSince")
+    corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
     try:
         with conn.cursor() as cursor:
             if lastfetched:
-                cursor.execute("SELECT * FROM routine WHERE updated_at > %s", (lastfetched,))
+                cursor.execute("SELECT * FROM routine WHERE updated_at > %s ORDER BY class_level", (corrected_time))
             else:
-                cursor.execute("SELECT * FROM routine")
+                cursor.execute("SELECT * FROM routine ORDER BY class_level")
             result = cursor.fetchall()
             return jsonify({
-            "members": result,
+            "routine": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
             }), 200
     except Exception as e:

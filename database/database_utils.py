@@ -113,7 +113,7 @@ def create_tables():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS routine (
                 routine_id INT AUTO_INCREMENT PRIMARY KEY,
-                gender ENUM('Male', 'Female') NOT NULL,
+                gender ENUM('male', 'female') NOT NULL,
                 class_group VARCHAR(20) NOT NULL,
                 class_level VARCHAR(30) NOT NULL,
                 weekday ENUM('saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday') NOT NULL,
@@ -124,8 +124,7 @@ def create_tables():
                 name_bn VARCHAR(100),
                 name_ar VARCHAR(100),
                 serial INT NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES people(user_id)
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
 

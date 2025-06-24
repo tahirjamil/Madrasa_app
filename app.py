@@ -1,4 +1,4 @@
-from flask import Flask, render_template, current_app
+from flask import Flask, render_template, session, request
 from flask_cors import CORS
 from database import create_tables
 from waitress import serve
@@ -18,6 +18,28 @@ from routes.admin_routes import admin_routes
 app = Flask(__name__)
 CORS(app)
 load_dotenv()
+
+# In-memory log of the last 100 requests
+requests_log = []
+
+@app.before_request
+def log_request():
+    endpoint = request.endpoint or 'unknown'
+    ip       = request.remote_addr
+    # Block admin routes if not logged in
+    allowed  = True
+    if endpoint.startswith('admin_routes.') and not session.get('admin_logged_in'):
+        allowed = False
+
+    entry = {
+        'time':     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'ip':       ip,
+        'endpoint': endpoint,
+        'status':   'Allowed' if allowed else 'Blocked'
+    }
+    requests_log.append(entry)
+    if len(requests_log) > 100:
+        requests_log.pop(0)
 
 
 # Config for Uploads
@@ -41,10 +63,10 @@ app.register_blueprint(other_routes)
 # Registered Web Blueprints
 app.register_blueprint(admin_routes, url_prefix='/admin')
 
-# Home route showing server status
-@app.route("/status")
+# Routes
+@app.route('/status')
 def status():
-    return render_template('Server_Status.html')
+    return render_template('status.html', requests=requests_log)
 
 @app.route('/favicon.ico')
 def favicon():
@@ -54,6 +76,8 @@ def favicon():
 def home():
     return render_template("home.html", current_year=datetime.now().year)
 
+
+# App run
 if __name__ == "__main__":
     if os.environ.get("FLASK_ENV") == "development":
         print("Starting Flask dev server at http://0.0.0.0:8000")

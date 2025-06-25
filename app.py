@@ -96,13 +96,14 @@ def home():
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
-    URL = "http://localhost:8000/"
+    URL = "http://localhost:"
+    Port = "80"
 
     if os.environ.get("FLASK_ENV") == "development":
         print("Starting Flask dev server at http://0.0.0.0 with port:8000")
-        print(f"You can check server status at {URL}status or logs at {URL}info")
+        print(f"You can check server status at http://localhost:/8000/status or logs at http://localhost:/8000/info")
         app.run(debug=True, host="0.0.0.0", port=8000)
     else:
-        print("Starting production server with Waitress at http://0.0.0.0 with port:8000")
-        print(f"You can check server status at {URL}status or logs at {URL}info")
+        print(f"Starting production server with Waitress at {URL} with port:{Port}")
+        print(f"You can check server status at {URL, Port}status or logs at {URL, Port}info")
         serve(app, host="0.0.0.0", port=8000)

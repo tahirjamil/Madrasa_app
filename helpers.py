@@ -4,11 +4,11 @@ import phonenumbers
 from phonenumbers.phonenumberutil import NumberParseException
 import random
 import requests
-import os
+import os , subprocess, datetime
 from dotenv import load_dotenv
 from database import connect_to_db
 from logger import log_event
-import datetime
+
 
 load_dotenv()
 

@@ -18,22 +18,30 @@
   {% endwith %}
 
   <!-- Upload Form -->
-  <form action="{{ url_for('admin_routes.exam_results') }}" method="POST" enctype="multipart/form-data" class="mb-5">
+  <form action="{{ url_for('admin_routes.exam_results') }}" method="POST"
+        enctype="multipart/form-data" class="mb-5">
     <div class="row g-2 align-items-center">
-      <div class="col-md-3">
+      <div class="col-md-2">
         <input type="file" name="file" required class="form-control">
       </div>
       <div class="col-md-2">
         <input type="date" name="exam_date" required class="form-control">
       </div>
-      <div class="col-md-3">
-        <input type="text" name="exam_type" placeholder="Exam Type" required class="form-control">
+      <div class="col-md-2">
+        <input type="text" name="exam_type" placeholder="Exam Type" required
+               class="form-control">
       </div>
       <div class="col-md-2">
-        <input type="text" name="username" placeholder="Admin Username" required class="form-control">
+        <input type="text" name="exam_class" placeholder="Class" required
+               class="form-control">
       </div>
       <div class="col-md-2">
-        <input type="password" name="password" placeholder="Admin Password" required class="form-control">
+        <input type="text" name="username" placeholder="Admin Username" required
+               class="form-control">
+      </div>
+      <div class="col-md-2">
+        <input type="password" name="password" placeholder="Admin Password" required
+               class="form-control">
       </div>
     </div>
     <button type="submit" class="btn btn-success mt-2">Add Result</button>
@@ -47,6 +55,7 @@
           <th>File</th>
           <th>Exam Date</th>
           <th>Exam Type</th>
+          <th>Class</th>
           <th>Uploaded At</th>
           <th>Action</th>
         </tr>
@@ -55,24 +64,27 @@
         {% for r in results %}
         <tr>
           <td>
-            <a href="{{ url_for('static', filename='../../uploads/exam_results/' ~ r.filename) }}"
+            <a href="{{ url_for('static',
+                filename='../../uploads/exam_results/' ~ r.filename) }}"
                target="_blank">{{ r.filename }}</a>
           </td>
           <td>{{ r.exam_date }}</td>
           <td>{{ r.exam_type }}</td>
+          <td>{{ r.exam_class }}</td>
           <td>{{ r.uploaded_at }}</td>
           <td>
-            <form method="POST" action="{{ url_for('admin_routes.delete_exam_result', filename=r.filename) }}">
+            <form method="POST"
+                  action="{{ url_for('admin_routes.delete_exam_result', filename=r.filename) }}">
               <input type="hidden" name="username" value="admin">
-              <input type="password" name="password" placeholder="Password"
-                     required class="form-control form-control-sm w-auto d-inline">
+              <input type="password" name="password" placeholder="Password" required
+                     class="form-control form-control-sm w-auto d-inline">
               <button type="submit" class="btn btn-sm btn-danger mt-1">Delete</button>
             </form>
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="5" class="text-center text-muted">No exam results found.</td>
+          <td colspan="6" class="text-center text-muted">No exam results found.</td>
         </tr>
         {% endfor %}
       </tbody>

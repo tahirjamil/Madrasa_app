@@ -199,6 +199,9 @@ def add_person():
 def get_info():
     conn = connect_to_db()
 
+    now_utc = datetime.now(timezone.utc)
+    ts = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
     data = request.get_json()
     lastfetched = data.get('updatedSince')
 
@@ -214,7 +217,7 @@ def get_info():
                     phone, image_path AS picUrl, member_id, acc_type AS role,
                     mail, COALESCE(title1, title2, class) AS title
                     FROM people WHERE updated_at > %s AND member_id IS NOT NULL
-                """, (lastfetched,))
+                """, (lastfetched))
             else:
                 cursor.execute("""
                     SELECT name_en, name_bn, name_ar,

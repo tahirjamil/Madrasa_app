@@ -1,1 +1,10 @@
 flask
+flask-cors
+dotenv
+waitress
+password-validator
+phonenumbers
+requests
+pymysql
+pillow
+cryptography

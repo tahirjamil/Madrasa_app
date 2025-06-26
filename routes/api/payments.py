@@ -44,7 +44,7 @@ def payment():
     special_food = result['special_food']
     reduce_fee = result['reduce_fee']
     food = result['food']
-    due_months = result['due_months']
+    due_months = result['month']
 
     # Calculate fees
     fees = calculate_fees(class_name, gender, special_food, reduce_fee, food)

@@ -61,7 +61,7 @@ def attach_response_data(response):
             entry["res_json"] = None
     return response
 
-# ─── Status & Info Routes ───────────────────────────────────
+# ─── Routes ───────────────────────────────────
 @app.route("/status")
 def status():
     if not session.get('admin_logged_in'):
@@ -75,7 +75,16 @@ def info():
     logs = request_response_log[-100:]
     return render_template("info.html", logs=logs)
 
+@app.route("/donate")
+def donate():
+    return render_template("donate.html", current_year=datetime.now().year)
+
+@app.route("/")
+def home():
+    return render_template("home.html", current_year=datetime.now().year)
+
 # ─── Error & Favicon ────────────────────────────────────────
+
 @app.errorhandler(404)
 def not_found(e):
     return render_template('404.html'), 404
@@ -85,25 +94,21 @@ def favicon():
     return '', 204
 
 # ─── Register Blueprints ────────────────────────────────────
+
 app.register_blueprint(api_auth_routes)
 app.register_blueprint(payment_routes)
 app.register_blueprint(other_routes)
 app.register_blueprint(admin_routes, url_prefix='/admin')
 
-@app.route("/")
-def home():
-    return render_template("home.html", current_year=datetime.now().year)
-
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
-    URL = "http://localhost:"
-    Port = "80"
+    URL = "http://localhost:80"
 
     if os.environ.get("FLASK_ENV") == "development":
         print("Starting Flask dev server at http://0.0.0.0 with port:8000")
         print(f"You can check server status at http://localhost:/8000/status or logs at http://localhost:/8000/info")
         app.run(debug=True, host="0.0.0.0", port=8000)
     else:
-        print(f"Starting production server with Waitress at {URL} with port:{Port}")
-        print(f"You can check server status at {URL, Port}status or logs at {URL, Port}info")
-        serve(app, host="0.0.0.0", port=8000)
+        print(f"Starting production server with Waitress at {URL}")
+        print(f"You can check server status at {URL}/status or logs at {URL}/info")
+        serve(app, host="0.0.0.0", port=80)

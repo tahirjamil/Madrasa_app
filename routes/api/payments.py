@@ -159,20 +159,26 @@ def get_transactions():
                 ORDER BY transactions.date DESC
             """, (formatted_phone, fullname, correctedtime))
             transactions = cursor.fetchall()
-        
-    with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT transactions.type, transactions.month AS details, transactions.amount, transactions.date
-                FROM transactions
-                JOIN users ON transactions.id = users.id
-                WHERE users.phone = %s AND LOWER(users.fullname) = LOWER(%s)
-                ORDER BY transactions.date DESC
-            """, (formatted_phone, fullname))
-            transactions = cursor.fetchall()
+    else:
+        with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT transactions.type, transactions.month AS details, transactions.amount, transactions.date
+                    FROM transactions
+                    JOIN users ON transactions.id = users.id
+                    WHERE users.phone = %s AND LOWER(users.fullname) = LOWER(%s)
+                    ORDER BY transactions.date DESC
+                """, (formatted_phone, fullname))
+                transactions = cursor.fetchall()
 
 
     if not transactions:
         return jsonify({"message": "No transactions found"}), 404
+    
+    # Convert datetime to ISO 8601 format
+    for tx in transactions:
+        if isinstance(tx.get("date"), datetime):
+            tx["date"] = tx["date"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
 
     return jsonify({
         "transactions":transactions, 

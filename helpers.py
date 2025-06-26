@@ -4,7 +4,7 @@ import phonenumbers
 from phonenumbers.phonenumberutil import NumberParseException
 import random
 import requests
-import os , subprocess, datetime
+import os , datetime
 from dotenv import load_dotenv
 from database import connect_to_db
 from logger import log_event
@@ -129,5 +129,8 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
             total += 1200
         else:
             total += 1500
+    
+    if reduce_fee:
+        total - reduce_fee
 
-    return total - reduce_fee
+    return total

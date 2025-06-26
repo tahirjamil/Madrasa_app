@@ -25,7 +25,7 @@ def payment():
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT people.class, people.gender, payment.special_food, payment.reduce_fee,
-                   payment.food, payment.due_months, users.phone, users.fullname
+                   payment.food, payment.due_months AS monthCount, users.phone, users.fullname
             FROM users
             JOIN people ON people.id = users.id
             JOIN payment ON payment.id = users.id

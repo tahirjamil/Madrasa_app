@@ -49,7 +49,7 @@ def payment():
     # Calculate fees
     fees = calculate_fees(class_name, gender, special_food, reduce_fee, food)
 
-    return jsonify({"fees": fees, "due_months": due_months}), 200
+    return jsonify({"amount": fees, "month": due_months}), 200
 
 # ====== Save Payment Transaction ======
 @payment_routes.route('/add_transaction', methods=['POST'])

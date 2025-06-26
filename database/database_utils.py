@@ -45,10 +45,10 @@ def create_tables():
             CREATE TABLE IF NOT EXISTS transactions (
                 transaction_id INT PRIMARY KEY AUTO_INCREMENT,
                 id INT NOT NULL,
-                type ENUM('payment', 'donation') NOT NULL,
+                type ENUM('fees', 'donation') NOT NULL,
                 month VARCHAR(50),
                 amount INT NOT NULL,
-                date DATE NOT NULL,
+                date DATETIME NOT NULL,
                 FOREIGN KEY (id) REFERENCES users(id),
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )

@@ -2,7 +2,7 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="container">
+<div class="container py-4">
   <h2 class="mb-4">Madrasha DB Admin</h2>
 
   <!-- Flash Messages -->
@@ -18,56 +18,75 @@
   {% endwith %}
 
   <!-- DB Selector -->
-  <form method="get" class="mb-4">
-    <label for="db" class="form-label">Select Database:</label>
-    <select name="db" id="db" class="form-select w-auto d-inline" onchange="this.form.submit()">
+  <form method="get" class="mb-4 d-inline-block">
+    <label for="db" class="form-label me-2">Select Database:</label>
+    <select name="db" id="db" class="form-select d-inline-block w-auto"
+            onchange="this.form.submit()">
       {% for db in databases %}
-        <option value="{{ db }}" {% if db == selected_db %}selected{% endif %}>{{ db }}</option>
+        <option value="{{ db }}" {% if db==selected_db %}selected{% endif %}>{{ db }}</option>
       {% endfor %}
     </select>
   </form>
 
   <!-- MySQL Terminal -->
-  <h4 class="mt-4">Run MySQL Command (no DROP/TRUNCATE)</h4>
+  <h4 class="mt-5">Run MySQL Command (no DROP/TRUNCATE)</h4>
   <form method="POST" class="mb-4">
-    <div class="row g-2">
-      <div class="col-md-8">
-        <input type="text" name="sql" placeholder="e.g., SELECT * FROM users" required class="form-control">
+    <div class="row g-2 align-items-center">
+      <div class="col-md-6">
+        <div class="input-group">
+          <input id="sql-input" type="text" name="sql"
+                 placeholder="e.g. SELECT * FROM users"
+                 required class="form-control">
+          <button type="button" class="btn btn-outline-secondary"
+                  id="copy-sql-btn" title="Copy to clipboard">
+            📋
+          </button>
+        </div>
       </div>
       <div class="col-md-2">
-        <input type="text" name="username" placeholder="Admin Username" required class="form-control">
+        <input type="text" name="username" placeholder="Admin Username"
+               required class="form-control">
       </div>
       <div class="col-md-2">
-        <input type="password" name="password" placeholder="Password" required class="form-control">
+        <input type="password" name="password" placeholder="Password"
+               required class="form-control">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">Execute</button>
       </div>
     </div>
-    <button type="submit" class="btn btn-primary btn-sm mt-2">Execute</button>
   </form>
 
-  <!-- Query Output -->
+  <!-- Query Output + Filter -->
   {% if query_result %}
     <h5>Result:</h5>
     {% if query_result is string %}
       <div class="alert alert-success">{{ query_result }}</div>
     {% elif query_result %}
-      <table class="table table-sm table-bordered">
-        <thead>
-          <tr>
-            {% for col in query_result[0].keys() %}
-              <th>{{ col }}</th>
+      <div class="mb-2">
+        <input id="result-filter" type="text" class="form-control"
+               placeholder="Filter results...">
+      </div>
+      <div class="table-responsive">
+        <table id="result-table" class="table table-sm table-bordered">
+          <thead>
+            <tr>
+              {% for col in query_result[0].keys() %}
+                <th>{{ col }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in query_result %}
+            <tr>
+              {% for val in row.values() %}
+                <td>{{ val }}</td>
+              {% endfor %}
+            </tr>
             {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in query_result %}
-          <tr>
-            {% for val in row.values() %}
-              <td>{{ val }}</td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
     {% endif %}
   {% endif %}
 
@@ -75,31 +94,87 @@
     <div class="alert alert-danger mt-3"><strong>Error:</strong> {{ query_error }}</div>
   {% endif %}
 
-  <!-- Table Descriptions -->
+  <!-- Table Descriptions with Accordion + Filter -->
   <h4 class="mt-5">Tables in <code>{{ selected_db }}</code></h4>
-  {% for table, description in tables.items() %}
-    <div class="mt-4">
-      <h5>{{ table }}</h5>
-      <table class="table table-sm table-bordered">
-        <thead>
-          <tr>
-            <th>Field</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>Extra</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in description %}
-          <tr>
-            <td>{{ row.Field }}</td>
-            <td>{{ row.Type }}</td>
-            <td>{{ row.Null }}</td>
-            <td>{{ row.Key }}</td>
-            <td>{{ row.Default }}</td>
-            <td>{{ row.Extra }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% endfor %}
+  <div class="mb-3 w-25">
+    <input id="table-filter" type="text" class="form-control"
+           placeholder="Filter tables...">
+  </div>
+  <div class="accordion" id="tablesAccordion">
+    {% for table, description in tables.items() %}
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="heading-{{ loop.index }}">
+          <button class="accordion-button collapsed" type="button"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#collapse-{{ loop.index }}">
+            {{ table }}
+          </button>
+        </h2>
+        <div id="collapse-{{ loop.index }}"
+             class="accordion-collapse collapse"
+             data-bs-parent="#tablesAccordion">
+          <div class="accordion-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered mb-0">
+                <thead class="table-dark">
+                  <tr>
+                    <th>Field</th><th>Type</th><th>Null</th>
+                    <th>Key</th><th>Default</th><th>Extra</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in description %}
+                  <tr>
+                    <td>{{ row.Field   }}</td>
+                    <td>{{ row.Type    }}</td>
+                    <td>{{ row.Null    }}</td>
+                    <td>{{ row.Key     }}</td>
+                    <td>{{ row.Default }}</td>
+                    <td>{{ row.Extra   }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
 </div>
+
+<!-- JS: Copy, Filter & Accordion -->
+<script>
+// Copy SQL to clipboard
+document.getElementById('copy-sql-btn').addEventListener('click', () => {
+  const sql = document.getElementById('sql-input').value;
+  navigator.clipboard.writeText(sql).then(() => {
+    alert('SQL copied!');
+  });
+});
+
+// Filter query results
+const resultFilter = document.getElementById('result-filter');
+if (resultFilter) {
+  resultFilter.addEventListener('keyup', () => {
+    const term = resultFilter.value.toLowerCase();
+    document.querySelectorAll('#result-table tbody tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(term)
+                         ? '' : 'none';
+    });
+  });
+}
+
+// Filter table accordions
+document.getElementById('table-filter')
+  .addEventListener('keyup', function() {
+    const term = this.value.toLowerCase();
+    document.querySelectorAll('#tablesAccordion .accordion-item')
+      .forEach(item => {
+        const header = item.querySelector('.accordion-button')
+                           .textContent.toLowerCase();
+        item.style.display = header.includes(term) ? '' : 'none';
+      });
+});
+</script>
 {% endblock %}

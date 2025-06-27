@@ -2,11 +2,12 @@ import os
 import datetime
 import subprocess
 import glob
+from config import Config
 
 # ======= Configuration ========
-DB_NAME = "madrasadb"
-DB_USER = "tahir"
-DB_PASSWORD = "tahir"
+DB_NAME = Config.MYSQL_DB
+DB_USER = Config.MYSQL_USER
+DB_PASSWORD = Config.MYSQL_PASSWORD
 MAX_BACKUPS = 20
 
 # ======= Paths ========
@@ -24,9 +25,9 @@ dump_command = f"mysqldump -u {DB_USER} -p{DB_PASSWORD} {DB_NAME} > \"{backup_pa
 
 try:
     subprocess.run(dump_command, shell=True, check=True)
-    print(f"✅ Backup created: {backup_path}")
+    print(f"Backup created: {backup_path}")
 except subprocess.CalledProcessError as e:
-    print(f"❌ Backup failed: {e}")
+    print(f"Backup failed: {e}")
     exit(1)
 
 # ======= Cleanup Old Backups ========
@@ -38,6 +39,6 @@ if len(backups) > MAX_BACKUPS:
     for file in old_backups:
         try:
             os.remove(file)
-            print(f"🗑 Deleted old backup: {file}")
+            print(f"Deleted old backup: {file}")
         except Exception as e:
-            print(f"⚠️ Error deleting {file}: {e}")
+            print(f"Error deleting {file}: {e}")

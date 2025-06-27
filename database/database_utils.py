@@ -193,6 +193,7 @@ def create_tables():
             event_id     INT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
             created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                             ON UPDATE CURRENT_TIMESTAMP,
+            type         ENUM('event', 'function') NOT NULL,
             title        VARCHAR(50),
             time         TIMESTAMP NOT NULL,
             date         DATE      NOT NULL,

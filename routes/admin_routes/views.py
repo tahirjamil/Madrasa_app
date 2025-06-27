@@ -252,7 +252,7 @@ def verify_member(verify_people_id):
 
     return redirect(url_for('admin_routes.members'))
 
-@admin_routes.route('/add_member', methods=['GET','POST'])
+@admin_routes.route('/member/add', methods=['GET','POST'])
 def add_member():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -387,6 +387,143 @@ def delete_notice(filename):
     return redirect(url_for('admin_routes.notice_page'))
 
 
+# ------------------ Routine ----------------------
+
+@admin_routes.route('/routine', methods=['GET'])
+def routine():
+    # require login
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    conn = connect_to_db()
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("""
+                SELECT *
+                  FROM routine
+                 ORDER BY class_group ASC, serial ASC
+            """)
+            rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    # group by class_group
+    routines_by_class = {}
+    for r in rows:
+        routines_by_class.setdefault(r['class_group'], []).append(r)
+
+    return render_template(
+        'admin/routine.html',
+        routines_by_class=routines_by_class
+    )
+
+@admin_routes.route('/routine/add', methods=['GET', 'POST'])
+def add_routine():
+    # 1) require login
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    if request.method == 'POST':
+        # 2) grab form values
+        data = request.form.to_dict()
+        # TODO: validate & possibly look up IDs from people/book tables
+        # e.g. if data['name_mode']=='id': lookup the three name fields...
+        # then insert into routine table:
+        try:
+            conn = connect_to_db()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO routine
+                      (gender, class_group, class_level, weekday,
+                       subject_en, subject_bn, subject_ar,
+                       name_en,    name_bn,    name_ar,
+                       serial)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, [
+                    data['gender'],
+                    data['class_group'],
+                    data['class_level'],
+                    data['weekday'],
+                    data.get('subject_en'),
+                    data.get('subject_bn'),
+                    data.get('subject_ar'),
+                    data.get('name_en'),
+                    data.get('name_bn'),
+                    data.get('name_ar'),
+                    data['serial']
+                ])
+                conn.commit()
+            flash("Routine added successfully.", "success")
+            return redirect(url_for('admin_routes.routine_admin'))
+        except Exception as e:
+            flash(f"Error adding routine: {e}", "danger")
+        finally:
+            conn.close()
+
+    # GET → show form
+    return render_template('admin/add_routine.html')
+
+
+
+
+# -------------------- Event / Function ------------------------
+
+@admin_routes.route('/events', methods=['GET', 'POST'])
+def events():
+    # ─── require login ────────────────────────────────────────────
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    conn = connect_to_db()
+    events = []
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            # ─── handle form submission ────────────────────────────
+            if request.method == 'POST':
+                username     = request.form.get('username', '').strip()
+                password     = request.form.get('password', '').strip()
+                ADMIN_USER   = os.getenv("ADMIN_USERNAME")
+                ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
+
+                if username != ADMIN_USER or password != ADMIN_PASS:
+                    flash("❌ Invalid admin credentials.", "danger")
+                else:
+                    title        = request.form.get('title', '').strip()
+                    evt_type     = request.form.get('type')
+                    date_str     = request.form.get('date')       # YYYY-MM-DD
+                    time_str     = request.form.get('time')       # HH:MM
+                    function_url = request.form.get('function_url') or None
+
+                    # Combine into a full timestamp string
+                    # MySQL will parse "YYYY-MM-DD HH:MM"
+                    datetime_str = f"{date_str} {time_str}"
+
+                    cursor.execute("""
+                        INSERT INTO events
+                          (type, title, time, date, function_url)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (evt_type, title, datetime_str, date_str, function_url))
+                    conn.commit()
+                    flash("✅ Event added successfully.", "success")
+
+            # ─── fetch all events ────────────────────────────────────
+            cursor.execute("""
+                SELECT event_id, type, title, date, time, function_url
+                  FROM events
+                 ORDER BY date  DESC,
+                          time  DESC
+            """)
+            events = cursor.fetchall()
+
+    except Exception as e:
+        flash(f"⚠️ Database error: {e}", "danger")
+
+    finally:
+        conn.close()
+
+    return render_template("admin/events.html", events=events)
+
+
 
 
 
@@ -416,15 +553,6 @@ def delete_notice(filename):
 
 
 # ------------------- Others ------------------------
-
-
-@admin_routes.route('/routine')
-def routine():
-    return render_template("admin/routine.html")
-
-@admin_routes.route('/events')
-def events():
-    return render_template("admin/events.html")
 
 @admin_routes.route('/madrasha_pictures')
 def madrasha_pictures():

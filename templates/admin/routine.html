@@ -1,5 +1,52 @@
 {% extends "admin/base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Class Routine{% endblock %}
+
 {% block content %}
-  <h2>This is sample page: Dashboard</h2>
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+     <h2 class="mb-0">📋 Class Routine</h2>
+     <a href="{{ url_for('admin_routes.add_routine') }}"
+        class="btn btn-sm btn-primary">
+       + Add Routine
+     </a>
+   </div>
+
+  {% if routines_by_class %}
+    <!-- Flex row that scrolls horizontally if necessary -->
+    <div class="row flex-nowrap overflow-auto gx-4">
+      {% for class_group, routines in routines_by_class.items() %}
+        <div class="col-auto">
+          <h5 class="text-center">{{ class_group }}</h5>
+          <div class="table-responsive">
+            <table class="table table-bordered table-sm mb-0">
+              <thead class="table-dark">
+                <tr>
+                  <th>#</th>
+                  <th>Weekday</th>
+                  <th>Subject</th>
+                  <th>Teacher</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in routines %}
+                <tr>
+                  <td>{{ r.serial }}</td>
+                  <td>{{ r.weekday.title() }}</td>
+                  <td>{{ r.subject_en }}</td>
+                  <td>{{ r.name_en }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-info text-center">
+      No routines found.
+    </div>
+  {% endif %}
+
+</div>
 {% endblock %}

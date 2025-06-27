@@ -18,7 +18,7 @@ def members():
             # Fetch all people and pending verifies
             cursor.execute("SELECT * FROM people")
             people = cursor.fetchall()
-            cursor.execute("SELECT * FROM verify")
+            cursor.execute("SELECT * FROM verify_people")
             pending = cursor.fetchall()
     finally:
         conn.close()
@@ -35,8 +35,8 @@ def members():
                            pending=pending)
 
 
-@admin_routes.route('/members/verify/<int:verify_id>', methods=['POST'])
-def verify_member(verify_id):
+@admin_routes.route('/members/verify_people/<int:verify_people_id>', methods=['POST'])
+def verify_member(verify_people_id):
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
@@ -44,7 +44,7 @@ def verify_member(verify_id):
     try:
         with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
             # Fetch pending user
-            cursor.execute("SELECT * FROM verify WHERE id = %s", (verify_id,))
+            cursor.execute("SELECT * FROM verify_people WHERE id = %s", (verify_people_id,))
             row = cursor.fetchone()
             if not row:
                 flash("No pending user found.", "warning")
@@ -56,16 +56,16 @@ def verify_member(verify_id):
             sql = f"INSERT INTO people ({cols}) VALUES ({placeholders})"
             cursor.execute(sql, tuple(row.values()))
 
-            # Remove from verify table
-            cursor.execute("DELETE FROM verify WHERE id = %s", (verify_id,))
+            # Remove from verify_people table
+            cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
             conn.commit()
 
             flash("Member verified successfully.", "success")
-            log_event("member_verified", session.get('admin_username', 'admin'), f"ID {verify_id}")
+            log_event("member_verified", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
     except Exception as e:
         conn.rollback()
         flash(f"Error verifying member: {e}", "danger")
-        log_event("verify_error", session.get('admin_username', 'admin'), str(e))
+        log_event("verify_people_error", session.get('admin_username', 'admin'), str(e))
     finally:
         conn.close()
 

@@ -65,7 +65,7 @@ def create_tables():
         
         # People & Verify Table
 
-        tables = ['people', 'verify']
+        tables = ['people', 'verify_people']
         for table in tables:
 
             cursor.execute(f"""

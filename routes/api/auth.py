@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify
+import pymysql.cursors
 from werkzeug.security import generate_password_hash, check_password_hash
 from pymysql.err import IntegrityError
-import datetime
+import pymysql
 from database import connect_to_db
 from helpers import validate_fullname, validate_password, send_sms, format_phone_number, generate_code, check_code
 from logger import log_event
@@ -85,22 +86,50 @@ def login():
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
+        log_event("auth_invalid_phone", phone, "Invalid phone format")
         return jsonify({"message": "Invalid phone number format"}), 400
 
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "SELECT password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-            (formatted_phone, fullname)
-        )
-        result = cursor.fetchone()
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(
+                "SELECT id, password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                (formatted_phone, fullname)
+            )
+            user = cursor.fetchone()
 
-        if not result:
-            return jsonify({"message": "User not found"}), 404
-        if check_password_hash(result['password'], password):
-            return jsonify({"success": "Login successful"}), 200
-        else:
-            return jsonify({"message": "Incorrect password"}), 401
-        
+            if not user:
+                log_event("auth_user_not_found", formatted_phone, f"User {fullname} not found")
+                return jsonify({"message": "User not found"}), 404
+            
+            if not check_password_hash(user["password"], password):
+                log_event("auth_incorrect_password", formatted_phone, "Incorrect password")
+                return jsonify({"message": "Incorrect password"}), 401
+            
+            cursor.execute(
+                """
+                SELECT u.id, u.fullname, u.phone, p.* 
+                FROM users u
+                LEFT JOIN people p ON p.id = u.id
+                WHERE u.id = %s
+                """,
+                (user["id"],)
+            )
+            info = cursor.fetchone()
+
+            if not info or not info.get("phone"):
+                log_event("auth_additional_info_required", formatted_phone, "Missing profile info")
+                return jsonify({"message": "Additional info required"}), 400
+            
+            info.pop("password", None)
+
+            return jsonify({"success": "Login successful", "info": info}), 200
+            
+    except Exception as e:
+        log_event("auth_error", formatted_phone, str(e))
+        return jsonify({"message": "Internal server error"}), 500
+
+    finally:
+        conn.close()
 
 @api_auth_routes.route("/send_code", methods=["POST"])
 def send_verification_code():

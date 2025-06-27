@@ -13,7 +13,11 @@ from routes.api.additionals import other_routes
 from routes.admin_routes import admin_routes
 
 # ─── App Setup ──────────────────────────────────────────────
-load_dotenv()
+if os.path.isfile("dev.env"):
+    load_dotenv("dev.env")
+else:
+    load_dotenv(".env")
+
 app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
@@ -102,13 +106,20 @@ app.register_blueprint(admin_routes, url_prefix='/admin')
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
-    URL = "http://localhost:80"
+    env = os.environ.get("FLASK_ENV", "production")
 
-    if os.environ.get("FLASK_ENV") == "development":
-        print("Starting Flask dev server at http://0.0.0.0 with port:8000")
-        print(f"You can check server status at http://localhost:/8000/status or logs at http://localhost:/8000/info")
-        app.run(debug=True, host="0.0.0.0", port=8000)
+    if env == "development":
+        host = "0.0.0.0"
+        port = 8000
+        URL = f"http://localhost:{port}"
+        print(f"Starting Flask dev server at {URL}")
+        print(f"You can check server status at {URL}/status or logs at {URL}/info")
+        app.run(debug=True, host=host, port=port)
+
     else:
+        host = "0.0.0.0"
+        port = 80
+        URL = f"http://localhost:"
         print(f"Starting production server with Waitress at {URL}")
         print(f"You can check server status at {URL}/status or logs at {URL}/info")
-        serve(app, host="0.0.0.0", port=80)
+        serve(app, host=host, port=port)

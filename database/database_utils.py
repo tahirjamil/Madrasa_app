@@ -162,6 +162,7 @@ def create_tables():
                 sec_end_time TIMESTAMP,
                 date DATE NOT NULL,
                 weekday ENUM('saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday') NOT NULL
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
 
@@ -169,11 +170,10 @@ def create_tables():
             CREATE TABLE IF NOT EXISTS event (
                 event_id INT AUTO_INCREMENT PRIMARY KEY,
                 title VARCHAR(50),
-                start_time TIMESTAMP NOT NULL,
-                end_time TIMESTAMP,
-                start_date DATE NOT NULL,
-                end_date DATE,
+                time TIMESTAMP NOT NULL,
+                date DATE NOT NULL,
                 function_url TEXT
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
 

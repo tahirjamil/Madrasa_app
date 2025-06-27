@@ -2,6 +2,8 @@ from flask import request, jsonify, current_app, send_from_directory
 from . import user_routes
 import pymysql
 import os
+from datetime import datetime, date, timezone
+from zoneinfo import ZoneInfo
 import pymysql.cursors
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -227,11 +229,18 @@ def get_routine():
 
     try:
         with conn.cursor() as cursor:
+            sql = "SELECT * FROM routine"
+            params = []
+            
             if lastfetched:
-                cursor.execute("SELECT * FROM routine WHERE updated_at > %s ORDER BY class_level", (corrected_time))
-            else:
-                cursor.execute("SELECT * FROM routine ORDER BY class_level")
+                sql += " WHERE updated_at > %s"
+                params.append(corrected_time)
+
+            sql += " ORDER BY class_level"
+
+            cursor.execute(sql, params)
             result = cursor.fetchall()
+
             return jsonify({
             "routine": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
@@ -242,28 +251,105 @@ def get_routine():
     finally:
         conn.close()
 
+
 @user_routes.route('/events', methods=['POST'])
 def events():
-    conn = connect_to_db
-    data = request.get_json()
+    data = request.get_json() or {}
     lastfetched = data.get('updatedSince')
-    corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
+    DHAKA = ZoneInfo("Asia/Dhaka")
 
     sql = "SELECT * FROM events"
+    params = []
 
     if lastfetched:
-        sql += " WHERE updated_at > %s", (corrected_time)
+        try:
+            cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
+            sql += " WHERE created_at > %s"
+            params.append(cutoff)
+        except ValueError:
+            log_event("get_events_failed", "NULL", f"Invalid timestamp: {lastfetched}")
+            return jsonify({"error": "Invalid updatedSince format"}), 400
 
+    sql += " ORDER BY event_id DESC"
+
+    conn = connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(sql)
-            event_list = cursor.fetchall()
-            return jsonify({
-                "events": event_list, 
-                "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
-            }), 200
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
     except Exception as e:
         log_event("get_events_failed", "NULL", str(e))
-        return jsonify({"message": f"Database error: {str(e)}"}), 500
+        return jsonify({"message": f"Database error: {e}"}), 500
+    finally:
+        conn.close()
+
+    now_dhaka = datetime.now(DHAKA)
+    today     = now_dhaka.date()
+
+    for ev in rows:
+        ev_dt = ev.get("date") or ev.get("event_date")
+
+        if isinstance(ev_dt, datetime):
+            ev_dt_local = ev_dt.astimezone(DHAKA)
+            ev_date     = ev_dt_local.date()
+            ev["date"]  = ev_dt_local.isoformat()
+
+        elif isinstance(ev_dt, date):
+            ev_date = ev_dt
+            ev["date"] = ev_dt.isoformat()
+
+        else:
+            ev_date = None
+
+        if ev_date:
+            if ev_date > today:
+                ev["type"] = "upcoming"
+            elif ev_date == today:
+                ev["type"] = "ongoing"
+            else:
+                ev["type"] = "past"
+        else:
+            ev["status"] = "unknown"
+
+    return jsonify({
+        "events": rows,
+        "lastSyncedAt": datetime.now(timezone.utc)
+                             .isoformat().replace("+00:00","Z")
+    }), 200
+
+@user_routes.route('/exam', methods=['POST'])
+def get_exams():
+    conn = connect_to_db()
+    data = request.get_json()
+    lastfetched = data.get("updatedSince")
+    cutoff = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
+
+    sql = "SELECT * FROM exam"
+    params = []
+
+    if lastfetched:
+        try:
+            sql += " WHERE created_at > %s"
+            params.append(cutoff)
+
+        except ValueError:
+            log_event("get_exams_failed", "NULL", f"Invalid timestamp: {lastfetched}")
+            return jsonify({"error": "Invalid updatedSince format"}), 400
+    
+    sql += " ORDER BY exam_id"
+
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(sql, params)
+            result = cursor.fetchall
+
+            return jsonify({
+                "exams": result,
+                "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                })
+        
+    except Exception as e:
+        log_event("get_events_failed", "NULL", str(e))
+        return jsonify({"message": f"Database error: {e}"}), 500
     finally:
         conn.close()

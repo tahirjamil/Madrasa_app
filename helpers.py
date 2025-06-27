@@ -165,7 +165,7 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
 
 # Fetch ID
 def get_id(phone, fullname):
-    conn = connect_to_db
+    conn = connect_to_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
@@ -176,7 +176,7 @@ def get_id(phone, fullname):
 
 # Insert People
 def insert_person(fields: dict):
-    conn = connect_to_db
+    conn = connect_to_db()
     try:
         with conn.cursor() as cursor:
             columns = ', '.join(fields.keys())

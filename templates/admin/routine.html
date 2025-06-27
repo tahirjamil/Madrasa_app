@@ -3,44 +3,69 @@
 
 {% block content %}
 <div class="container-fluid">
+
   <div class="d-flex justify-content-between align-items-center mb-4">
-     <h2 class="mb-0">📋 Class Routine</h2>
-     <a href="{{ url_for('admin_routes.add_routine') }}"
-        class="btn btn-sm btn-primary">
-       + Add Routine
-     </a>
-   </div>
+    <h2 class="mb-0">📋 Class Routine</h2>
+    <a href="{{ url_for('admin_routes.add_routine') }}"
+       class="btn btn-sm btn-primary">
+      + Add Routine
+    </a>
+  </div>
+
+  <!-- Search / Filter -->
+  <div class="row mb-3 g-2 align-items-center">
+    <div class="col-auto">
+      <input id="routine-search" type="text"
+             class="form-control"
+             placeholder="Search by Subject or Teacher…">
+    </div>
+    <div class="col-auto">
+      <button id="clear-search" class="btn btn-secondary">
+        Clear
+      </button>
+    </div>
+  </div>
 
   {% if routines_by_class %}
-    <!-- Flex row that scrolls horizontally if necessary -->
     <div class="row flex-nowrap overflow-auto gx-4">
+
       {% for class_group, routines in routines_by_class.items() %}
-        <div class="col-auto">
-          <h5 class="text-center">{{ class_group }}</h5>
-          <div class="table-responsive">
-            <table class="table table-bordered table-sm mb-0">
-              <thead class="table-dark">
-                <tr>
-                  <th>#</th>
-                  <th>Weekday</th>
-                  <th>Subject</th>
-                  <th>Teacher</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for r in routines %}
-                <tr>
-                  <td>{{ r.serial }}</td>
-                  <td>{{ r.weekday.title() }}</td>
-                  <td>{{ r.subject_en }}</td>
-                  <td>{{ r.name_en }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+      <div class="col-auto">
+        <div class="card mb-3">
+          <div class="card-header p-2 d-flex justify-content-between align-items-center">
+            <strong>{{ class_group }}</strong>
+            <button class="btn btn-sm btn-light toggle-panel" type="button">
+              Hide
+            </button>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-bordered table-sm mb-0">
+                <thead class="table-dark">
+                  <tr>
+                    <th>#</th>
+                    <th>Weekday</th>
+                    <th>Subject</th>
+                    <th>Teacher</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in routines %}
+                  <tr class="routine-row">
+                    <td>{{ r.serial }}</td>
+                    <td class="weekday-cell">{{ r.weekday.title() }}</td>
+                    <td class="subject-cell">{{ r.subject_en }}</td>
+                    <td class="teacher-cell">{{ r.name_en }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
+      </div>
       {% endfor %}
+
     </div>
   {% else %}
     <div class="alert alert-info text-center">
@@ -49,4 +74,63 @@
   {% endif %}
 
 </div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<style>
+  /* Highlight today’s weekday */
+  .highlight-today {
+    background-color: #ffeeba !important;
+  }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const searchInput = document.getElementById('routine-search');
+  const clearBtn    = document.getElementById('clear-search');
+  const rows        = Array.from(document.querySelectorAll('.routine-row'));
+
+  // Filter function
+  function applyFilter() {
+    const term = searchInput.value.trim().toLowerCase();
+    rows.forEach(row => {
+      const subj = row.querySelector('.subject-cell').textContent.toLowerCase();
+      const teach= row.querySelector('.teacher-cell').textContent.toLowerCase();
+      const match = !term || subj.includes(term) || teach.includes(term);
+      row.style.display = match ? '' : 'none';
+    });
+  }
+
+  searchInput.addEventListener('input', applyFilter);
+  clearBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    applyFilter();
+  });
+
+  // Highlight today’s weekday
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const today = days[new Date().getDay()];
+  document.querySelectorAll('.weekday-cell').forEach(cell => {
+    if (cell.textContent === today) {
+      cell.classList.add('highlight-today');
+    }
+  });
+
+  // Collapse / Expand panels
+  document.querySelectorAll('.toggle-panel').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.card');
+      const body = card.querySelector('.card-body');
+      if (body.style.display === 'none') {
+        body.style.display = '';
+        btn.textContent = 'Hide';
+      } else {
+        body.style.display = 'none';
+        btn.textContent = 'Show';
+      }
+    });
+  });
+});
+</script>
 {% endblock %}

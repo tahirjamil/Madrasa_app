@@ -19,37 +19,57 @@
 
   <!-- Upload Form -->
   <form action="{{ url_for('admin_routes.exam_results') }}" method="POST"
-        enctype="multipart/form-data" class="mb-5">
-    <div class="row g-2 align-items-center">
-      <div class="col-md-2">
-        <input type="file" name="file" required class="form-control">
-      </div>
-      <div class="col-md-2">
-        <input type="date" name="exam_date" required class="form-control">
-      </div>
-      <div class="col-md-2">
-        <input type="text" name="exam_type" placeholder="Exam Type" required
-               class="form-control">
-      </div>
-      <div class="col-md-2">
-        <input type="text" name="exam_class" placeholder="Class" required
-               class="form-control">
-      </div>
-      <div class="col-md-2">
-        <input type="text" name="username" placeholder="Admin Username" required
-               class="form-control">
-      </div>
-      <div class="col-md-2">
-        <input type="password" name="password" placeholder="Admin Password" required
-               class="form-control">
-      </div>
+        enctype="multipart/form-data" class="mb-4 row g-2 align-items-end">
+    <div class="col-auto">
+      <label class="form-label">File*</label>
+      <input id="file-input" type="file" name="file" required class="form-control">
+      <div id="file-name" class="form-text"></div>
     </div>
-    <button type="submit" class="btn btn-success mt-2">Add Result</button>
+    <div class="col-auto">
+      <label class="form-label">Date*</label>
+      <input type="date" name="exam_date" required class="form-control">
+    </div>
+    <div class="col-auto">
+      <label class="form-label">Type*</label>
+      <input type="text" name="exam_type" placeholder="Exam Type" required class="form-control">
+    </div>
+    <div class="col-auto">
+      <label class="form-label">Class*</label>
+      <input type="text" name="exam_class" placeholder="Class" required class="form-control">
+    </div>
+    <div class="col-auto">
+      <label class="form-label">Username*</label>
+      <input type="text" name="username" placeholder="Admin Username" required class="form-control">
+    </div>
+    <div class="col-auto">
+      <label class="form-label">Password*</label>
+      <input type="password" name="password" placeholder="Admin Password" required class="form-control">
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-success">Add Result</button>
+    </div>
   </form>
 
+  <!-- Filter controls -->
+  <div class="row g-2 mb-3">
+    <div class="col-md-4">
+      <input id="filter-term" type="text" class="form-control"
+             placeholder="Search by Type or Class…">
+    </div>
+    <div class="col-md-3">
+      <input id="filter-from" type="date" class="form-control" placeholder="From Date">
+    </div>
+    <div class="col-md-3">
+      <input id="filter-to" type="date" class="form-control" placeholder="To Date">
+    </div>
+    <div class="col-auto">
+      <button id="clear-filters" class="btn btn-secondary">Clear Filters</button>
+    </div>
+  </div>
+
   <!-- Results Table -->
-  <div class="table-responsive">
-    <table class="table table-sm table-bordered">
+  <div class="table-responsive" style="max-height:60vh; overflow:auto;">
+    <table id="results-table" class="table table-sm table-bordered">
       <thead class="table-dark">
         <tr>
           <th>File</th>
@@ -68,17 +88,18 @@
                 filename='../../uploads/exam_results/' ~ r.filename) }}"
                target="_blank">{{ r.filename }}</a>
           </td>
-          <td>{{ r.exam_date }}</td>
-          <td>{{ r.exam_type }}</td>
-          <td>{{ r.exam_class }}</td>
+          <td class="cell-date">{{ r.exam_date }}</td>
+          <td class="cell-type">{{ r.exam_type }}</td>
+          <td class="cell-class">{{ r.exam_class }}</td>
           <td>{{ r.uploaded_at }}</td>
           <td>
             <form method="POST"
-                  action="{{ url_for('admin_routes.delete_exam_result', filename=r.filename) }}">
+                  action="{{ url_for('admin_routes.delete_exam_result', filename=r.filename) }}"
+                  class="delete-form d-inline">
               <input type="hidden" name="username" value="admin">
-              <input type="password" name="password" placeholder="Password" required
-                     class="form-control form-control-sm w-auto d-inline">
-              <button type="submit" class="btn btn-sm btn-danger mt-1">Delete</button>
+              <input type="password" name="password" placeholder="Password"
+                     required class="form-control form-control-sm d-inline-block w-auto mb-1">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
             </form>
           </td>
         </tr>
@@ -91,4 +112,74 @@
     </table>
   </div>
 </div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const fileInput = document.getElementById('file-input');
+  const fileName  = document.getElementById('file-name');
+
+  // Show selected filename
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    fileName.textContent = f ? `Selected: ${f.name}` : '';
+  });
+
+  // Table filtering
+  const table     = document.getElementById('results-table');
+  const rows      = Array.from(table.tBodies[0].rows);
+  const filterTerm= document.getElementById('filter-term');
+  const filterFrom= document.getElementById('filter-from');
+  const filterTo  = document.getElementById('filter-to');
+  const clearBtn  = document.getElementById('clear-filters');
+
+  function applyFilters() {
+    const term = filterTerm.value.trim().toLowerCase();
+    const from = filterFrom.value ? new Date(filterFrom.value) : null;
+    const to   = filterTo.value   ? new Date(filterTo.value)   : null;
+
+    rows.forEach(row => {
+      const dateText = row.querySelector('.cell-date').textContent;
+      const typeText = row.querySelector('.cell-type').textContent.toLowerCase();
+      const clsText  = row.querySelector('.cell-class').textContent.toLowerCase();
+
+      let visible = true;
+
+      // text filter
+      if (term && !(typeText.includes(term) || clsText.includes(term))) {
+        visible = false;
+      }
+      // date filter
+      if (visible && (from || to)) {
+        const examDt = new Date(dateText);
+        if (from && examDt < from) visible = false;
+        if (to   && examDt > to)   visible = false;
+      }
+      row.style.display = visible ? '' : 'none';
+    });
+  }
+
+  [filterTerm, filterFrom, filterTo].forEach(el =>
+    el.addEventListener('input', applyFilters)
+  );
+
+  clearBtn.addEventListener('click', () => {
+    filterTerm.value = '';
+    filterFrom.value = '';
+    filterTo.value   = '';
+    applyFilters();
+  });
+
+  // Confirm on delete
+  document.querySelectorAll('.delete-form').forEach(form => {
+    form.addEventListener('submit', e => {
+      if (!confirm('Are you sure you want to delete this exam result?')) {
+        e.preventDefault();
+      }
+    });
+  });
+});
+</script>
 {% endblock %}

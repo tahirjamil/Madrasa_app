@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify, current_app, send_from_directory
+from flask import request, jsonify, current_app, send_from_directory
+from . import user_routes
 import pymysql
 import os
 import pymysql.cursors
@@ -8,19 +9,18 @@ from database import connect_to_db
 from logger import log_event
 from config import Config
 from datetime import datetime, timezone
+from helpers import get_id, insert_person
 
 # ========== Config ==========
 IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-
-other_routes = Blueprint('other_routes', __name__)
 
 os.makedirs(IMG_UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@other_routes.route('/uploads/people_img/<filename>')
+@user_routes.route('/uploads/people_img/<filename>')
 def uploaded_file(filename):
     filename = secure_filename(filename)  # ✅ sanitize again during fetch
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'people_img')
@@ -34,36 +34,10 @@ def uploaded_file(filename):
 
     return send_from_directory(upload_folder, filename)
 
-# ====== Helper Functions ======
-
-def get_db_connection():
-    return connect_to_db()
-
-def get_id(phone, fullname):
-    conn = get_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
-            result = cursor.fetchone()
-            return result['id'] if result else None
-    finally:
-        conn.close()
-
-def insert_person(fields: dict):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            columns = ', '.join(fields.keys())
-            placeholders = ', '.join(['%s'] * len(fields))
-            sql = f"INSERT INTO people ({columns}) VALUES ({placeholders})"
-            cursor.execute(sql, list(fields.values()))
-        conn.commit()
-    finally:
-        conn.close()
 
 # ========== Routes ==========
 
-@other_routes.route('/add_people', methods=['POST'])
+@user_routes.route('/add_people', methods=['POST'])
 def add_person():
     BASE_URL = current_app.config['BASE_URL']
     
@@ -195,7 +169,7 @@ def add_person():
         return jsonify({"message": f"Database error: {str(e)}"}), 500
 
 
-@other_routes.route('/members', methods=['POST'])
+@user_routes.route('/members', methods=['POST'])
 def get_info():
     conn = connect_to_db()
 
@@ -240,7 +214,7 @@ def get_info():
         conn.close()
 
 
-@other_routes.route("/routine", methods=["POST"])
+@user_routes.route("/routine", methods=["POST"])
 def get_routine():
     conn = connect_to_db()
     
@@ -268,3 +242,28 @@ def get_routine():
     finally:
         conn.close()
 
+@user_routes.route('/events', methods=['POST'])
+def events():
+    conn = connect_to_db
+    data = request.get_json()
+    lastfetched = data.get('updatedSince')
+    corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
+
+    sql = "SELECT * FROM events"
+
+    if lastfetched:
+        sql += " WHERE updated_at > %s", (corrected_time)
+
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(sql)
+            event_list = cursor.fetchall()
+            return jsonify({
+                "events": event_list, 
+                "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+            }), 200
+    except Exception as e:
+        log_event("get_events_failed", "NULL", str(e))
+        return jsonify({"message": f"Database error: {str(e)}"}), 500
+    finally:
+        conn.close()

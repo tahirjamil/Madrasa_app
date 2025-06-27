@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify
+from flask import request, jsonify
+from . import user_routes
 import pymysql.cursors
 from werkzeug.security import generate_password_hash, check_password_hash
 from pymysql.err import IntegrityError
@@ -7,11 +8,9 @@ from database import connect_to_db
 from helpers import validate_fullname, validate_password, send_sms, format_phone_number, generate_code, check_code
 from logger import log_event
 
-# Blueprint
-api_auth_routes = Blueprint("api_auth_routes", __name__)
 
 # ========== Routes ==========
-@api_auth_routes.route("/register", methods=["POST"])
+@user_routes.route("/register", methods=["POST"])
 def register():
     conn = connect_to_db()
 
@@ -71,7 +70,7 @@ def register():
             return jsonify({"message": "Internal server error", "error": str(e)}), 500
 
 
-@api_auth_routes.route("/login", methods=["POST"])
+@user_routes.route("/login", methods=["POST"])
 def login():
     conn = connect_to_db()
 
@@ -131,7 +130,7 @@ def login():
     finally:
         conn.close()
 
-@api_auth_routes.route("/send_code", methods=["POST"])
+@user_routes.route("/send_code", methods=["POST"])
 def send_verification_code():
     conn = connect_to_db()
 
@@ -193,7 +192,7 @@ def send_verification_code():
         return jsonify({"message": f"Internal error: {str(e)}"}), 500
 
 
-@api_auth_routes.route("/reset_password", methods=["POST"])
+@user_routes.route("/reset_password", methods=["POST"])
 def reset_password():
     conn = connect_to_db()
     

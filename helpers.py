@@ -134,3 +134,27 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
         total - reduce_fee
 
     return total
+
+# Fetch ID
+def get_id(phone, fullname):
+    conn = get_db_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
+            result = cursor.fetchone()
+            return result['id'] if result else None
+    finally:
+        conn.close()
+
+# Insert People
+def insert_person(fields: dict):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            columns = ', '.join(fields.keys())
+            placeholders = ', '.join(['%s'] * len(fields))
+            sql = f"INSERT INTO people ({columns}) VALUES ({placeholders})"
+            cursor.execute(sql, list(fields.values()))
+        conn.commit()
+    finally:
+        conn.close()

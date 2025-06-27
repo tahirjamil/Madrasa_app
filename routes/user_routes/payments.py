@@ -1,14 +1,14 @@
-from flask import Blueprint, request, jsonify
+from flask import request, jsonify
+from . import user_routes
+import pymysql
+import pymysql.cursors
 from datetime import datetime, timezone
 from database import connect_to_db
 from helpers import calculate_fees, format_phone_number
 from logger import log_event
 
-# ====== Blueprint Setup ======
-payment_routes = Blueprint('payment_routes', __name__)
-
 # ====== Payment Fee Info ======
-@payment_routes.route('/due_payment', methods=['POST'])
+@user_routes.route('/due_payment', methods=['POST'])
 def payment():
     conn = connect_to_db()
 
@@ -52,7 +52,7 @@ def payment():
     return jsonify({"amount": fees, "month": due_months}), 200
 
 # ====== Save Payment Transaction ======
-@payment_routes.route('/add_transaction', methods=['POST'])
+@user_routes.route('/add_transaction', methods=['POST'])
 def transaction():
     conn = connect_to_db()
 
@@ -97,7 +97,7 @@ def transaction():
 
 
 # ====== Save Donation ======
-@payment_routes.route('/add_donation', methods=['POST'])
+@user_routes.route('/add_donation', methods=['POST'])
 def donation():
     conn = connect_to_db()
 
@@ -133,7 +133,7 @@ def donation():
     return jsonify({"message": "Donation successful"}), 201
 
 # ====== Get Transaction History ======
-@payment_routes.route('/get_transactions', methods=['POST'])
+@user_routes.route('/get_transactions', methods=['POST'])
 def get_transactions():
     data = request.get_json() or {}
     phone            = data.get('phone')

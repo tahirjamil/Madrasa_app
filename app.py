@@ -8,9 +8,9 @@ from config import Config
 from database import create_tables
 from pathlib import Path
 # API & Web Blueprints
-from routes.api.auth import api_auth_routes
-from routes.api.payments import payment_routes
-from routes.api.additionals import other_routes
+from routes.user_routes.auth import api_auth_routes
+from routes.user_routes.payments import payment_routes
+from routes.user_routes.core import other_routes
 from routes.admin_routes import admin_routes
 
 # ─── App Setup ──────────────────────────────────────────────

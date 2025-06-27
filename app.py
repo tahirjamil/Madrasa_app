@@ -75,13 +75,13 @@ def attach_response_data(response):
     return response
 
 # ─── Routes ───────────────────────────────────
-@app.route("/status")
+@app.route("/admin/status")
 def status():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
     return render_template("status.html", requests=request_response_log)
 
-@app.route("/info")
+@app.route("/admin/info")
 def info():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -127,5 +127,5 @@ if __name__ == "__main__":
         port = 80
         URL = "http://127.0.0.1:8000"
         print(f"Starting production server with Waitress at {URL}")
-        print(f"You can check server status at {URL}/status or quick logs at {URL}/info")
+        print(f"You can check server status at {URL}/admin/status or quick logs at {URL}/admin/info")
         serve(app, host=host, port=port)

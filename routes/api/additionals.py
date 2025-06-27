@@ -201,7 +201,7 @@ def get_info():
 
     data = request.get_json()
     lastfetched = data.get('updatedSince')
-    member_id_list = ('member_id')
+    # member_id_list = data.get('member_id')
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
     try:

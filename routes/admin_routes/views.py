@@ -74,6 +74,27 @@ def admin_dashboard():
                            query_result=query_result,
                            query_error=query_error)
 
+@admin_routes.route('/logs')
+def view_logs():
+    # Require admin login
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    conn = connect_to_db()
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(
+                "SELECT log_id, action, phone, message, created_at "
+                "FROM logs "
+                "ORDER BY created_at DESC"
+            )
+            logs = cursor.fetchall()
+    finally:
+        conn.close()
+
+    return render_template("admin/logs.html", logs=logs)
+
+
 @admin_routes.route('/routine')
 def routine():
     return render_template("admin/routine.html")

@@ -135,52 +135,81 @@ def donation():
 # ====== Get Transaction History ======
 @payment_routes.route('/get_transactions', methods=['POST'])
 def get_transactions():
-    conn = connect_to_db()
-    
-    data = request.get_json()
-    phone = data.get('phone')
-    fullname = data.get('fullname').strip()
-    lastfetched = data.get('updatedSince')
+    data = request.get_json() or {}
+    phone            = data.get('phone')
+    fullname         = (data.get('fullname') or '').strip()
+    transaction_type = data.get('type')
+    lastfetched      = data.get('updatedSince')
 
-    if not phone or not fullname:
-        log_event("payment_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"error": "Phone and fullname are required"}), 400
-    
+    # Required fields
+    if not phone or not fullname or not transaction_type:
+        log_event("payment_missing_fields", phone,
+                  "Phone, fullname or transaction type missing")
+        return jsonify({"error": "Phone, fullname and type are required"}), 400
+
+    # Normalize phone
     formatted_phone = format_phone_number(phone)
-    correctedtime = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
+    if not formatted_phone:
+        log_event("payment_invalid_phone", phone, "Invalid phone format")
+        return jsonify({"error": "Invalid phone number"}), 400
 
+    # Build base query and params
+    sql = """
+      SELECT
+        t.type,
+        t.month     AS details,
+        t.amount,
+        t.date
+      FROM transactions t
+      JOIN users        u ON t.id = u.id
+      WHERE u.phone = %s
+        AND LOWER(u.fullname) = LOWER(%s)
+        AND t.type = %s
+    """
+    params = [formatted_phone, fullname, transaction_type]
+
+    # If updatedSince provided, parse & add to WHERE
     if lastfetched:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT transactions.type, transactions.month AS details, transactions.amount, transactions.date, users.phone, users.fullname
-                FROM transactions
-                JOIN users ON transactions.id = users.id
-                WHERE users.phone = %s AND LOWER(users.fullname) = LOWER(%s) AND transactions.updated_at > %s
-                ORDER BY transactions.date DESC
-            """, (formatted_phone, fullname, correctedtime))
+        try:
+            cutoff = datetime.fromisoformat(
+                lastfetched.replace("Z", "+00:00")
+            )
+            sql += " AND t.updated_at > %s"
+            params.append(cutoff)
+        except ValueError:
+            log_event("payment_invalid_timestamp", formatted_phone, lastfetched)
+            return jsonify({"error": "Invalid updatedSince format"}), 400
+
+    # Final ordering
+    sql += " ORDER BY t.date DESC"
+
+    # Execute
+    conn = connect_to_db()
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(sql, params)
             transactions = cursor.fetchall()
-    else:
-        with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT transactions.type, transactions.month AS details, transactions.amount, transactions.date
-                    FROM transactions
-                    JOIN users ON transactions.id = users.id
-                    WHERE users.phone = %s AND LOWER(users.fullname) = LOWER(%s)
-                    ORDER BY transactions.date DESC
-                """, (formatted_phone, fullname))
-                transactions = cursor.fetchall()
+    except Exception as e:
+        conn.rollback()
+        log_event("payment_transaction_error", formatted_phone, str(e))
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        conn.close()
 
-
+    # Handle no‐results
     if not transactions:
         return jsonify({"message": "No transactions found"}), 404
-    
-    # Convert datetime to ISO 8601 format
+
+    # Normalize dates to ISO-8601 Z format
     for tx in transactions:
-        if isinstance(tx.get("date"), datetime):
-            tx["date"] = tx["date"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        d = tx.get("date")
+        if isinstance(d, datetime):
+            tx["date"] = d.astimezone(timezone.utc) \
+                         .isoformat().replace("+00:00", "Z")
 
-
+    # Return payload
     return jsonify({
-        "transactions":transactions, 
-        "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
-        }), 200
+        "transactions": transactions,
+        "lastSyncedAt": datetime.now(timezone.utc)
+                              .isoformat().replace("+00:00","Z")
+    }), 200

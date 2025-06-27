@@ -1,0 +1,37 @@
+{% extends "admin/base.html" %}
+{% block title %}Admin Logs{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">🔍 System Logs</h2>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered">
+      <thead class="table-dark">
+        <tr>
+          <th>Log ID</th>
+          <th>Action</th>
+          <th>Phone</th>
+          <th>Message</th>
+          <th>Created At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.log_id }}</td>
+          <td>{{ log.action }}</td>
+          <td>{{ log.phone or '' }}</td>
+          <td>{{ log.message }}</td>
+          <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted">No logs found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -148,5 +148,34 @@ def create_tables():
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS exam (
+                exam_id INT AUTO_INCREMENT PRIMARY KEY,
+                book_en VARCHAR(50) NOT NULL,
+                book_bn VARCHAR(50) NOT NULL,
+                book_ar VARCHAR(50) NOT NULL,
+                class VARCHAR(50) NOT NULL,
+                gender ENUM('male', 'female') NOT NULL,
+                start_time TIMESTAMP NOT NULL,
+                end_time TIMESTAMP NOT NULL,
+                sec_start_time TIMESTAMP,
+                sec_end_time TIMESTAMP,
+                date DATE NOT NULL,
+                weekday ENUM('saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday') NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS event (
+                event_id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(50),
+                start_time TIMESTAMP NOT NULL,
+                end_time TIMESTAMP,
+                start_date DATE NOT NULL,
+                end_date DATE,
+                function_url TEXT
+            )
+        """)
+
         conn.commit()
     conn.close()

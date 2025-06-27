@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from waitress import serve
 from config import Config
 from database import create_tables
+from pathlib import Path
 # API & Web Blueprints
 from routes.api.auth import api_auth_routes
 from routes.api.payments import payment_routes
@@ -13,10 +14,18 @@ from routes.api.additionals import other_routes
 from routes.admin_routes import admin_routes
 
 # ─── App Setup ──────────────────────────────────────────────
-if os.path.isfile("dev.env"):
-    load_dotenv("dev.env")
+BASE_DIR = Path(__file__).resolve().parent
+
+dev_env = BASE_DIR / "dev.env"
+env = BASE_DIR / ".env"
+
+print(dev_env)
+
+if dev_env.is_file():
+    load_dotenv(dev_env, override=True)
 else:
-    load_dotenv(".env")
+    load_dotenv(env)
+
 
 app = Flask(__name__)
 CORS(app)
@@ -106,20 +115,17 @@ app.register_blueprint(admin_routes, url_prefix='/admin')
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
-    env = os.environ.get("FLASK_ENV", "production")
+    env = os.environ.get("FLASK_ENV")
 
     if env == "development":
         host = "0.0.0.0"
         port = 8000
-        URL = f"http://localhost:{port}"
-        print(f"Starting Flask dev server at {URL}")
-        print(f"You can check server status at {URL}/status or logs at {URL}/info")
         app.run(debug=True, host=host, port=port)
 
     else:
         host = "0.0.0.0"
         port = 80
-        URL = f"http://localhost:"
+        URL = "http://127.0.0.1:8000"
         print(f"Starting production server with Waitress at {URL}")
-        print(f"You can check server status at {URL}/status or logs at {URL}/info")
+        print(f"You can check server status at {URL}/status or quick logs at {URL}/info")
         serve(app, host=host, port=port)

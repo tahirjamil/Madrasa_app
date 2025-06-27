@@ -8,6 +8,8 @@ import os , datetime
 from dotenv import load_dotenv
 from database import connect_to_db
 from logger import log_event
+import pymysql
+import pymysql.cursors
 
 
 load_dotenv()
@@ -137,7 +139,7 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
 
 # Fetch ID
 def get_id(phone, fullname):
-    conn = get_db_connection()
+    conn = connect_to_db
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
@@ -148,7 +150,7 @@ def get_id(phone, fullname):
 
 # Insert People
 def insert_person(fields: dict):
-    conn = get_db_connection()
+    conn = connect_to_db
     try:
         with conn.cursor() as cursor:
             columns = ', '.join(fields.keys())

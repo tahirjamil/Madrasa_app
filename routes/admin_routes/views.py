@@ -1,11 +1,21 @@
-from flask import render_template, request, flash, session, redirect, url_for
+from flask import render_template, request, flash, session, redirect, url_for, current_app
 import pymysql
 import pymysql.cursors
 from . import admin_routes
 from database import connect_to_db
 import os
+from datetime import datetime, date
 from logger import log_event
+from werkzeug.utils import secure_filename
+from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
+from config import Config
 
+#  DIRS
+EXAM_DIR     = Config.EXAM_DIR
+NOTICES_DIR = Config.NOTICES_DIR
+
+
+# ------------- Root / Dashboard ----------------
 
 @admin_routes.route('/', methods=['GET', 'POST'])
 def admin_dashboard():
@@ -74,6 +84,10 @@ def admin_dashboard():
                            query_result=query_result,
                            query_error=query_error)
 
+
+# ------------------ Logs ---------------------
+
+
 @admin_routes.route('/logs')
 def view_logs():
     # Require admin login
@@ -93,6 +107,315 @@ def view_logs():
         conn.close()
 
     return render_template("admin/logs.html", logs=logs)
+
+
+
+# ------------------ Exam Results ------------------------
+
+@admin_routes.route('/exam_results', methods=['GET', 'POST'])
+def exam_results():
+    # auth
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    if request.method == 'POST':
+        username    = request.form.get('username')
+        password    = request.form.get('password')
+        exam_date   = request.form.get('exam_date')
+        exam_type   = request.form.get('exam_type')
+        exam_class  = request.form.get('exam_class')
+        file        = request.files.get('file')
+
+        ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+
+        if username != ADMIN_USER or password != ADMIN_PASS:
+            flash("Unauthorized", "danger")
+            return redirect(url_for('admin_routes.exam_results'))
+
+        if file and file.filename and allowed_exam_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(EXAM_DIR, filename)
+            file.save(filepath)
+
+            results = load_results()
+            results.append({
+                "filename":    filename,
+                "exam_date":   exam_date,
+                "exam_type":   exam_type,
+                "exam_class":  exam_class,
+                "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+            save_results(results)
+
+            flash("Exam result uploaded.", "success")
+            log_event("exam_uploaded", username, filename)
+        else:
+            flash("Invalid file format.", "warning")
+
+        return redirect(url_for('admin_routes.exam_results'))
+
+    # GET: show all together
+    results = load_results()
+    return render_template("admin/exam_results.html", results=results)
+
+
+@admin_routes.route('/exam_results/delete/<filename>', methods=['POST'])
+def delete_exam_result(filename):
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    username = request.form.get('username')
+    password = request.form.get('password')
+    ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+    if username != ADMIN_USER or password != ADMIN_PASS:
+        flash("Unauthorized", "danger")
+        return redirect(url_for('admin_routes.exam_results'))
+
+    filepath = os.path.join(EXAM_DIR, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    results = load_results()
+    results = [r for r in results if r['filename'] != filename]
+    save_results(results)
+
+    flash(f"Deleted {filename}.", "info")
+    log_event("exam_deleted", username, filename)
+    return redirect(url_for('admin_routes.exam_results'))
+
+
+# ------------------- Members --------------------------
+
+@admin_routes.route('/members', methods=['GET', 'POST'])
+def members():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    conn = connect_to_db()
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            # Fetch all people and pending verifies
+            cursor.execute("SELECT * FROM people")
+            people = cursor.fetchall()
+            cursor.execute("SELECT * FROM verify_people")
+            pending = cursor.fetchall()
+    finally:
+        conn.close()
+
+    # Build list of distinct account types
+    types = sorted({m['acc_type'] for m in people if m.get('acc_type')})
+    selected_type = request.args.get('type', types[0] if types else None)
+    members = [m for m in people if m['acc_type'] == selected_type] if selected_type else []
+
+    return render_template("admin/members.html",
+                           types=types,
+                           selected_type=selected_type,
+                           members=members,
+                           pending=pending)
+
+
+@admin_routes.route('/members/verify_people/<int:verify_people_id>', methods=['POST'])
+def verify_member(verify_people_id):
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    conn = connect_to_db()
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            # Fetch pending user
+            cursor.execute("SELECT * FROM verify_people WHERE id = %s", (verify_people_id,))
+            row = cursor.fetchone()
+            if not row:
+                flash("No pending user found.", "warning")
+                return redirect(url_for('admin_routes.members'))
+
+            # Prepare insert into people
+            cols = ', '.join(row.keys())
+            placeholders = ', '.join(['%s'] * len(row))
+            sql = f"INSERT INTO people ({cols}) VALUES ({placeholders})"
+            cursor.execute(sql, tuple(row.values()))
+
+            # Remove from verify_people table
+            cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
+            conn.commit()
+
+            flash("Member verified successfully.", "success")
+            log_event("member_verified", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Error verifying member: {e}", "danger")
+        log_event("verify_people_error", session.get('admin_username', 'admin'), str(e))
+    finally:
+        conn.close()
+
+    return redirect(url_for('admin_routes.members'))
+
+@admin_routes.route('/add_member', methods=['GET','POST'])
+def add_member():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    genders = ['Male','Female']
+    blood_groups = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
+    types = ['admins','students','teachers','staffs','donors','badri_members','others']
+
+    if request.method == 'POST':
+        fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",
+                  "date_of_birth","national_id","blood_group","degree","gender",
+                  "title1","source","present_address","address_bn","address_ar",
+                  "permanent_address","father_or_spouse","mail","father_en",
+                  "father_bn","father_ar","mother_en","mother_bn","mother_ar",
+                  "acc_type"]
+        data = {f: request.form.get(f) for f in fields if request.form.get(f)}
+
+        # Handle image upload
+        image = request.files.get('image')
+        if image and image.filename:
+            filename = secure_filename(image.filename)
+            upload_path = os.path.join(current_app.config['IMG_UPLOAD_FOLDER'], filename)
+            image.save(upload_path)
+            data['image_path'] = upload_path  # or just filename if you store relative path
+
+        conn = connect_to_db()
+        try:
+            with conn.cursor() as cursor:
+                cols = ','.join(data.keys())
+                vals = ','.join(['%s']*len(data))
+                cursor.execute(
+                  f"INSERT INTO people ({cols}) VALUES ({vals})",
+                  tuple(data.values())
+                )
+                conn.commit()
+            flash("Member added successfully","success")
+            return redirect(url_for('admin_routes.members'))
+        finally:
+            conn.close()
+
+    return render_template('admin/add_member.html',
+                           genders=genders,
+                           types=types,
+                           blood_groups=blood_groups)
+
+
+
+
+# ------------------- Notices -----------------------
+
+@admin_routes.route('/notice', methods=['GET', 'POST'])
+def notice_page():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        target_date = request.form.get('target_date')
+        file = request.files.get('file')
+
+        ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+
+        if username != ADMIN_USER or password != ADMIN_PASS:
+            flash("Unauthorized", "danger")
+            return redirect(url_for('admin_routes.notice_page'))
+
+        if file and file.filename and allowed_notice_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(NOTICES_DIR, filename)
+            file.save(filepath)
+
+            notices = load_notices()
+            notices.append({
+                "filename": filename,
+                "target_date": target_date,
+                "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+            save_notices(notices)
+
+            flash("Notice uploaded.", "success")
+            log_event("notice_uploaded", username, filename)
+        else:
+            flash("Invalid file format.", "warning")
+
+        return redirect(url_for('admin_routes.notice_page'))
+
+    notices = load_notices()
+    today = date.today()
+    upcoming, ongoing, past = [], [], []
+
+    for n in notices:
+        try:
+            n_date = datetime.strptime(n['target_date'], '%Y-%m-%d').date()
+            if n_date > today:
+                upcoming.append(n)
+            elif n_date == today:
+                ongoing.append(n)
+            else:
+                past.append(n)
+        except Exception:
+            past.append(n)
+
+    return render_template("admin/notice.html",
+                           upcoming=upcoming,
+                           ongoing=ongoing,
+                           past=past)
+
+
+@admin_routes.route('/notice/delete/<filename>', methods=['POST'])
+def delete_notice(filename):
+    username = request.form.get('username')
+    password = request.form.get('password')
+
+    ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
+
+    if username != ADMIN_USER or password != ADMIN_PASS:
+        flash("Unauthorized", "danger")
+        return redirect(url_for('admin_routes.notice_page'))
+
+    filepath = os.path.join(NOTICES_DIR, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    notices = load_notices()
+    notices = [n for n in notices if n['filename'] != filename]
+    save_notices(notices)
+
+    flash(f"Notice '{filename}' deleted.", "info")
+    log_event("notice_deleted", username, filename)
+    return redirect(url_for('admin_routes.notice_page'))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ------------------- Others ------------------------
 
 
 @admin_routes.route('/routine')

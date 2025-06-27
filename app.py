@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from flask import Flask, render_template, request, session, g, redirect, url_for
+from flask import Flask, render_template, request, session, g, redirect, url_for, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from waitress import serve
@@ -8,9 +8,7 @@ from config import Config
 from database import create_tables
 from pathlib import Path
 # API & Web Blueprints
-from routes.user_routes.auth import api_auth_routes
-from routes.user_routes.payments import payment_routes
-from routes.user_routes.core import other_routes
+from routes.user_routes import user_routes
 from routes.admin_routes import admin_routes
 
 # ─── App Setup ──────────────────────────────────────────────
@@ -104,13 +102,15 @@ def not_found(e):
 
 @app.route('/favicon.ico')
 def favicon():
-    return '', 204
+    return send_from_directory(
+        os.path.join(app.root_path, 'static'),
+        'favicon.ico',
+        mimetype='image/vnd.microsoft.icon'
+    )
 
 # ─── Register Blueprints ────────────────────────────────────
 
-app.register_blueprint(api_auth_routes)
-app.register_blueprint(payment_routes)
-app.register_blueprint(other_routes)
+app.register_blueprint(user_routes)
 app.register_blueprint(admin_routes, url_prefix='/admin')
 
 # ─── Run ────────────────────────────────────────────────────

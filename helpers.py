@@ -10,9 +10,35 @@ from database import connect_to_db
 from logger import log_event
 import pymysql
 import pymysql.cursors
+import json
+from config import Config
 
 
+# ─── Compute Upload Folder ───────────
 load_dotenv()
+
+EXAM_DIR     = Config.EXAM_DIR
+EXAM_RESULT_INDEX_FILE   = os.path.join(EXAM_DIR, 'index.json')
+ALLOWED_EXAM_EXTENSIONS = Config.ALLOWED_EXAM_EXTENSIONS
+
+NOTICES_DIR = Config.NOTICES_DIR
+NOTICES_INDEX_FILE = os.path.join(NOTICES_DIR, 'index.json')
+ALLOWED_NOTICE_EXTENSIONS = Config.ALLOWED_NOTICE_EXTENSIONS
+
+os.makedirs(EXAM_DIR, exist_ok=True)
+if not os.path.exists(EXAM_RESULT_INDEX_FILE):
+    with open(EXAM_RESULT_INDEX_FILE, 'w') as f:
+        json.dump([], f)
+
+os.makedirs(NOTICES_DIR, exist_ok=True)
+if not os.path.exists(NOTICES_INDEX_FILE):
+    with open(NOTICES_INDEX_FILE, 'w') as f:
+        json.dump([], f)
+
+
+
+
+# ------------------------------- User ----------------------------------------
 
 # Check Code
 def check_code(user_code, phone):
@@ -160,3 +186,41 @@ def insert_person(fields: dict):
         conn.commit()
     finally:
         conn.close()
+
+
+
+# ------------------------------------ Admin -------------------------------------------
+
+
+def load_results():
+    with open(EXAM_RESULT_INDEX_FILE, 'r') as f:
+        return json.load(f)
+
+def save_results(data):
+    with open(EXAM_RESULT_INDEX_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def allowed_exam_file(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXAM_EXTENSIONS
+
+
+def load_notices():
+    try:
+        with open(NOTICES_INDEX_FILE, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        # auto-fix broken JSON
+        with open(NOTICES_INDEX_FILE, 'w') as f:
+            json.dump([], f)
+        return []
+
+
+def save_notices(data):
+    with open(NOTICES_INDEX_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def allowed_notice_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_NOTICE_EXTENSIONS
+
+

@@ -20,6 +20,8 @@
   <!-- Upload Form -->
   <form action="{{ url_for('admin_routes.exam_results') }}" method="POST"
         enctype="multipart/form-data" class="mb-4 row g-2 align-items-end">
+
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="col-auto">
       <label class="form-label">File*</label>
       <input id="file-input" type="file" name="file" required class="form-control">
@@ -96,6 +98,8 @@
             <form method="POST"
                   action="{{ url_for('admin_routes.delete_exam_result', filename=r.filename) }}"
                   class="delete-form d-inline">
+
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="username" value="admin">
               <input type="password" name="password" placeholder="Password"
                      required class="form-control form-control-sm d-inline-block w-auto mb-1">

@@ -23,6 +23,8 @@
         method="POST"
         enctype="multipart/form-data"
         class="mb-5 row g-2 align-items-center">
+
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="col-md-3">
       <label class="form-label">Choose File*</label>
       <input id="file-input" type="file"
@@ -90,6 +92,7 @@
                 <form method="POST"
                       action="{{ url_for('admin_routes.delete_notice', filename=n.filename) }}"
                       class="delete-form d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="username" value="admin">
                   <input type="password" name="password"
                          placeholder="Password"

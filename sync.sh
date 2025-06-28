@@ -1,15 +1,13 @@
 #!/bin/bash
 
-echo "🔄 Pulling latest changes..."
+echo "🔄 Pulling latest..."
 git pull --no-rebase origin main
 
-echo "✅ Pull done."
-
-echo "✅ Adding local changes..."
+echo "✅ Adding changes..."
 git add .
 
-echo "✅ Committing local changes..."
-git commit -m "Auto-sync commit" || echo "Nothing to commit."
+echo "✅ Committing local work..."
+git commit -m "Auto sync commit" || echo "Nothing new to commit."
 
 echo "🚀 Pushing to remote..."
 git push origin main

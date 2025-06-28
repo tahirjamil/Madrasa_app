@@ -34,6 +34,7 @@
       {% endwith %}
 
       <form id="login-form" method="POST" action="{{ url_for('admin_routes.login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
           <input id="username" type="text" name="username"
                  class="form-control" placeholder="Username" required>

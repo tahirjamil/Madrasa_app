@@ -7,6 +7,7 @@ from flask import (
     redirect, url_for, send_from_directory
 )
 from flask_cors import CORS
+from flask_wtf import CSRFProtect
 from dotenv import load_dotenv
 from waitress import serve
 

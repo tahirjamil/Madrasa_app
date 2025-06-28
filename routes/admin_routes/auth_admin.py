@@ -8,8 +8,6 @@ login_attempts = {}
 @admin_routes.route('/login', methods=['GET', 'POST'])
 def login():
     session.permanent = False
-    ip = request.remote_addr
-
     # Clear session on GET
     if request.method == 'GET':
         session.clear()

@@ -1,7 +1,7 @@
-flask>=3.13.3
+Flask>=3.0
 flask-cors
 Flask-WTF>=1.2.2
-python-dotenv=1.1.1
+python-dotenv==1.1.1
 waitress>=3.0.2
 password-validator>=1.0
 phonenumbers>=9.0.8

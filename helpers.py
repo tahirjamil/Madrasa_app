@@ -87,7 +87,7 @@ def send_sms(phone, code):
         print("SMS Error:", e)
         log_event("sms_error", phone, str(e))
         return False
-        
+
 
 # Code Generator
 def generate_code():
@@ -101,9 +101,9 @@ def check_code(user_code, phone):
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("""
-                SELECT code, created_at FROM verifications 
-                WHERE phone = %s 
-                ORDER BY created_at DESC 
+                SELECT code, created_at FROM verifications
+                WHERE phone = %s
+                ORDER BY created_at DESC
                 LIMIT 1
             """, (phone,))
             result = cursor.fetchone()
@@ -193,7 +193,7 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
             total += 1200
         else:
             total += 1500
-    
+
     if reduce_fee:
         total -= reduce_fee
 

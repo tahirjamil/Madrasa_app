@@ -41,7 +41,7 @@ elif choice == 2:
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute(
-                "INSERT INTO payments (id, food, special_food, reduce_fee, due_months) VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO payment (id, food, special_food, reduce_fee, due_months) VALUES (%s, %s, %s, %s, %s)",
                 (id_num, food, special_food, reduce_fee, months)
             )
         conn.commit()

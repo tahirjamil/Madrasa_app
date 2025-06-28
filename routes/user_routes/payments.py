@@ -24,7 +24,7 @@ def payment():
         log_event("payment_missing_fields", phone, "Phone or fullname missing")
         return jsonify({"error": "Phone and fullname are required"}), 400
 
-    formatted_phone = format_phone_number(phone)
+    phone = format_phone_number(phone)
 
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
@@ -35,7 +35,7 @@ def payment():
                 JOIN people ON people.id = users.id
                 JOIN payment ON payment.id = users.id
                 WHERE users.phone = %s AND LOWER(users.fullname) = LOWER(%s)
-            """, (formatted_phone, fullname))
+            """, (phone, fullname))
             result = cursor.fetchone()
 
         if not result:
@@ -80,8 +80,8 @@ def get_transactions():
         return jsonify({"error": "Phone, fullname and type are required"}), 400
 
     # Normalize phone
-    formatted_phone = format_phone_number(phone)
-    if not formatted_phone:
+    phone = format_phone_number(phone)
+    if not phone:
         log_event("payment_invalid_phone", phone, "Invalid phone format")
         return jsonify({"error": "Invalid phone number"}), 400
 
@@ -98,7 +98,7 @@ def get_transactions():
         AND LOWER(u.fullname) = LOWER(%s)
         AND t.type = %s
     """
-    params = [formatted_phone, fullname, transaction_type]
+    params = [phone, fullname, transaction_type]
 
     # If updatedSince provided, parse & add to WHERE
     if lastfetched:
@@ -158,13 +158,12 @@ def pay_sslcommerz():
 
     # If no email on file, generate a dummy one from the phone
     if not email:
-       email = f"{formatted_phone}@no-reply.annurmadrasa.com"
+       email = f"{phone}@no-reply.annurmadrasa.com"
 
     if not phone or not fullname or not transaction_type or amount is None:
         log_event("payment_missing_fields", phone, "Missing payment info")
         return jsonify({"error": "Phone, fullname and amount required"}), 400
 
-    formatted_phone = format_phone_number(phone)
 
     tran_id    = f"ssl_{int(time.time())}"
     store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
@@ -182,9 +181,9 @@ def pay_sslcommerz():
         "success_url":  Config.BASE_URL + 'payment_success_ssl',
         "fail_url":     Config.BASE_URL + 'payment_fail_ssl',
         "cus_name":     fullname,
-        "cus_phone":    formatted_phone,
+        "cus_phone":    phone,
         "cus_email":    email,  
-        "value_a":      formatted_phone,
+        "value_a":      phone,
         "value_b":      fullname,
         "value_c":      months or '',
         "value_d":      transaction_type,
@@ -237,7 +236,7 @@ def payment_success_ssl():
         log_event("sslcommerz_callback_no_tranid", phone, "Missing value_e")
         return jsonify({"error": "Missing transaction identifier"}), 400
 
-    formatted_phone = format_phone_number(phone)
+    phone = format_phone_number(phone)
 
     # 1️⃣ Validate callback with SSLCommerz
     store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
@@ -267,7 +266,7 @@ def payment_success_ssl():
             # Fetch the user’s internal ID
             cursor.execute(
                 "SELECT id FROM users WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
-                (formatted_phone, fullname)
+                (phone, fullname)
             )
             user = cursor.fetchone()
             if not user:
@@ -307,7 +306,7 @@ def payment_success_ssl():
 #         log_event("payment_missing_fields", phone, f"Missing fields: {data}")
 #         return jsonify({"error": "Phone, fullname, type and amount are required"}), 400
     
-#     formatted_phone = format_phone_number(phone)
+#     phone = format_phone_number(phone)
 
 #     if months is None:
 #         months_str = ''
@@ -323,7 +322,7 @@ def payment_success_ssl():
 #         with db.cursor(pymysql.cursors.DictCursor) as cursor:
 #             cursor.execute(
 #                 "SELECT id FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-#                 (formatted_phone, fullname)
+#                 (phone, fullname)
 #             )
 #             user = cursor.fetchone()
 #         if not user:

@@ -28,6 +28,7 @@
   <div class="collapse mb-4" id="addEventForm">
     <div class="card card-body">
       <form method="POST" action="{{ url_for('admin_routes.events') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label">Title</label>

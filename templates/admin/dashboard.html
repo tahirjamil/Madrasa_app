@@ -31,6 +31,7 @@
   <!-- MySQL Terminal -->
   <h4 class="mt-5">Run MySQL Command (no DROP/TRUNCATE)</h4>
   <form method="POST" class="mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row g-2 align-items-center">
       <div class="col-md-6">
         <div class="input-group">

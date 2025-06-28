@@ -11,13 +11,13 @@ def connect_to_db():
         password=current_app.config['MYSQL_PASSWORD'],
         db=current_app.config['MYSQL_DB'],
         cursorclass=pymysql.cursors.DictCursor,
-        autocommit=False
+        autocommit=True
     )
 
 # Table Creation
 def create_tables():
     conn = connect_to_db()
-    with conn.cursor() as cursor:
+    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         # ─── users ──────────────────────────────────────────────────────────────
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (

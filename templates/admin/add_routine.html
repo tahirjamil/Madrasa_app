@@ -5,6 +5,7 @@
 <div class="container mt-4">
   <h2>Add Class Routine</h2>
   <form id="routine-form" method="POST" action="{{ url_for('admin_routes.add_routine') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     
     <!-- class_group, class_level, serial -->
     <div class="mb-3">

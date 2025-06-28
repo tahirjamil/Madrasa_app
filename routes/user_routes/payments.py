@@ -14,7 +14,7 @@ def payment():
 
     data = request.get_json()
     phone = data.get('phone')
-    fullname = data.get('fullname').strip()
+    fullname = (data.get('fullname') or '').strip()
 
     if not phone or not fullname:
         log_event("payment_missing_fields", phone, "Phone or fullname missing")
@@ -22,7 +22,7 @@ def payment():
 
     formatted_phone = format_phone_number(phone)
 
-    with conn.cursor() as cursor:
+    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         cursor.execute("""
             SELECT people.class, people.gender, payment.special_food, payment.reduce_fee,
                    payment.food, payment.due_months AS month, users.phone, users.fullname
@@ -58,7 +58,7 @@ def transaction():
 
     data = request.get_json()
     phone = data.get('phone')
-    fullname = data.get('fullname').strip()
+    fullname = (data.get('fullname') or '').strip()
     payed_fees = data.get('payed_fees')
     payed_months = data.get('payed_months')
 
@@ -71,7 +71,7 @@ def transaction():
     if isinstance(payed_months, list):
         payed_months = ', '.join(payed_months)  # handle multiple months
 
-    with conn.cursor() as cursor:
+    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         cursor.execute("SELECT id FROM users WHERE phone = %s AND LOWER(fullname) = (%s)", (formatted_phone, fullname))
         user = cursor.fetchone()
 
@@ -84,7 +84,7 @@ def transaction():
     current_date = datetime.today().strftime('%Y-%m-%d')
 
     try:
-        with conn.cursor() as cursor:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("""
                 INSERT INTO transactions (id, type, month, amount, date)
                 VALUES (%s, %s, %s, %s, %s)
@@ -92,8 +92,11 @@ def transaction():
             conn.commit()
         return jsonify({"message": "Transaction successful"}), 201
     except Exception as e:
+        conn.rollback()
         log_event("payment_insert_failed", phone, f"DB Error: {str(e)}")
         return jsonify({"error": "Transaction failed"}), 500
+    finally:
+        conn.close()
 
 
 # ====== Save Donation ======
@@ -103,7 +106,7 @@ def donation():
 
     data = request.get_json()
     phone = data.get('phone')
-    fullname = data.get('fullname').strip()
+    fullname = (data.get('fullname') or '').strip()
     amount = data.get('amount')
 
     formatted_phone = format_phone_number(phone)
@@ -112,7 +115,7 @@ def donation():
         log_event("payment_missing_fields", phone, "Phone or fullname missing")
         return jsonify({"error": "Phone, fullname, and amount are required"}), 400
 
-    with conn.cursor() as cursor:
+    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         cursor.execute("SELECT id FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
         user = cursor.fetchone()
 
@@ -123,7 +126,7 @@ def donation():
     user_id = user['id']
     current_date = datetime.today().strftime('%Y-%m-%d')
 
-    with conn.cursor() as cursor:
+    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         cursor.execute("""
             INSERT INTO transactions (id, type, month, amount, date)
             VALUES (%s, %s, NULL, %s, %s)

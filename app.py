@@ -7,6 +7,7 @@ from waitress import serve
 from config import Config
 from database import create_tables
 from pathlib import Path
+from flask_wtf import CSRFProtect
 # API & Web Blueprints
 from routes.user_routes import user_routes
 from routes.admin_routes import admin_routes
@@ -16,8 +17,6 @@ BASE_DIR = Path(__file__).resolve().parent
 
 dev_env = BASE_DIR / "dev.env"
 env = BASE_DIR / ".env"
-
-print(dev_env)
 
 if dev_env.is_file():
     load_dotenv(dev_env, override=True)
@@ -29,6 +28,9 @@ app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
 app.secret_key = os.getenv("SECRET_KEY", "fallback-key")
+
+csrf = CSRFProtect()
+csrf.init_app(app)
 
 # ensure upload folder exists
 os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)

@@ -228,7 +228,7 @@ def get_routine():
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
     try:
-        with conn.cursor() as cursor:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             sql = "SELECT * FROM routine"
             params = []
             
@@ -341,7 +341,7 @@ def get_exams():
     try:
         with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
             cursor.execute(sql, params)
-            result = cursor.fetchall
+            result = cursor.fetchall()
 
             return jsonify({
                 "exams": result,

@@ -1,4 +1,4 @@
-from flask import jsonify
+from flask import jsonify, current_app, request
 from password_validator import PasswordValidator
 import phonenumbers
 from phonenumbers.phonenumberutil import NumberParseException
@@ -11,6 +11,7 @@ from logger import log_event
 import pymysql
 import pymysql.cursors
 import json
+from functools import wraps
 from config import Config
 
 
@@ -40,13 +41,60 @@ if not os.path.exists(NOTICES_INDEX_FILE):
 
 # ------------------------------- User ----------------------------------------
 
+# Api_token_Protection
+# TODO
+# add @require_api_key after every user_routes
+def require_api_key(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        key = request.headers.get('X-API-KEY')
+        if not key or key != current_app.config.get('API_KEY'):
+            return jsonify({"message": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+# Delete Code
+def delete_code():
+    conn = connect_to_db
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("""
+            DELETE FROM verifications 
+            WHERE created_at < NOW() - INTERVAL 1 DAY
+        """)
+    except Exception as e:
+        log_event("failed to delete verifications", "Null", f"Database Error {str(e)}")
+
+# SMS Sender
+def send_sms(phone, code):
+    delete_code()
+    TEXTBELT_URL = "https://textbelt.com/text"
+
+    try:
+        response = requests.post(TEXTBELT_URL, {
+            'phone': phone,
+            'message': f"Your verification code is: {code}",
+            'key': os.getenv("TEXTBELT_KEY")
+        })
+        result = response.json()
+        return result.get("success", False)
+    except Exception as e:
+        print("SMS Error:", e)
+        log_event("sms_error", phone, str(e))
+        return False
+        
+
+# Code Generator
+def generate_code():
+    return random.randint(1000, 9999)
+
 # Check Code
 def check_code(user_code, phone):
     CODE_EXPIRY_MINUTES = 10
     conn = connect_to_db()
 
     try:
-        with conn.cursor() as cursor:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("""
                 SELECT code, created_at FROM verifications 
                 WHERE phone = %s 
@@ -66,6 +114,7 @@ def check_code(user_code, phone):
                 return jsonify({"message": "Verification code expired"}), 410
 
             if int(user_code) == db_code:
+                delete_code()
                 return None
             else:
                 log_event("verification_failed", phone, "Code mismatch")
@@ -108,26 +157,6 @@ def validate_fullname(fullname):
 
     return True, ""
 
-# Code Generator
-def generate_code():
-    return random.randint(1000, 9999)
-
-# SMS Sender
-def send_sms(phone, code):
-    TEXTBELT_URL = "https://textbelt.com/text"
-
-    try:
-        response = requests.post(TEXTBELT_URL, {
-            'phone': phone,
-            'message': f"Your verification code is: {code}",
-            'key': os.getenv("TEXTBELT_KEY")
-        })
-        result = response.json()
-        return result.get("success", False)
-    except Exception as e:
-        print("SMS Error:", e)
-        return False
-
 
 # Fee Calculation
 def calculate_fees(class_name, gender, special_food, reduce_fee, food):
@@ -159,13 +188,13 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
             total += 1500
     
     if reduce_fee:
-        total - reduce_fee
+        total -= reduce_fee
 
     return total
 
 # Fetch ID
 def get_id(phone, fullname):
-    conn = connect_to_db
+    conn = connect_to_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
@@ -176,9 +205,9 @@ def get_id(phone, fullname):
 
 # Insert People
 def insert_person(fields: dict):
-    conn = connect_to_db
+    conn = connect_to_db()
     try:
-        with conn.cursor() as cursor:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             columns = ', '.join(fields.keys())
             placeholders = ', '.join(['%s'] * len(fields))
             sql = f"INSERT INTO people ({columns}) VALUES ({placeholders})"

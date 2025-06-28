@@ -33,7 +33,7 @@ def register():
         return validate_code
 
     hashed_password = generate_password_hash(password)
-    with conn.cursor() as cursor:
+    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         try:
             cursor.execute(
                 "INSERT INTO users (fullname, phone, password) VALUES (%s, %s, %s)",
@@ -148,7 +148,7 @@ def send_verification_code():
         return jsonify({"message": "Invalid phone number format"}), 400
 
     try:
-        with conn.cursor() as cursor:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             if fullname:
                 ok, msg = validate_fullname(fullname)
                 if not ok:
@@ -184,7 +184,6 @@ def send_verification_code():
         if send_sms(formatted_phone, code):
             return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
         else:
-            log_event("sms_failed", phone, "SMS gateway error")
             return jsonify({"message": "Failed to send SMS"}), 500
 
 
@@ -219,7 +218,7 @@ def reset_password():
             return validate_code
 
     # Fetch the user
-    with conn.cursor() as cursor:
+    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         cursor.execute(
             "SELECT password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
             (formatted_phone, fullname)

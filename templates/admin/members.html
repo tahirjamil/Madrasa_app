@@ -64,6 +64,7 @@
               {% endfor %}
               <td>
                 <form method="post" action="{{ url_for('admin_routes.verify_member', verify_people_id=p.user_id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-sm btn-success">Verify</button>
                 </form>
               </td>

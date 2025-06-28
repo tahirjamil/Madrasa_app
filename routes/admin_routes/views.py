@@ -280,7 +280,7 @@ def add_member():
 
         conn = connect_to_db()
         try:
-            with conn.cursor() as cursor:
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
                 cols = ','.join(data.keys())
                 vals = ','.join(['%s']*len(data))
                 cursor.execute(
@@ -431,7 +431,7 @@ def add_routine():
         # then insert into routine table:
         try:
             conn = connect_to_db()
-            with conn.cursor() as cursor:
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
                 cursor.execute("""
                     INSERT INTO routine
                       (gender, class_group, class_level, weekday,

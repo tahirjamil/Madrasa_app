@@ -204,6 +204,14 @@ def pay_sslcommerz():
         "value_c": months or '',
         "value_d": transaction_type,
         "value_e": tran_id,
+
+        # others
+        "emi_option": 0,
+        "shipping_method": "NO",
+        "num_of_item": 1,
+        "weight_of_items": 0.5,
+        "logistic_pickup_id": "madrasaid123",
+        "logistic_delivery_type": "madrasadilevery_by_air"
     }
 
     try:
@@ -299,67 +307,3 @@ def payment_success_ssl():
             db.close()
 
     return jsonify({"message": "Payment recorded"}), 200
-
-
-# # ====== Save Transaction ======
-# @user_routes.route('/add_transaction', methods=['POST'])
-# def transaction():
-#     conn = connect_to_db()
-
-#     data = request.get_json() or {}
-#     phone = data.get('phone')
-#     fullname = (data.get('fullname') or '').strip()
-#     transaction_type = data.get('type')
-#     amount = data.get('amount')
-#     months = data.get('months')
-
-#     if not phone or not fullname or amount is None or transaction_type is None:
-#         log_event("payment_missing_fields", phone, f"Missing fields: {data}")
-#         return jsonify({"error": "Phone, fullname, type and amount are required"}), 400
-    
-#     phone = format_phone_number(phone)
-
-#     if months is None:
-#         months_str = ''
-#     else:
-#         if isinstance(months, list):
-#             months_list = months
-#         else:
-#             months_list = [months]
-#         months_str = ','.join(str(m) for m in months_list)
-
-#     try:
-#         db = connect_to_db()
-#         with db.cursor(pymysql.cursors.DictCursor) as cursor:
-#             cursor.execute(
-#                 "SELECT id FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-#                 (phone, fullname)
-#             )
-#             user = cursor.fetchone()
-#         if not user:
-#             log_event("payment_user_not_found", phone, f"User {fullname} not found")
-#             return jsonify({"message": "User not found"}), 404
-#         user_id = user['id']
-#     except pymysql.MySQLError as e:
-#         log_event("payment_db_error", phone, f"DB Error: {e}")
-#         return jsonify({"error": "Transaction failed"}), 500
-#     finally:
-#         db.close()
-
-#     current_date = datetime.today().strftime('%Y-%m-%d')
-
-#     try:
-#         db = connect_to_db()
-#         with db.cursor(pymysql.cursors.DictCursor) as cursor:
-#             cursor.execute(
-#                 "INSERT INTO transactions (id, type, month, amount, date) "
-#                 "VALUES (%s, %s, %s, %s, CURDATE())",
-#                 (user_id, transaction_type, months_str, amount)
-#             )
-#             db.commit()
-#         return jsonify({"message": "Transaction successful"}), 201
-#     except pymysql.MySQLError as e:
-#         log_event("payment_db_error", phone, f"DB Error: {e}")
-#         return jsonify({"error": "Transaction failed"}), 500
-#     finally:
-#         db.close()

@@ -56,14 +56,15 @@ elif choice == 3:
     amount = int(input("Enter Amount: ").strip())
     date = input("Enter Date (YYYY-MM-DD): ").strip()
     _type = _type_select()
-    months = int(input("Enter number of months: ").strip())
+    months = input("Enter all months: ").strip()
+    final_months = months if months else "Null"
 
     conn = connect_to_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute(
                 "INSERT INTO transactions (id, type, amount, date, month) VALUES (%s, %s, %s, %s, %s)",
-                (id_num, _type, amount, date, months)
+                (id_num, _type, amount, date, final_months)
             )
         conn.commit()
         print(f"Transaction for user ID {id_num} added")

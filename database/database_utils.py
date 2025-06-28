@@ -1,14 +1,14 @@
 import pymysql
 import pymysql.cursors
-from flask import current_app
+from config import Config
 
 # Centralized DB Connection
 def connect_to_db():
     return pymysql.connect(
-        host=current_app.config['MYSQL_HOST'],
-        user=current_app.config['MYSQL_USER'],
-        password=current_app.config['MYSQL_PASSWORD'],
-        db=current_app.config['MYSQL_DB'],
+        host=Config.MYSQL_HOST,
+        user=Config.MYSQL_USER,
+        password=Config.MYSQL_PASSWORD,
+        db=Config.MYSQL_DB,
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True
     )

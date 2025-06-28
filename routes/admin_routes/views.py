@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
 from config import Config
 import json
+from forms import AddMemberForm
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
@@ -302,53 +303,52 @@ def verify_member(verify_people_id):
 
     return redirect(url_for('admin_routes.members'))
 
-@admin_routes.route('/member/add', methods=['GET','POST'])
+@admin_routes.route('/member/add', methods=['GET', 'POST'])
 def add_member():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    genders = ['Male','Female']
-    blood_groups = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
-    types = ['admins','students','teachers','staffs','donors','badri_members','others']
+    form = AddMemberForm()
 
-    if request.method == 'POST':
-        fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",
-                  "date_of_birth","national_id","blood_group","degree","gender",
-                  "title1","source","present_address","address_bn","address_ar",
-                  "permanent_address","father_or_spouse","mail","father_en",
-                  "father_bn","father_ar","mother_en","mother_bn","mother_ar",
-                  "acc_type"]
-        data = {f: request.form.get(f) for f in fields if request.form.get(f)}
+    if form.validate_on_submit():
+        data = {
+            'name_en': form.name_en.data,
+            'name_bn': form.name_bn.data,
+            'name_ar': form.name_ar.data,
+            'member_id': form.member_id.data,
+            'student_id': form.student_id.data,
+            'phone': form.phone.data,
+            'date_of_birth': form.date_of_birth.data,
+            'national_id': form.national_id.data,
+            'blood_group': form.blood_group.data,
+            'degree': form.degree.data,
+            'gender': form.gender.data,
+            'acc_type': form.acc_type.data,
+        }
 
-        # Handle image upload
-        image = request.files.get('image')
-        if image and image.filename:
+        # Handle image
+        image = form.image.data
+        if image:
             filename = secure_filename(image.filename)
             upload_path = os.path.join(current_app.config['IMG_UPLOAD_FOLDER'], filename)
             image.save(upload_path)
-            data['image_path'] = upload_path  # or just filename if you store relative path
+            data['image_path'] = upload_path
 
         conn = connect_to_db()
         try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            with conn.cursor() as cursor:
                 cols = ','.join(data.keys())
-                vals = ','.join(['%s']*len(data))
-                cursor.execute(
-                  f"INSERT INTO people ({cols}) VALUES ({vals})",
-                  tuple(data.values())
-                )
+                vals = ','.join(['%s'] * len(data))
+                sql = f"INSERT INTO members ({cols}) VALUES ({vals})"
+                cursor.execute(sql, list(data.values()))
                 conn.commit()
-            flash("Member added successfully","success")
-            return redirect(url_for('admin_routes.members'))
-        finally:
-            conn.close()
+            flash("Member added successfully!", "success")
+        except Exception as e:
+            flash(f"Error: {e}", "danger")
 
-    return render_template('admin/add_member.html',
-                           genders=genders,
-                           types=types,
-                           blood_groups=blood_groups)
+        return redirect(url_for('admin_routes.members'))
 
-
+    return render_template('admin/add_member.html', form=form)
 
 
 # ------------------- Notices -----------------------

@@ -156,7 +156,7 @@ def pay_sslcommerz():
     transaction_type = data.get('type')
     email            = (data.get('email') or '').strip()
 
-    # fallback dummy email
+    # fallback dummy email .
     if not email:
        email = f"{phone.replace('+','') or 'user'}@no-reply.annurmadrasa.com"
 

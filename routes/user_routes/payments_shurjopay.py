@@ -203,9 +203,9 @@ def get_transactions():
                               .isoformat().replace("+00:00","Z")
     }), 200
 
-# ====== SSLCommerz Payment Initiation ======
-@user_routes.route('/pay_sslcommerz', methods=['POST'])
-def pay_sslcommerz():
+# ====== ShurjoPay Payment Initiation ======
+@user_routes.route('/pay_shurjopay', methods=['POST'])
+def pay_shurjopay():
     data = request.get_json() or {}
     phone = data.get('phone')
     fullname = (data.get('fullname') or '').strip()
@@ -215,62 +215,73 @@ def pay_sslcommerz():
     if not phone or not fullname or amount is None:
         log_event("payment_missing_fields", phone, "Missing payment info")
         return jsonify({"error": "Phone, fullname and amount required"}), 400
-    
-    formatted_phone = format_phone_number(phone)
 
-    tran_id = f"ssl_{int(time.time())}"
-    store_id = os.getenv("SSLCOMMERZ_STORE_ID", "your-username-here")
-    store_pass = os.getenv("SSLCOMMERZ_STORE_PASS", "your-password-here")
+    tran_id = f"shurjo_{int(time.time())}"
+    username = os.getenv("SHURJOPAY_USERNAME", "your-username-here")
+    password = os.getenv("SHURJOPAY_PASSWORD", "your-password-here")
 
-    payload = {
-        "store_id": store_id,
-        "store_passwd": store_pass,
-        "total_amount": amount,
+    auth_payload = {
+        "username": username,
+        "password": password,
+    }
+
+    try:
+        token_res = requests.post(
+            'https://sandbox.shurjopayment.com/api/get_token',
+            data=auth_payload,
+            timeout=10,
+        )
+        token = token_res.json().get('token')
+    except Exception as e:
+        log_event("shurjopay_auth_error", phone, str(e))
+        return jsonify({"error": "Gateway unreachable"}), 502
+
+    payment_payload = {
+        "token": token,
+        "order_id": tran_id,
         "currency": "BDT",
-        "tran_id": tran_id,
-        "success_url": Config.BASE_URL + 'payment_success_ssl',
-        "fail_url": Config.BASE_URL + 'payment_fail_ssl',
-        "cus_name": fullname,
-        "cus_phone": formatted_phone,
-        "value_a": formatted_phone,
-        "value_b": fullname,
-        "value_c": months or '',
+        "amount": amount,
+        "customer_name": fullname,
+        "customer_phone": phone,
+        "return_url": Config.BASE_URL + 'payment_success_shurjo',
+        "cancel_url": Config.BASE_URL + 'payment_fail_shurjo',
+        "value1": phone,
+        "value2": fullname,
+        "value3": months or '',
     }
 
     try:
         r = requests.post(
-            'https://sandbox.sslcommerz.com/gwprocess/v4/api.php',
-            data=payload,
+            'https://sandbox.shurjopayment.com/api/secret-pay',
+            data=payment_payload,
             timeout=10,
         )
         res = r.json()
     except Exception as e:
-        log_event("sslcommerz_error", phone, str(e))
+        log_event("shurjopay_error", phone, str(e))
         return jsonify({"error": "Gateway unreachable"}), 502
 
-    if res.get('status') == 'SUCCESS':
-        return jsonify({"GatewayPageURL": res.get('GatewayPageURL')}), 200
+    if res.get('checkout_url'):
+        return jsonify({"checkout_url": res.get('checkout_url')}), 200
 
     return jsonify({"error": "Payment initiation failed"}), 500
 
 
-@user_routes.route('/payment_success_ssl', methods=['POST'])
-def payment_success_ssl():
+@user_routes.route('/payment_success_shurjo', methods=['POST'])
+def payment_success_shurjo():
     data = request.form.to_dict() or {}
-    phone = data.get('value_a')
-    fullname = data.get('value_b')
+    phone = data.get('value1') or data.get('customer_phone')
+    fullname = data.get('value2') or data.get('customer_name')
     amount = data.get('amount')
-    months = data.get('value_c')
-
-    formatted_phone = format_phone_number(phone)
+    months = data.get('value3')
 
     try:
         requests.post(
             Config.BASE_URL + 'add_transaction',
             json={
-                'phone': formatted_phone,
+                'phone': phone,
                 'fullname': fullname,
-                'type': 'sslcommerz',
+                'type': 'shurjopay',
                 'amount': amount,
                 'months': months,
             },

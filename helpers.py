@@ -217,7 +217,7 @@ def insert_person(fields: dict):
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             columns = ', '.join(fields.keys())
             placeholders = ', '.join(['%s'] * len(fields))
-            sql = f"INSERT INTO people ({columns}) VALUES ({placeholders})"
+            sql = f"INSERT INTO verify_people ({columns}) VALUES ({placeholders})"
             cursor.execute(sql, list(fields.values()))
         conn.commit()
     finally:

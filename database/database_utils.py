@@ -45,7 +45,7 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS transactions (
             transaction_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
             id             INT NOT NULL,
-            type           ENUM('fees','donation') NOT NULL,
+            type           ENUM('fees','donations') NOT NULL,
             month          VARCHAR(50),
             amount         INT    NOT NULL,
             date           DATETIME NOT NULL,

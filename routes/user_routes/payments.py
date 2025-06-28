@@ -71,6 +71,7 @@ def get_transactions():
     fullname         = (data.get('fullname') or '').strip()
     transaction_type = data.get('type')
     lastfetched      = data.get('updatedSince')
+    
 
     # Required fields
     if not phone or not fullname or not transaction_type:
@@ -153,6 +154,11 @@ def pay_sslcommerz():
     amount           = data.get('amount')
     months           = data.get('months')
     transaction_type = data.get('type')
+    email            = (data.get('email') or '').strip()
+
+    # If no email on file, generate a dummy one from the phone
+    if not email:
+       email = f"{formatted_phone}@no-reply.annurmadrasa.com"
 
     if not phone or not fullname or not transaction_type or amount is None:
         log_event("payment_missing_fields", phone, "Missing payment info")
@@ -177,6 +183,7 @@ def pay_sslcommerz():
         "fail_url":     Config.BASE_URL + 'payment_fail_ssl',
         "cus_name":     fullname,
         "cus_phone":    formatted_phone,
+        "cus_email":    email,  
         "value_a":      formatted_phone,
         "value_b":      fullname,
         "value_c":      months or '',

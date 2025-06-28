@@ -15,7 +15,7 @@ class Config:
     # Advanced
     API_KEY = os.getenv("API_KEY")
     SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True 
+    SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
     RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
@@ -23,7 +23,7 @@ class Config:
     # Upload Folders
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max
     IMG_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'people_img')
-    EXAM_DIR     = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
+    EXAM_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
     NOTICES_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
     MADRASA_IMG_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'madrasa_img')
 

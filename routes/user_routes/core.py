@@ -10,7 +10,6 @@ from werkzeug.utils import secure_filename
 from database import connect_to_db
 from logger import log_event
 from config import Config
-from datetime import datetime, timezone
 from helpers import get_id, insert_person
 
 # ========== Config ==========

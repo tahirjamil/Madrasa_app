@@ -12,7 +12,7 @@ MAX_BACKUPS = 20
 
 # ======= Paths ========
 BASE_DIR = os.path.dirname(__file__)
-BACKUP_DIR = os.path.join(BASE_DIR, "database", "backups")
+BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 # ======= Create backup filename ========

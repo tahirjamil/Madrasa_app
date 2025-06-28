@@ -32,3 +32,5 @@ def log_event(action, phone, message):
             conn.commit()
     except Exception as e:
         print("Logging failed:", e)
+    finally:
+        conn.close()

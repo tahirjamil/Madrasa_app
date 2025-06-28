@@ -124,7 +124,7 @@ if __name__ == "__main__":
     else:
         # production
         port = 80
-        URL = f"http://127.0.0.1"
+        URL = "http://127.0.0.1"
         print(f"Starting production server with Waitress at {URL}")
         print(f"Quick logs available at {URL}/admin/info")
         serve(app, host=host, port=port)

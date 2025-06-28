@@ -55,15 +55,20 @@ def require_api_key(f):
 
 # Delete Code
 def delete_code():
-    conn = connect_to_db
+    conn = connect_to_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("""
-            DELETE FROM verifications 
-            WHERE created_at < NOW() - INTERVAL 1 DAY
-        """)
+            cursor.execute(
+                """
+                DELETE FROM verifications
+                WHERE created_at < NOW() - INTERVAL 1 DAY
+            """
+            )
+        conn.commit()
     except Exception as e:
         log_event("failed to delete verifications", "Null", f"Database Error {str(e)}")
+    finally:
+        conn.close()
 
 # SMS Sender
 def send_sms(phone, code):
@@ -123,6 +128,8 @@ def check_code(user_code, phone):
 
     except Exception as e:
         return jsonify({"message": f"Error: {str(e)}"}), 500
+    finally:
+        conn.close()
 
 
 # Phone formatter

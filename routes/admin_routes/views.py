@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
 from config import Config
 import json
+from app import csrf
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
@@ -302,6 +303,7 @@ def verify_member(verify_people_id):
 
     return redirect(url_for('admin_routes.members'))
 
+@csrf.exempt
 @admin_routes.route('/member/add', methods=['GET','POST'])
 def add_member():
     if not session.get('admin_logged_in'):
@@ -364,7 +366,7 @@ def notice_page():
         file = request.files.get('file')
 
         ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
 
         if username != ADMIN_USER or password != ADMIN_PASS:
             flash("Unauthorized", "danger")

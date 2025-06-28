@@ -15,7 +15,11 @@ def connect_to_db():
 
 # Table Creation
 def create_tables():
-    conn = connect_to_db()
+    try:
+        conn = connect_to_db()
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        return
     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         # ─── users ──────────────────────────────────────────────────────────────
         cursor.execute("""

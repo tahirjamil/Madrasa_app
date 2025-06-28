@@ -114,6 +114,7 @@ app.register_blueprint(user_routes)
 app.register_blueprint(admin_routes, url_prefix='/admin')
 
 csrf.exempt(user_routes)
+csrf.exempt(admin_routes)
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":

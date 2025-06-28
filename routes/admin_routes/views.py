@@ -10,7 +10,6 @@ from werkzeug.utils import secure_filename
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
 from config import Config
 import json
-from app import csrf
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
@@ -303,7 +302,6 @@ def verify_member(verify_people_id):
 
     return redirect(url_for('admin_routes.members'))
 
-@csrf.exempt
 @admin_routes.route('/member/add', methods=['GET','POST'])
 def add_member():
     if not session.get('admin_logged_in'):

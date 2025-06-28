@@ -1,1 +1,1 @@
-from .database_utils import connect_to_db, create_tables
+from .database_utils import connect_to_db, create_tables  # noqa: F401

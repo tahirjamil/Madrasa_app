@@ -152,7 +152,7 @@ def add_person():
         fields["date_of_birth"] = f("date_of_birth")
 
         optional = [
-            "source", "present_address", "relation",
+            "source", "present_address",
             "blood_group", "gender", "degree", "mail"
         ]
         fields.update({k: f(k) for k in optional if f(k)})

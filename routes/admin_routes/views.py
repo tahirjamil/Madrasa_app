@@ -504,7 +504,7 @@ def add_routine():
                 ])
                 conn.commit()
             flash("Routine added successfully.", "success")
-            return redirect(url_for('admin_routes.routine_admin'))
+            return redirect(url_for('admin_routes.routine'))
         except Exception as e:
             flash(f"Error adding routine: {e}", "danger")
         finally:

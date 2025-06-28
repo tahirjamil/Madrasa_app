@@ -307,15 +307,9 @@ def add_member():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-<<<<<<< HEAD
-    form = AddMemberForm()
-    account_types = ['admins', 'students', 'teachers', 'staffs', 'others', 'badri_members', 'donors']
-    form.acc_type.choices = [(t, t.capitalize()) for t in account_types]
-=======
     genders = ['Male','Female']
     blood_groups = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
     types = ['admins','students','teachers','staffs','donors','badri_members','others']
->>>>>>> parent of 6407f36 (1)
 
     if request.method == 'POST':
         fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",

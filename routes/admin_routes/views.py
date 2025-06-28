@@ -309,6 +309,8 @@ def add_member():
         return redirect(url_for('admin_routes.login'))
 
     form = AddMemberForm()
+    account_types = ['admins', 'students', 'teachers', 'staffs', 'others', 'badri_members', 'donors']
+    form.acc_type.choices = [(t, t.capitalize()) for t in account_types]
 
     if form.validate_on_submit():
         data = {

@@ -1,13 +1,18 @@
 import os
 from datetime import datetime
-from flask import Flask, render_template, request, session, g, redirect, url_for, send_from_directory
+from pathlib import Path
+
+from flask import (
+    Flask, render_template, request, session, g,
+    redirect, url_for, send_from_directory
+)
 from flask_cors import CORS
 from dotenv import load_dotenv
 from waitress import serve
+
 from config import Config
 from database import create_tables
-from pathlib import Path
-from flask_wtf import CSRFProtect
+
 # API & Web Blueprints
 from routes.user_routes import user_routes
 from routes.admin_routes import admin_routes
@@ -18,11 +23,11 @@ BASE_DIR = Path(__file__).resolve().parent
 dev_env = BASE_DIR / "dev.env"
 env = BASE_DIR / ".env"
 
+# load the correct .env
 if dev_env.is_file():
     load_dotenv(dev_env, override=True)
 else:
     load_dotenv(env)
-
 
 app = Flask(__name__)
 CORS(app)
@@ -40,8 +45,16 @@ with app.app_context():
 
 # ─── Request/Response Logging ───────────────────────────────
 request_response_log = []
+
+# expose it so blueprints can read it via current_app.request_response_log
+setattr(app, 'request_response_log', request_response_log)
+
 @app.before_request
 def log_every_request():
+    # don’t log the client‐side poll
+    if request.endpoint == "admin_routes.info_data_admin":
+        return
+
     ip       = request.headers.get("X-Forwarded-For", request.remote_addr)
     endpoint = request.endpoint or "unknown"
     blocked  = endpoint.startswith("admin_routes.") and not session.get("admin_logged_in")
@@ -53,14 +66,13 @@ def log_every_request():
         "status":   "Blocked" if blocked else "Allowed",
         "method":   request.method,
         "path":     request.path,
-        "req_json": request.get_json(silent=True),  # always present
-        "res_json": None,                            # always present
+        "req_json": request.get_json(silent=True),
+        "res_json": None,
     }
     g.log_entry = entry
     request_response_log.append(entry)
     if len(request_response_log) > 100:
         request_response_log.pop(0)
-
 @app.after_request
 def attach_response_data(response):
     entry = getattr(g, "log_entry", None)
@@ -74,20 +86,7 @@ def attach_response_data(response):
             entry["res_json"] = None
     return response
 
-# ─── Routes ───────────────────────────────────
-@app.route("/admin/status")
-def status():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
-    return render_template("status.html", requests=request_response_log)
-
-@app.route("/admin/info")
-def info():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
-    logs = request_response_log[-100:]
-    return render_template("info.html", logs=logs)
-
+# ─── Public Routes ──────────────────────────────────────────
 @app.route("/donate")
 def donate():
     return render_template("donate.html", current_year=datetime.now().year)
@@ -97,7 +96,6 @@ def home():
     return render_template("home.html", current_year=datetime.now().year)
 
 # ─── Error & Favicon ────────────────────────────────────────
-
 @app.errorhandler(404)
 def not_found(e):
     return render_template('404.html'), 404
@@ -111,23 +109,21 @@ def favicon():
     )
 
 # ─── Register Blueprints ────────────────────────────────────
-
 app.register_blueprint(user_routes)
 app.register_blueprint(admin_routes, url_prefix='/admin')
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
-    env = os.environ.get("FLASK_ENV")
+    env_flag = os.environ.get("FLASK_ENV")
+    host, port = "0.0.0.0", 8000
 
-    if env == "development":
-        host = "0.0.0.0"
-        port = 8000
+    if env_flag == "development":
+        print(f"Starting Flask dev server at http://{host}:{port}")
         app.run(debug=True, host=host, port=port)
-
     else:
-        host = "0.0.0.0"
+        # production
         port = 80
-        URL = "http://127.0.0.1:8000"
+        URL = f"http://127.0.0.1"
         print(f"Starting production server with Waitress at {URL}")
-        print(f"You can check server status at {URL}/admin/status or quick logs at {URL}/admin/info")
+        print(f"Quick logs available at {URL}/admin/info")
         serve(app, host=host, port=port)

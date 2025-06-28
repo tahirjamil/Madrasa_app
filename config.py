@@ -23,6 +23,7 @@ class Config:
     IMG_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'people_img')
     EXAM_DIR     = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
     NOTICES_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
+    MADRASA_IMG_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'madrasa_img')
 
     # Extensions
     ALLOWED_NOTICE_EXTENSIONS = {'pdf', 'docx', 'png', 'jpg', 'jpeg'}

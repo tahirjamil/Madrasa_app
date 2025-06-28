@@ -4,12 +4,18 @@
 {% block content %}
 <div class="container">
   <h2 class="mb-4">Add New Member</h2>
-  <form method="POST" enctype="multipart/form-data" class="row g-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <form id="add-member-form"
+        method="POST"
+        enctype="multipart/form-data"
+        class="row g-3">
+
     <!-- Name Fields -->
     <div class="col-md-4">
-      <label class="form-label">Name (English)</label>
-      <input type="text" name="name_en" class="form-control" required>
+      <label class="form-label">Name (English)*</label>
+      <input id="name_en" type="text"
+             name="name_en"
+             class="form-control"
+             required>
     </div>
     <div class="col-md-4">
       <label class="form-label">Name (Bengali)</label>
@@ -30,8 +36,13 @@
       <input type="text" name="student_id" class="form-control">
     </div>
     <div class="col-md-6">
-      <label class="form-label">Phone</label>
-      <input type="tel" name="phone" class="form-control" required>
+      <label class="form-label">Phone* <small class="text-muted">(+8801…)</small></label>
+      <input id="phone" type="tel"
+             name="phone"
+             class="form-control"
+             placeholder="+8801XXXXXXXXX"
+             required>
+      <div id="phone-feedback" class="form-text"></div>
     </div>
 
     <!-- Personal Details -->
@@ -130,8 +141,8 @@
 
     <!-- Account & Image -->
     <div class="col-md-6">
-      <label class="form-label">Account Type</label>
-      <select name="acc_type" class="form-select" required>
+      <label class="form-label">Account Type*</label>
+      <select id="acc_type" name="acc_type" class="form-select" required>
         <option value="">-- Select --</option>
         {% for t in types %}
         <option value="{{ t }}">{{ t.replace('_',' ')|title }}</option>
@@ -140,13 +151,76 @@
     </div>
     <div class="col-md-6">
       <label class="form-label">Upload Image</label>
-    <input type="file" name="image" accept="image/*" class="form-control">
+      <input id="image-input" type="file"
+             name="image"
+             accept="image/*"
+             class="form-control">
+      <div class="mt-2">
+        <img id="preview" src="" alt="Preview"
+             style="max-width: 150px; display: none;">
+      </div>
     </div>
 
     <div class="col-12 mt-3">
-      <button type="submit" class="btn btn-success">Submit</button>
-      <a href="{{ url_for('admin_routes.members') }}" class="btn btn-secondary ms-2">Cancel</a>
+      <button id="submit-btn" type="submit"
+              class="btn btn-success"
+              disabled>
+        Submit
+      </button>
+      <a href="{{ url_for('admin_routes.members') }}"
+         class="btn btn-secondary ms-2">
+        Cancel
+      </a>
     </div>
   </form>
 </div>
+
+<script>
+// Enable submit only when required fields are non-empty
+const nameEl   = document.getElementById('name_en');
+const phoneEl  = document.getElementById('phone');
+const typeEl   = document.getElementById('acc_type');
+const submitBtn= document.getElementById('submit-btn');
+
+function checkFormValid() {
+  submitBtn.disabled = !(
+    nameEl.value.trim() &&
+    phoneEl.value.trim() &&
+    typeEl.value.trim()
+  );
+}
+[nameEl, phoneEl, typeEl].forEach(el =>
+  el.addEventListener('input', checkFormValid)
+);
+
+// Phone validation hint
+const phoneFeedback = document.getElementById('phone-feedback');
+phoneEl.addEventListener('input', () => {
+  const pattern = /^\+8801[3-9]\d{8}$/;
+  if (!phoneEl.value) {
+    phoneFeedback.textContent = '';
+    phoneEl.classList.remove('is-invalid','is-valid');
+  } else if (pattern.test(phoneEl.value)) {
+    phoneFeedback.textContent = 'Looks good!';
+    phoneEl.classList.add('is-valid');
+    phoneEl.classList.remove('is-invalid');
+  } else {
+    phoneFeedback.textContent = 'Use +8801XXXXXXXXX';
+    phoneEl.classList.add('is-invalid');
+    phoneEl.classList.remove('is-valid');
+  }
+  checkFormValid();
+});
+
+// Image preview
+const imgInput = document.getElementById('image-input');
+const preview  = document.getElementById('preview');
+imgInput.addEventListener('change', () => {
+  const file = imgInput.files[0];
+  if (!file) return preview.style.display = 'none';
+  const url = URL.createObjectURL(file);
+  preview.src = url;
+  preview.style.display = 'block';
+});
+</script>
 {% endblock %}

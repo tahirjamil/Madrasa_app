@@ -9,72 +9,129 @@
   </div>
 
   <!-- Account Type Selector -->
-  <form method="get" class="mb-4">
+  <form method="get" class="mb-3">
     <label for="acc_type" class="form-label">Select Account Type:</label>
-    <select id="acc_type" name="type" class="form-select w-auto d-inline" onchange="this.form.submit()">
+    <select id="acc_type" name="type"
+            class="form-select w-auto d-inline"
+            onchange="this.form.submit()">
       {% for t in types %}
-        <option value="{{ t }}" {% if t == selected_type %}selected{% endif %}>{{ t|replace('_',' ')|title }}</option>
+        <option value="{{ t }}" {% if t == selected_type %}selected{% endif %}>
+          {{ t.replace('_',' ')|title }}
+        </option>
       {% endfor %}
     </select>
   </form>
 
+  <!-- Client-side Search -->
+  <div class="mb-4">
+    <input id="member-search" type="text"
+           class="form-control w-50"
+           placeholder="Search members…">
+  </div>
+
   <!-- Members Table for Selected Type -->
   {% if members %}
     <div class="table-responsive mb-5">
-      <table class="table table-sm table-bordered">
+      <table id="member-table" class="table table-sm table-bordered">
         <thead class="table-dark">
           <tr>
             {% for col in members[0].keys() %}
-              <th>{{ col.replace('_', ' ')|title }}</th>
+            <th>{{ col.replace('_',' ')|title }}</th>
             {% endfor %}
           </tr>
         </thead>
         <tbody>
           {% for m in members %}
-            <tr>
-              {% for val in m.values() %}
-                <td>{{ val }}</td>
-              {% endfor %}
-            </tr>
+          <tr>
+            {% for val in m.values() %}
+            <td>{{ val }}</td>
+            {% endfor %}
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   {% else %}
-    <p class="text-muted">No members for "{{ selected_type }}"</p>
+    <p class="text-muted">No members for “{{ selected_type|replace('_',' ')|title }}”.</p>
   {% endif %}
 
-  <h2 class="mb-4">Pending Verifications</h2>
+  <h2 class="mb-3">Pending Verifications</h2>
+
+  <!-- Client-side Search for Pending -->
+  <div class="mb-4">
+    <input id="pending-search" type="text"
+           class="form-control w-50"
+           placeholder="Search pending verifications…">
+  </div>
+
   {% if pending %}
     <div class="table-responsive">
-      <table class="table table-sm table-bordered">
+      <table id="pending-table" class="table table-sm table-bordered">
         <thead class="table-dark">
           <tr>
             {% for col in pending[0].keys() %}
-              <th>{{ col.replace('_',' ')|title }}</th>
+            <th>{{ col.replace('_',' ')|title }}</th>
             {% endfor %}
             <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {% for p in pending %}
-            <tr>
-              {% for val in p.values() %}
-                <td>{{ val }}</td>
-              {% endfor %}
-              <td>
-                <form method="post" action="{{ url_for('admin_routes.verify_member', verify_people_id=p.user_id) }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="btn btn-sm btn-success">Verify</button>
-                </form>
-              </td>
-            </tr>
+          <tr>
+            {% for val in p.values() %}
+            <td>{{ val }}</td>
+            {% endfor %}
+            <td>
+              <form method="post"
+                    action="{{ url_for('admin_routes.verify_member', verify_people_id=p.user_id) }}"
+                    class="verify-form d-inline">
+                <button type="submit" class="btn btn-sm btn-success">
+                  Verify
+                </button>
+              </form>
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   {% else %}
-    <p class="text-muted">No pending verifications</p>
+    <p class="text-muted">No pending verifications.</p>
   {% endif %}
 </div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Utility to filter rows in a table
+  function makeFilter(searchInputId, tableId) {
+    const input = document.getElementById(searchInputId);
+    const table = document.getElementById(tableId);
+    const rows  = Array.from(table.tBodies[0].rows);
+
+    input.addEventListener('input', () => {
+      const term = input.value.trim().toLowerCase();
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(term) ? '' : 'none';
+      });
+    });
+  }
+
+  // Set up live search on both tables
+  makeFilter('member-search', 'member-table');
+  makeFilter('pending-search', 'pending-table');
+
+  // Confirmation prompt before verifying
+  document.querySelectorAll('.verify-form').forEach(form => {
+    form.addEventListener('submit', e => {
+      if (!confirm('Are you sure you want to verify this member?')) {
+        e.preventDefault();
+      }
+    });
+  });
+});
+</script>
 {% endblock %}

@@ -9,10 +9,13 @@ from logger import log_event
 from werkzeug.utils import secure_filename
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
 from config import Config
+import json
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
 NOTICES_DIR = Config.NOTICES_DIR
+MADRASA_IMG_DIR = Config.MADRASA_IMG_DIR
+PIC_INDEX_PATH       = os.path.join(MADRASA_IMG_DIR, 'index.json')
 
 
 # ------------- Root / Dashboard ----------------
@@ -107,6 +110,53 @@ def view_logs():
         conn.close()
 
     return render_template("admin/logs.html", logs=logs)
+
+from flask import jsonify
+
+@admin_routes.route('/logs/data')
+def logs_data():
+    conn = connect_to_db()
+    with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+        cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
+        logs = cursor.fetchall()
+    conn.close()
+    # Convert datetime to string
+    for l in logs:
+        l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+    return jsonify(logs)
+
+
+
+@admin_routes.route('/info/data')
+def info_data_admin():
+    # require admin
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    logs = getattr(current_app, 'request_response_log', [])[-100:]
+    # serializable copy
+    out = []
+    for e in logs:
+        out.append({
+            "time":     e["time"],
+            "ip":       e["ip"],
+            "method":   e["method"],
+            "path":     e["path"],
+            "req_json": e.get("req_json"),
+            "res_json": e.get("res_json")
+        })
+    return jsonify(out)
+
+
+@admin_routes.route('/info')
+def info_admin():
+    # require admin
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    logs = getattr(current_app, 'request_response_log', [])[-100:]
+    return render_template("admin/info.html", logs=logs)
+
 
 
 
@@ -419,6 +469,7 @@ def routine():
 
 @admin_routes.route('/routine/add', methods=['GET', 'POST'])
 def add_routine():
+    conn = connect_to_db()
     # 1) require login
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -430,8 +481,7 @@ def add_routine():
         # e.g. if data['name_mode']=='id': lookup the three name fields...
         # then insert into routine table:
         try:
-            conn = connect_to_db()
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO routine
                       (gender, class_group, class_level, weekday,
@@ -526,34 +576,97 @@ def events():
 
 
 
+# ------------------- Madrasa Pictures ------------------------
+
+# Ensure the folder & index exist
+os.makedirs(MADRASA_IMG_DIR, exist_ok=True)
+if not os.path.exists(PIC_INDEX_PATH):
+    with open(PIC_INDEX_PATH, 'w') as f:
+        json.dump([], f)
 
 
+@admin_routes.route('/madrasa_pictures', methods=['GET', 'POST'])
+def madrasa_pictures():
+    # 1) Require admin
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    # 2) Handle upload
+    if request.method == 'POST':
+        username     = request.form.get('username', '')
+        password     = request.form.get('password', '')
+        class_name   = request.form.get('class_name', '').strip()
+        floor_number = request.form.get('floor_number', '').strip()
+        serial       = request.form.get('serial', '').strip()
+        file         = request.files.get('file')
+
+        ADMIN_USER = os.getenv('ADMIN_USERNAME')
+        ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
+
+        if username != ADMIN_USER or password != ADMIN_PASS:
+            flash('Invalid admin credentials', 'danger')
+            return redirect(url_for('admin_routes.madrasa_pictures'))
+
+        if not file or not file.filename:
+            flash('No file selected', 'danger')
+            return redirect(url_for('admin_routes.madrasa_pictures'))
+
+        filename = secure_filename(file.filename)
+        save_path = os.path.join(MADRASA_IMG_DIR, filename)
+        file.save(save_path)
+
+        # 3) Update index.json
+        with open(PIC_INDEX_PATH, 'r+') as idx:
+            data = json.load(idx)
+            data.append({
+                'filename'    : filename,
+                'class_name'  : class_name,
+                'floor_number': floor_number,
+                'serial'      : serial,
+                'uploaded_at' : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+            idx.seek(0)
+            json.dump(data, idx, indent=2)
+            idx.truncate()
+
+        flash('Picture uploaded!', 'success')
+        return redirect(url_for('admin_routes.madrasa_pictures'))
+
+    # 4) On GET: load current list
+    with open(PIC_INDEX_PATH) as idx:
+        pictures = json.load(idx)
+
+    return render_template('admin/madrasa_pictures.html', pictures=pictures)
 
 
+@admin_routes.route('/madrasa_pictures/delete/<filename>', methods=['POST'])
+def delete_picture(filename):
+    # 1) Require admin
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
 
+    username = request.form.get('username', '')
+    password = request.form.get('password', '')
 
+    ADMIN_USER = os.getenv('ADMIN_USERNAME')
+    ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
 
+    if username != ADMIN_USER or password != ADMIN_PASS:
+        flash('Invalid admin credentials', 'danger')
+        return redirect(url_for('admin_routes.madrasa_pictures'))
 
+    # 2) Remove file
+    pic_path = os.path.join(MADRASA_IMG_DIR, filename)
+    if os.path.exists(pic_path):
+        os.remove(pic_path)
 
+    # 3) Update index.json to drop that entry
+    with open(PIC_INDEX_PATH, 'r+') as idx:
+        data = json.load(idx)
+        data = [p for p in data if p['filename'] != filename]
+        idx.seek(0)
+        json.dump(data, idx, indent=2)
+        idx.truncate()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ------------------- Others ------------------------
-
-@admin_routes.route('/madrasha_pictures')
-def madrasha_pictures():
-    return render_template("admin/madrasha_pictures.html")
+    flash('Picture deleted.', 'success')
+    return redirect(url_for('admin_routes.madrasa_pictures'))

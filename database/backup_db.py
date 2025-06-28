@@ -21,17 +21,26 @@ filename = f"{DB_NAME}_backup_{timestamp}.sql"
 backup_path = os.path.join(BACKUP_DIR, filename)
 
 # ======= Run mysqldump ========
-dump_command = f"mysqldump -u {DB_USER} -p{DB_PASSWORD} {DB_NAME} > \"{backup_path}\""
+dump_command = [
+    "mysqldump",
+    "-u",
+    DB_USER,
+    f"-p{DB_PASSWORD}",
+    DB_NAME,
+]
 
 try:
-    subprocess.run(dump_command, shell=True, check=True)
+    with open(backup_path, "w") as f:
+        subprocess.run(dump_command, check=True, stdout=f)
     print(f"Backup created: {backup_path}")
 except subprocess.CalledProcessError as e:
     print(f"Backup failed: {e}")
     exit(1)
 
 # ======= Cleanup Old Backups ========
-backups = sorted(glob.glob(os.path.join(BACKUP_DIR, f"{DB_NAME}_backup_*.sql")))
+backups = sorted(
+    glob.glob(os.path.join(BACKUP_DIR, f"{DB_NAME}_backup_*.sql"))
+)
 
 if len(backups) > MAX_BACKUPS:
     num_to_delete = len(backups) - MAX_BACKUPS

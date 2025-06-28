@@ -156,14 +156,13 @@ def pay_sslcommerz():
     transaction_type = data.get('type')
     email            = (data.get('email') or '').strip()
 
-    # If no email on file, generate a dummy one from the phone
+    # fallback dummy email
     if not email:
-       email = f"{phone}@no-reply.annurmadrasa.com"
+       email = f"{phone.replace('+','') or 'user'}@no-reply.annurmadrasa.com"
 
     if not phone or not fullname or not transaction_type or amount is None:
         log_event("payment_missing_fields", phone, "Missing payment info")
         return jsonify({"error": "Phone, fullname and amount required"}), 400
-
 
     tran_id    = f"ssl_{int(time.time())}"
     store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
@@ -173,27 +172,39 @@ def pay_sslcommerz():
         return jsonify({"error": "Payment gateway misconfigured"}), 500
 
     payload = {
-        "store_id":    store_id,
-        "store_passwd": store_pass,
-        "total_amount": amount,
-        "currency":     "BDT",
-        "tran_id":      tran_id,
-        "success_url":  Config.BASE_URL + 'payment_success_ssl',
-        "fail_url":     Config.BASE_URL + 'payment_fail_ssl',
-        "cus_name":     fullname,
-        "cus_phone":    phone,
-        "cus_email":    email,  
-        "value_a":      phone,
-        "value_b":      fullname,
-        "value_c":      months or '',
-        "value_d":      transaction_type,
-        "value_e":      tran_id,
-    }
+        # merchant + txn
+        "store_id":      store_id,
+        "store_passwd":  store_pass,
+        "total_amount":  amount,
+        "currency":      "BDT",
+        "tran_id":       tran_id,
+        "success_url":   Config.BASE_URL + 'payment_success_ssl',
+        "fail_url":      Config.BASE_URL + 'payment_fail_ssl',
+        "cancel_url":    Config.BASE_URL + 'payment_cancel_ssl',   # new
+        "ipn_url":       Config.BASE_URL + 'payment_ipn',          # optional
 
-    # Sanity-check that we have a tran_id
-    if not payload["tran_id"]:
-        log_event("sslcommerz_missing_tranid", phone, "Missing tran_id")
-        return jsonify({"error": "Internal error"}), 500
+        # product
+        "product_name":      transaction_type.capitalize(),
+        "product_category":  transaction_type.capitalize(),
+        "product_profile":   "non-physical-goods",
+
+        # customer (Mirpur defaults)
+        "cus_name":    fullname,
+        "cus_email":   email,
+        "cus_add1":    "Mirpur 10",
+        "cus_add2":    "", 
+        "cus_city":    "Dhaka",
+        "cus_postcode":"1216",
+        "cus_country": "Bangladesh",
+        "cus_phone":   phone,
+
+        # passthrough fields
+        "value_a": phone,
+        "value_b": fullname,
+        "value_c": months or '',
+        "value_d": transaction_type,
+        "value_e": tran_id,
+    }
 
     try:
         log_event("sslcommerz_request", phone, f"Initiating {tran_id} for {amount}")

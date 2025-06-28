@@ -9,6 +9,8 @@ class Config:
     WTF_CSRF_SECRET_KEY = os.getenv("CSRF_SECRET_KEY", "fallback-csrf-key")
     BASE_URL = 'http://localhost:5000/'
     BASE_UPLOAD_FOLDER = os.path.join('uploads')
+    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
     # Advanced
     API_KEY = os.getenv("API_KEY")

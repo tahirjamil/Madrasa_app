@@ -670,3 +670,87 @@ def delete_picture(filename):
 
     flash('Picture deleted.', 'success')
     return redirect(url_for('admin_routes.madrasa_pictures'))
+
+
+
+# ---------------------- Exam -----------------------------
+
+@admin_routes.route('/admin/events/exams', methods=['GET', 'POST'])
+def exams():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    conn = connect_to_db()
+    cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+    # Fetch all exams
+    cursor.execute("SELECT * FROM exam ORDER BY date DESC, start_time ASC")
+    exams = cursor.fetchall()
+
+    conn.close()
+    return render_template('admin/exams.html', exams=exams)
+
+@admin_routes.route('/admin/add_exam', methods=['POST'])
+def add_exam():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    # ✅ Re-check admin credentials
+    username = request.form.get('username')
+    password = request.form.get('password')
+
+    if username != current_app.config['ADMIN_USERNAME'] or password != current_app.config['ADMIN_PASSWORD']:
+        return "Invalid admin credentials", 403
+
+    # ✅ Get form fields
+    cls = request.form.get('class')
+    gender = request.form.get('gender')
+    weekday = request.form.get('weekday')
+    date = request.form.get('date')
+
+    # ✅ Combine date + time
+    def combine(date_str, time_str):
+        return f"{date_str} {time_str}:00" if date_str and time_str else None
+
+    start_time = combine(date, request.form.get('start_time'))
+    end_time = combine(date, request.form.get('end_time'))
+    sec_start_time = combine(date, request.form.get('sec_start_time'))
+    sec_end_time = combine(date, request.form.get('sec_end_time'))
+
+    # ✅ Book fields
+    book_mode = request.form.get('book_mode')
+
+    conn = connect_to_db()
+    cursor = conn.cursor()
+
+    if book_mode == 'id':
+        book_id = request.form.get('book_id')
+        cursor.execute("SELECT book_en, book_bn, book_ar FROM book WHERE book_id = %s", (book_id,))
+        book = cursor.fetchone()
+        if not book:
+            conn.close()
+            return "Book ID not found", 400
+        book_en, book_bn, book_ar = book
+    else:
+        book_en = request.form.get('book_en')
+        book_bn = request.form.get('book_bn')
+        book_ar = request.form.get('book_ar')
+
+    # ✅ Insert exam
+    cursor.execute("""
+        INSERT INTO exam (
+            class, gender, weekday, date,
+            start_time, end_time, sec_start_time, sec_end_time,
+            book_en, book_bn, book_ar
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        cls, gender, weekday, date,
+        start_time, end_time, sec_start_time, sec_end_time,
+        book_en, book_bn, book_ar
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for('admin_routes.exams'))

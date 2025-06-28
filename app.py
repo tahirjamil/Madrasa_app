@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flask import (
     Flask, render_template, request, session, g,
-    redirect, url_for, send_from_directory
+    send_from_directory
 )
 from flask_cors import CORS
 from flask_wtf import CSRFProtect

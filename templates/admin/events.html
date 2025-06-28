@@ -18,11 +18,17 @@
 
   <!-- Header + Add Event button -->
   <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="mb-0">📅 Events</h2>
+  <h2 class="mb-0">📅 Events</h2>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('admin_routes.exams') }}" class="btn btn-sm btn-secondary">
+      📚 Exams
+    </a>
     <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#addEventForm">
       + Add Event
     </button>
   </div>
+  </div>
+
 
   <!-- Add Event Form (collapsed by default) -->
   <div class="collapse mb-4" id="addEventForm">

@@ -63,64 +63,6 @@ def payment():
     return jsonify({"amount": fees, "month": due_months}), 200
 
 
-# ====== Save Transaction ======
-@user_routes.route('/add_transaction', methods=['POST'])
-def transaction():
-    conn = connect_to_db()
-
-    data = request.get_json()
-    phone = data.get('phone')
-    fullname = (data.get('fullname') or '').strip()
-    transaction_type = data.get('type')
-    amount = data.get('amount')
-    months = data.get('months')
-
-    if not phone or not fullname or amount is None or transaction_type is None:
-        log_event("payment_missing_fields", phone, "Missing fields")
-        return jsonify({"error": "Phone, fullname, type and amount are required"}), 400
-    
-    formatted_phone = format_phone_number(phone)
-
-    if months:
-        if isinstance(months, list):
-            months = ', '.join(months)  # handle multiple months
-    else:
-        months = "Null"
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("SELECT id FROM users WHERE phone = %s AND LOWER(fullname) = (%s)", (formatted_phone, fullname))
-            user = cursor.fetchone()
-    except Exception as e:
-        conn.rollback()
-        log_event("get_user_id_failed", phone, f"DB Error: {str(e)}")
-        return jsonify({"error": "Transaction failed"}), 500
-    finally:
-        conn.close()
-
-    if not user:
-        log_event("payment_user_not_found", phone, f"User {fullname} not found")
-        return jsonify({"message": "User not found"}), 404
-
-
-    user_id = user['id']
-    current_date = datetime.today().strftime('%Y-%m-%d')
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("""
-                INSERT INTO transactions (id, type, month, amount, date)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (user_id, transaction_type, months, amount, current_date))
-            conn.commit()
-        return jsonify({"message": "Transaction successful"}), 201
-    except Exception as e:
-        conn.rollback()
-        log_event("payment_insert_failed", phone, f"DB Error: {str(e)}")
-        return jsonify({"error": "Transaction failed"}), 500
-    finally:
-        conn.close()
-
 # ====== Get Transaction History ======
 @user_routes.route('/get_transactions', methods=['POST'])
 def get_transactions():
@@ -203,6 +145,64 @@ def get_transactions():
                               .isoformat().replace("+00:00","Z")
     }), 200
 
+# ====== Save Transaction ======
+@user_routes.route('/add_transaction', methods=['POST'])
+def transaction():
+    conn = connect_to_db()
+
+    data = request.get_json()
+    phone = data.get('phone')
+    fullname = (data.get('fullname') or '').strip()
+    transaction_type = data.get('type')
+    amount = data.get('amount')
+    months = data.get('months')
+
+    if not phone or not fullname or amount is None or transaction_type is None:
+        log_event("payment_missing_fields", phone, "Missing fields")
+        return jsonify({"error": "Phone, fullname, type and amount are required"}), 400
+    
+    formatted_phone = format_phone_number(phone)
+
+    if months:
+        if isinstance(months, list):
+            months = ', '.join(months)  # handle multiple months
+    else:
+        months = "Null"
+
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT id FROM users WHERE phone = %s AND LOWER(fullname) = (%s)", (formatted_phone, fullname))
+            user = cursor.fetchone()
+    except Exception as e:
+        conn.rollback()
+        log_event("get_user_id_failed", phone, f"DB Error: {str(e)}")
+        return jsonify({"error": "Transaction failed"}), 500
+    finally:
+        conn.close()
+
+    if not user:
+        log_event("payment_user_not_found", phone, f"User {fullname} not found")
+        return jsonify({"message": "User not found"}), 404
+
+
+    user_id = user['id']
+    current_date = datetime.today().strftime('%Y-%m-%d')
+
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("""
+                INSERT INTO transactions (id, type, month, amount, date)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, transaction_type, months, amount, current_date))
+            conn.commit()
+        return jsonify({"message": "Transaction successful"}), 201
+    except Exception as e:
+        conn.rollback()
+        log_event("payment_insert_failed", phone, f"DB Error: {str(e)}")
+        return jsonify({"error": "Transaction failed"}), 500
+    finally:
+        conn.close()
+
 # ====== SSLCommerz Payment Initiation ======
 @user_routes.route('/pay_sslcommerz', methods=['POST'])
 def pay_sslcommerz():
@@ -211,16 +211,17 @@ def pay_sslcommerz():
     fullname = (data.get('fullname') or '').strip()
     amount = data.get('amount')
     months = data.get('months')
+    transaction_type = data.get('type')
 
-    if not phone or not fullname or amount is None:
+    if not phone or not fullname or not transaction_type or amount is None:
         log_event("payment_missing_fields", phone, "Missing payment info")
         return jsonify({"error": "Phone, fullname and amount required"}), 400
     
     formatted_phone = format_phone_number(phone)
 
     tran_id = f"ssl_{int(time.time())}"
-    store_id = os.getenv("SSLCOMMERZ_STORE_ID", "your-username-here")
-    store_pass = os.getenv("SSLCOMMERZ_STORE_PASS", "your-password-here")
+    store_id = os.getenv("SSLCOMMERZ_STORE_ID", "store-id")
+    store_pass = os.getenv("SSLCOMMERZ_STORE_PASS", "passd")
 
     payload = {
         "store_id": store_id,
@@ -235,6 +236,7 @@ def pay_sslcommerz():
         "value_a": formatted_phone,
         "value_b": fullname,
         "value_c": months or '',
+        "value_d": transaction_type,
     }
 
     try:
@@ -261,6 +263,7 @@ def payment_success_ssl():
     fullname = data.get('value_b')
     amount = data.get('amount')
     months = data.get('value_c')
+    transaction_type = data.get('value_d')
 
     formatted_phone = format_phone_number(phone)
 
@@ -270,7 +273,7 @@ def payment_success_ssl():
             json={
                 'phone': formatted_phone,
                 'fullname': fullname,
-                'type': 'sslcommerz',
+                'type': transaction_type,
                 'amount': amount,
                 'months': months,
             },

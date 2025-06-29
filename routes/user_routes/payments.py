@@ -158,7 +158,7 @@ def pay_sslcommerz():
 
     # fallback dummy email .
     if not email:
-       email = f"{phone.replace('+','') or 'user'}@no-reply.annurmadrasa.com"
+       email = "user@no-reply.annurmadrasa.com"
 
     if not phone or not fullname or not transaction_type or amount is None:
         log_event("payment_missing_fields", phone, "Missing payment info")

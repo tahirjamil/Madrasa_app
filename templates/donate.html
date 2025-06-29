@@ -38,12 +38,12 @@
     <div class="row g-4 justify-content-center">
       <!-- bKash -->
       <div class="col-6 col-md-4">
-        <a href="https://www.bkash.com" target="_blank"
-           class="text-decoration-none option-card"
+        <a href="#" class="text-decoration-none option-card"
            data-title="bKash"
-           data-url="https://www.bkash.com"
+           data-url=""
            data-qr="{{ url_for('static', filename='icons/bkash_qr.png') }}"
-           data-info="+8801XXXXXXXXX">
+           data-info="+8801XXXXXXXXX"
+           data-gateway="false">
           <div class="card text-center p-4">
             <img src="{{ url_for('static', filename='icons/bkash.png') }}"
                  alt="bKash" class="mx-auto mb-3">
@@ -54,12 +54,12 @@
 
       <!-- Nagad -->
       <div class="col-6 col-md-4">
-        <a href="https://www.nagad.com.bd" target="_blank"
-           class="text-decoration-none option-card"
+        <a href="#" class="text-decoration-none option-card"
            data-title="Nagad"
-           data-url="https://www.nagad.com.bd"
+           data-url=""
            data-qr="{{ url_for('static', filename='icons/nagad_qr.png') }}"
-           data-info="+8801YYYYYYYYY">
+           data-info="+8801YYYYYYYYY"
+           data-gateway="false">
           <div class="card text-center p-4">
             <img src="{{ url_for('static', filename='icons/nagad.png') }}"
                  alt="Nagad" class="mx-auto mb-3">
@@ -68,13 +68,13 @@
         </a>
       </div>
 
-      <!-- Other / SSLCommerz (no QR) -->
+      <!-- Other / SSLCommerz -->
       <div class="col-6 col-md-4">
-        <a href="https://www.sslcommerz.com" target="_blank"
-           class="text-decoration-none option-card"
+        <a href="#" class="text-decoration-none option-card"
            data-title="Other (SSLCommerz)"
-           data-url="https://www.sslcommerz.com"
-           data-info="Use your card / mobile banking">
+           data-url="{{ url_for('user_routes.pay_sslcommerz') }}"
+           data-info="Use your card / mobile banking"
+           data-gateway="true">
           <div class="card text-center p-4">
             <img src="{{ url_for('static', filename='icons/others.png') }}"
                  alt="SSLCommerz" class="mx-auto mb-3">
@@ -103,7 +103,7 @@
           <p id="modal-info" class="mb-3"></p>
         </div>
         <div class="modal-footer">
-          <a id="modal-link" href="#" target="_blank" class="btn btn-primary">
+          <a id="modal-link" href="#" target="_blank" class="btn btn-primary d-none">
             Go to Gateway
           </a>
           <button id="copy-btn" type="button" class="btn btn-outline-secondary">
@@ -129,20 +129,63 @@
       document.querySelectorAll('.option-card').forEach(card => {
         card.addEventListener('click', e => {
           e.preventDefault();
-          const title = card.dataset.title;
-          const url   = card.dataset.url;
-          const qr    = card.dataset.qr;
-          const info  = card.dataset.info;
+          const title   = card.dataset.title;
+          const url     = card.dataset.url;
+          const qr      = card.dataset.qr;
+          const info    = card.dataset.info;
+          const gateway = card.dataset.gateway === 'true';
 
           document.getElementById('donateModalLabel').textContent = title;
+
           if (qr) {
             qrImg.src = qr;
             qrImg.style.display = '';
           } else {
             qrImg.style.display = 'none';
           }
+
           infoText.textContent = info;
-          linkBtn.href = url;
+
+          if (gateway) {
+            linkBtn.classList.remove('d-none');
+            linkBtn.onclick = async () => {
+              // For demo: you can get phone/fullname from your real input or prompt
+              const phone    = prompt("Enter your phone number:");
+              const fullname = prompt("Enter your full name:");
+              const amount   = prompt("Enter amount:");
+
+              if (!phone || !fullname || !amount) {
+                alert("Missing info!");
+                return;
+              }
+
+              const payload = {
+                phone: phone,
+                fullname: fullname,
+                amount: amount,
+                type: "sslcommerz"
+              };
+
+              try {
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.GatewayPageURL) {
+                  window.location.href = data.GatewayPageURL;
+                } else {
+                  alert(data.error || "Something went wrong!");
+                }
+              } catch (err) {
+                alert("Could not connect to payment gateway.");
+              }
+            };
+          } else {
+            linkBtn.classList.add('d-none');
+            linkBtn.onclick = null;
+          }
 
           modal.show();
         });

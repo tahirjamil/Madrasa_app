@@ -9,14 +9,14 @@ class Config:
     WTF_CSRF_SECRET_KEY = os.getenv("CSRF_SECRET_KEY", "fallback-csrf-key")
     BASE_URL = 'http://localhost:80/'
     BASE_UPLOAD_FOLDER = os.path.join('uploads')
-    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 
     # Advanced
     API_KEY = os.getenv("API_KEY")
-    SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
     SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = False  # Don't use HTTPS for dev testing
     RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
     RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
 
@@ -32,7 +32,7 @@ class Config:
     ALLOWED_EXAM_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 
     # MySQL Connection
-    MYSQL_HOST = 'localhost'
-    MYSQL_USER = os.getenv("MYSQL_USER")
-    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
-    MYSQL_DB = 'madrasadb'
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+    MYSQL_USER = os.getenv("MYSQL_USER", "admin")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "admin")
+    MYSQL_DB = os.getenv("MYSQL_DB", "default")

@@ -1,7 +1,8 @@
 import os
 import requests
-from flask import render_template, request, redirect, url_for, session, current_app
+from flask import render_template, request, redirect, url_for, session
 from . import admin_routes
+from config import Config
 
 login_attempts = {}
 
@@ -20,15 +21,15 @@ def login():
     show_captcha = False
 
     # Load keys safely
-    RECAPTCHA_SITE_KEY = current_app.config.get('RECAPTCHA_SITE_KEY')
-    RECAPTCHA_SECRET_KEY = current_app.config.get('RECAPTCHA_SECRET_KEY')
+    RECAPTCHA_SITE_KEY = Config.RECAPTCHA_SITE_KEY
+    RECAPTCHA_SECRET_KEY = Config.RECAPTCHA_SECRET_KEY
 
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
 
-        ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+        ADMIN_USER = os.getenv("ADMIN_USERNAME")
+        ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
 
         session['login_attempts'] += 1
 

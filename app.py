@@ -33,7 +33,6 @@ else:
 app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
-app.secret_key = os.getenv("SECRET_KEY", "fallback-key")
 
 csrf = CSRFProtect()
 csrf.init_app(app)

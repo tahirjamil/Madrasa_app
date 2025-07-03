@@ -108,7 +108,7 @@ def create_tables():
                 guardian_number    TEXT,
                 available          BOOLEAN         DEFAULT 1,
                 degree             VARCHAR(50),
-                updated_at         DATETIME NOT NULL
+                updated_at         DATETIME        NOT NULL
                                   DEFAULT CURRENT_TIMESTAMP
                                   ON UPDATE CURRENT_TIMESTAMP,
                 image_path         TEXT,

@@ -91,6 +91,7 @@ def create_tables():
                 title2             VARCHAR(255),
                 source             VARCHAR(255),
                 present_address    TEXT,
+                address_en         TEXT,
                 address_bn         TEXT,
                 address_ar         TEXT,
                 permanent_address  TEXT,

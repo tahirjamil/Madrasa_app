@@ -80,7 +80,7 @@ def send_sms(phone, code, signature):
     try:
         response = requests.post(TEXTBELT_URL, {
             'phone': phone,
-            'message': f"Your verification code is: {code}\n{signature}",
+            'message': f"Your verification code is: {code}\n@annur.app #{signature}",
             'key': os.getenv("TEXTBELT_KEY")
         })
         result = response.json()

@@ -136,8 +136,8 @@ def login():
 @user_routes.route("/send_code", methods=["POST"])
 def send_verification_code():
     conn = connect_to_db()
-    SMS_LIMIT_PER_HOUR = 5
-    EMAIL_LIMIT_PER_HOUR = 15
+    SMS_LIMIT_PER_HOUR = 3
+    EMAIL_LIMIT_PER_HOUR = 30 # TODO Shoud be 15
 
     data = request.get_json()
     phone = data.get("phone")
@@ -201,7 +201,7 @@ def send_verification_code():
                             (formatted_phone, code)
                         )
                         conn.commit()
-                        return jsonify({"success": t("verification_sms_sent", lang, target=email)}), 200
+                        return jsonify({"success": t("verification_email_sent", lang, target=email)}), 200
                         # else fall through to failure
                 else:
                     log_event("rate_limit_blocked", phone, "Both send limit exceeded")

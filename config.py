@@ -12,7 +12,7 @@ class Config:
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 
-    # Advanced
+    # Advanced Info
     API_KEY = os.getenv("API_KEY")
     SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
     SESSION_COOKIE_SAMESITE = "Lax"

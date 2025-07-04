@@ -178,7 +178,10 @@ def send_verification_code():
             if not email:
                 cursor.execute("SELECT email FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s", (fullname, formatted_phone))
                 email = cursor.fetchone
-
+                if email:
+                    print("email set from user successfull")
+                else:
+                    print("email set from user unsuccessfull")
 
             # Rate limit check
             cursor.execute("""

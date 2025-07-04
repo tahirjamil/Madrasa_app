@@ -13,11 +13,30 @@ TRANSLATIONS = {
         "en": "Limit reached. Try again later.",
         "bn": "সীমা অতিক্রম হয়েছে। অনুগ্রহ করে পরে চেষ্টা করুন।",
         "ar": "تم الوصول إلى الحد. حاول مرة أخرى لاحقًا."
+    },
+    "invalid_phone_format": {
+        "en": "Invalid phone number format",
+        "bn": "নম্বরের ফরম্যাট সঠিক নয়",
+        "ar": "تنسيق رقم الهاتف غير صالح"
+    },
+    "user_not_found": {
+        "en": "User not found",
+        "bn": "ব্যবহারকারী পাওয়া যায়নি",
+        "ar": "المستخدم غير موجود"
+    },
+    "incorrect_password": {
+        "en": "Incorrect password",
+        "bn": "পাসওয়ার্ড ভুল",
+        "ar": "كلمة المرور غير صحيحة"
+    },
+    "internal_server_error": {
+        "en": "Internal server error",
+        "bn": "সার্ভারে ত্রুটি হয়েছে",
+        "ar": "خطأ في الخادم الداخلي"
     }
 }
 
 def t(key, lang, **kwargs):
-    """Get translated text with optional formatting"""
     entry = TRANSLATIONS.get(key, {})
     text = entry.get(lang) or entry.get("en")  # fallback to English
     if kwargs:

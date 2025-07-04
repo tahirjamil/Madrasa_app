@@ -85,6 +85,7 @@ def login():
     fullname = data.get("fullname", "").strip()
     phone = data.get("phone")
     password = data.get("password")
+    lang = data.get("language") or "en"
 
     if not fullname or not phone or not password:
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
@@ -93,7 +94,7 @@ def login():
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
         log_event("auth_invalid_phone", phone, "Invalid phone format")
-        return jsonify({"message": "Invalid phone number format"}), 400
+        return jsonify({"message": t("invalid_phone_format", lang)}), 400
 
     try:
         with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
@@ -105,11 +106,11 @@ def login():
 
             if not user:
                 log_event("auth_user_not_found", formatted_phone, f"User {fullname} not found")
-                return jsonify({"message": "User not found"}), 404
+                return jsonify({"message": t("user_not_found", lang)}), 404
             
             if not check_password_hash(user["password"], password):
                 log_event("auth_incorrect_password", formatted_phone, "Incorrect password")
-                return jsonify({"message": "Incorrect password"}), 401
+                return jsonify({"message": t("incorrect_password", lang)}), 401
             
             cursor.execute(
                 """
@@ -132,7 +133,7 @@ def login():
             
     except Exception as e:
         log_event("auth_error", formatted_phone, str(e))
-        return jsonify({"message": "Internal server error"}), 500
+        return jsonify({"message": t("internal_server_error", lang)}), 500
 
     finally:
         conn.close()
@@ -148,7 +149,7 @@ def send_verification_code():
     fullname = data.get("fullname").strip()
     password = data.get("password")
     email = data.get("email")
-    lang = data.get("language")
+    lang = data.get("language") or "en"
     signature = data.get("app_signature")
 
     if not phone or not fullname:
@@ -175,7 +176,7 @@ def send_verification_code():
                     return jsonify({"message": "User already registered"}), 409
             
             if not email:
-                cursor.execute("SELECT email FROM users WHERE LOWER(fullname) = %s AND phone = %s", (fullname, formatted_phone))
+                cursor.execute("SELECT email FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s", (fullname, formatted_phone))
                 email = cursor.fetchone
 
 

@@ -52,7 +52,7 @@ def add_person():
     data = request.form
     image = request.files.get('image')
 
-    fullname = data.get('fullname')
+    fullname = data.get('name_en')
     phone = data.get('phone')
     formatted_phone = format_phone_number(phone)
     get_acc_type = data.get('acc_type')

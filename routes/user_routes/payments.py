@@ -145,7 +145,7 @@ def get_transactions():
 @user_routes.route('/pay_sslcommerz', methods=['POST'])
 def pay_sslcommerz():
     data = request.get_json() or {}
-    phone            = data.get('phone') or ""
+    phone            = data.get('phone') or "01XXXXXXXXX"
     fullname         = (data.get('fullname') or 'guest').strip()
     amount           = data.get('amount')
     months           = data.get('months')

@@ -57,6 +57,9 @@ def add_person():
     formatted_phone = format_phone_number(phone)
     get_acc_type = data.get('acc_type')
 
+    if not get_acc_type.endswith('s'):
+        get_acc_type += 's'
+
     print(get_acc_type, fullname, phone)
 
     if not get_acc_type in ['admins','students','teachers', 'staffs','others','badri_members', 'donors']:

@@ -294,7 +294,7 @@ INSERT INTO people (
      'Muttagach, Mymensingh',     'মুত্তাগাছ, ময়মনসিংহ',     'موتاجاج، ميمينسين',
      'Male', 'Mawlana', 'teachers', 'Mudarres'),
 
-(23, 'Masudur Rahman (Narsingdi)','মাসুদুর রহমান (নরসিংদীম)','مسعود الرحمن (نرسينغدي)',
+(23, 'Masudur Rahman',    'মাসুদুর রহমান','مسعود الرحمن)',
      'Mobarak Hossain',           'মোবারक ہোসেন',            'مبارك حسين',
      '+8801883233799',
      'Madhabdi, Narsingdi',       'মাধবদী, নরসিংদী',        'ماذابدي، نرسينغدي',
@@ -336,7 +336,7 @@ INSERT INTO people (
      'Gouripur, Mymensingh',      'গৌরীপুর, ময়মনসিংহ',      'قوريپور، ميمينسين',
      'Male', 'Mawlana', 'teachers', 'Nurani Department Head'),
 
-(32, 'Masudur Rahman (Bagerhat)','মাসউদুর রহমান-বাগেরহাট',  'مسعود الرحمن (باجرحات)',
+(32, 'Masudur Rahman',  'মাসউদুর রহমান',  'مسعود الرحمن)',
      'Azibar Sardar',            'আজибর সর্দার',            'عجيب صردار',
      '+8801915614070',
      'Mollahat, Bagerhat',        'মোল্লাহাট, বাগেরহাট',     'موللاحات، باجهرا',

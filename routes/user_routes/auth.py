@@ -140,20 +140,20 @@ def login():
 @user_routes.route("/send_code", methods=["POST"])
 def send_verification_code():
     conn = connect_to_db()
-    SMS_LIMIT_PER_HOUR = 3
-    EMAIL_LIMIT_PER_HOUR = 30 # TODO Shoud be 15
+    SMS_LIMIT_PER_HOUR = 5
+    EMAIL_LIMIT_PER_HOUR = 15
 
     data = request.get_json()
     phone = data.get("phone")
     fullname = data.get("fullname").strip()
     password = data.get("password")
-    email = data.get("email") or None
+    email = data.get("email")
     lang = data.get("language")
     signature = data.get("app_signature")
 
     if not phone or not fullname:
         return jsonify({"message": "Phone number and fullname required"}), 400
-
+    
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
         return jsonify({"message": "Invalid phone number format"}), 400
@@ -164,14 +164,20 @@ def send_verification_code():
                 ok, msg = validate_fullname(fullname)
                 if not ok:
                     return jsonify({"message": msg}), 400
+
             if password:
                 ok, msg = validate_password(password)
                 if not ok:
                     return jsonify({"message": msg}), 400
+                
+                cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
+                if cursor.fetchone():
+                    return jsonify({"message": "User already registered"}), 409
+            
+            if not email:
+                cursor.execute("SELECT email FROM users WHERE LOWER(fullname) = %s AND phone = %s", (fullname, formatted_phone))
+                email = cursor.fetchone
 
-            cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
-            if cursor.fetchone():
-                return jsonify({"message": "User already registered"}), 409
 
             # Rate limit check
             cursor.execute("""

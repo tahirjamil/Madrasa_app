@@ -145,7 +145,7 @@ if __name__ == "__main__":
     if env_flag == "development":
         app.run(debug=True, host=host, port=port)
     else:
-        restart_cmd = "curl -X POST http://yourserver.com/admin/restart -H 'X-RESTART-KEY: (your-restart-key)'"
+        restart_cmd = "curl -X POST http://annurmadrasa.mooo.com/restart -H 'X-RESTART-KEY: (your-restart-key)'"
         # production
         port = 80
         URL = Config.BASE_URL

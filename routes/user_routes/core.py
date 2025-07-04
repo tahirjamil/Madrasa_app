@@ -49,6 +49,9 @@ def add_person():
     phone = data.get('phone')
     get_acc_type = data.get('acc_type')
 
+    if not get_acc_type in ['admins','students','teachers', 'staffs','others','badri_members', 'donors']:
+        get_acc_type = 'others'
+
     if not fullname or not phone or not get_acc_type:
         log_event("add_people_missing", phone, "Missing fields")
         return jsonify({"message": "fullname, phone and acc_type are required"}), 400
@@ -142,7 +145,7 @@ def add_person():
         # fields.update({k: f(k) for k in optional if f(k)})
         
 
-    elif acc_type in ['others','badri_members','donors']:
+    else:
         if not f("name_en") or not f("phone") or not f("father_or_spouse") or not f("date_of_birth"):
             return jsonify({"message": "Name, Phone, and Father/Spouse are required for Guest"}), 400
 
@@ -157,8 +160,6 @@ def add_person():
         ]
         fields.update({k: f(k) for k in optional if f(k)})
 
-    else:
-        return jsonify({"message": "Invalid Account type"}), 400
 
     try:
         insert_person(fields, acc_type)

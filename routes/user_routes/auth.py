@@ -19,6 +19,7 @@ def register():
 
     data = request.get_json()
     fullname = data.get("fullname", "").strip()
+    email = data.get("email")
     phone = data.get("phone")
     password = data.get("password")
     user_code = data.get("code")
@@ -39,8 +40,8 @@ def register():
     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         try:
             cursor.execute(
-                "INSERT INTO users (fullname, phone, password) VALUES (%s, %s, %s)",
-                (fullname, formatted_phone, hashed_password)
+                "INSERT INTO users (fullname, phone, password, email) VALUES (%s, %s, %s, %s)",
+                (fullname, formatted_phone, hashed_password, email)
             )
             conn.commit()
 

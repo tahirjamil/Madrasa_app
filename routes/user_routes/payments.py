@@ -17,7 +17,7 @@ def payment():
     conn = connect_to_db()
 
     data = request.get_json()
-    phone = data.get('phone') or "01900000000"
+    phone = data.get('phone') or ""
     fullname = (data.get('fullname') or 'guest').strip()
 
     phone = format_phone_number(phone)
@@ -145,7 +145,7 @@ def get_transactions():
 @user_routes.route('/pay_sslcommerz', methods=['POST'])
 def pay_sslcommerz():
     data = request.get_json() or {}
-    phone            = data.get('phone') or "01900000000"
+    phone            = data.get('phone') or ""
     fullname         = (data.get('fullname') or 'guest').strip()
     amount           = data.get('amount')
     months           = data.get('months')

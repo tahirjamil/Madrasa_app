@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from database import connect_to_db
 from logger import log_event
 from config import Config
-from helpers import get_id, insert_person
+from helpers import get_id, insert_person, update_person, format_phone_number
 
 # ========== Config ==========
 IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
@@ -40,6 +40,13 @@ def uploaded_file(filename):
 
 @user_routes.route('/add_people', methods=['POST'])
 def add_person():
+    print(request.content_type)
+    print('Headers:', dict(request.headers))
+    print('Content-Type:', request.content_type)
+    print('Form data:', dict(request.form))
+    print('Files:', request.files)
+    
+    conn = connect_to_db()
     BASE_URL = current_app.config['BASE_URL']
     
     data = request.form
@@ -47,6 +54,7 @@ def add_person():
 
     fullname = data.get('fullname')
     phone = data.get('phone')
+    formatted_phone = format_phone_number(phone)
     get_acc_type = data.get('acc_type')
 
     if not get_acc_type in ['admins','students','teachers', 'staffs','others','badri_members', 'donors']:
@@ -162,8 +170,15 @@ def add_person():
 
 
     try:
-        insert_person(fields, acc_type)
-        return jsonify({"message": f"{acc_type} profile added successfully", "id": person_id}), 201
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+            person = cursor.fetchone()
+            if person:
+                update_person(fields, fullname, formatted_phone)
+                return jsonify({"message": f"{acc_type} profile added successfully", "id": person_id}), 201
+            else:
+                insert_person(fields, acc_type)
+                return jsonify({"message": f"{acc_type} profile added successfully", "id": person_id}), 201
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409
     except Exception as e:

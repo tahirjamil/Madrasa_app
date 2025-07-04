@@ -269,7 +269,7 @@ def insert_person(fields: dict, acc_type):
             columns = ', '.join(fields.keys())
             placeholders = ', '.join(['%s'] * len(fields))
             tables = ["people"]
-            if acc_type == 'students':
+            if acc_type in ['students', 'teachers', 'staffs', 'admins']:
                 tables.append("verify_people")
 
             for table in tables:
@@ -283,6 +283,39 @@ def insert_person(fields: dict, acc_type):
         raise
     finally:
         conn.close()
+
+
+# Update People
+def update_person(fields: dict, fullname, phone):
+    # Build the SET clause: "col1=%s, col2=%s, ..."
+    set_clause = ", ".join(f"{col} = %s" for col in fields.keys())
+    # Build the parameter list: [val1, val2, ..., fullname, phone]
+    params = list(fields.values()) + [fullname, phone]
+
+    sql = f"""
+        UPDATE people
+           SET {set_clause}
+         WHERE LOWER(name_en) = LOWER(%s)
+           AND phone = %s
+    """
+
+    conn = connect_to_db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(sql, params)
+
+        conn.commit()
+        log_event(
+            "update_success",
+            phone,
+            f"Updated people: set {list(fields.keys())} for name_en={fullname!r}"
+        )
+    except pymysql.MySQLError as e:
+        log_event("db_update_error", phone, str(e))
+        raise
+    finally:
+        conn.close()
+
 
 
 

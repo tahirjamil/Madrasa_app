@@ -114,7 +114,7 @@ def login():
             
             cursor.execute(
                 """
-                SELECT u.id, u.fullname, u.phone, p.* 
+                SELECT u.id, u.fullname, u.phone, p.acc_type AS userType, p.*
                 FROM users u
                 LEFT JOIN people p ON p.id = u.id
                 WHERE u.id = %s

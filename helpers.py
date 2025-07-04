@@ -13,6 +13,8 @@ import pymysql.cursors
 import json
 from functools import wraps
 from config import Config
+import smtplib
+from email.mime.text import MIMEText
 
 
 # ─── Compute Upload Folder ───────────
@@ -88,6 +90,36 @@ def send_sms(phone, code):
         log_event("sms_error", phone, str(e))
         return False
 
+
+# Email Sender
+def send_email(to_email, code):
+    delete_code()
+    
+    EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+    EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")  # Your email
+    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")  # App password
+
+    subject = "Your Verification Code"
+    body = f"Your verification code is: {code}"
+
+    try:
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = EMAIL_ADDRESS
+        msg['To'] = to_email
+
+        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print("Email Error:", e)
+        log_event("email_error", to_email, str(e))
+        return False
+    
 
 # Code Generator
 def generate_code():

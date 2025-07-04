@@ -5,8 +5,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from pymysql.err import IntegrityError
 import pymysql
 from database import connect_to_db
-from helpers import validate_fullname, validate_password, send_sms, format_phone_number, generate_code, check_code
 from logger import log_event
+from helpers import (validate_fullname, validate_password, 
+send_sms, format_phone_number,
+generate_code, check_code, send_email)
 
 
 # ========== Routes ==========
@@ -139,9 +141,10 @@ def send_verification_code():
     phone = data.get("phone")
     fullname = data.get("fullname").strip()
     password = data.get("password")
+    email = data.get("email")
 
-    if not phone:
-        return jsonify({"message": "Phone number required"}), 400
+    if not phone or not fullname:
+        return jsonify({"message": "Phone number and fullname required"}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
@@ -158,9 +161,9 @@ def send_verification_code():
                 if not ok:
                     return jsonify({"message": msg}), 400
 
-                cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
-                if cursor.fetchone():
-                    return jsonify({"message": "User already registered"}), 409
+            cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
+            if cursor.fetchone():
+                return jsonify({"message": "User already registered"}), 409
 
             # Rate limit check
             cursor.execute("""
@@ -182,6 +185,8 @@ def send_verification_code():
             conn.commit()
 
         if send_sms(formatted_phone, code):
+            return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
+        elif email != "" and send_email(email, code):
             return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
         else:
             return jsonify({"message": "Failed to send SMS"}), 500

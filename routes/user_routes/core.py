@@ -106,8 +106,8 @@ def add_person():
             return jsonify({"message": "All required fields must be provided for Student"}), 400
         fields.update({k: f(k) for k in required})
 
-        optional = ["mail"]
-        fields.update({k: f(k) for k in optional if f(k)})
+        # optional = ["email"]
+        # fields.update({k: f(k) for k in optional if f(k)})
 
     elif acc_type in ['teachers', 'admins']:
         required = [
@@ -138,8 +138,8 @@ def add_person():
             return jsonify({"message": f"All required fields must be provided for {acc_type}"}), 400
         fields.update({k: f(k) for k in required})
 
-        optional = ["mail"]
-        fields.update({k: f(k) for k in optional if f(k)})
+        # optional = ["email"]
+        # fields.update({k: f(k) for k in optional if f(k)})
         
 
     elif acc_type in ['others','badri_members','donors']:
@@ -189,7 +189,7 @@ def get_info():
                     father_en, father_bn, father_ar, 
                     blood_group,
                     phone, image_path AS picUrl, member_id, acc_type AS role,
-                    mail, COALESCE(title1, title2, class) AS title
+                    COALESCE(title1, title2, class) AS title
                     FROM people WHERE updated_at > %s AND member_id IS NOT NULL
                 """, (corrected_time))
             else:
@@ -200,7 +200,7 @@ def get_info():
                     father_en, father_bn, father_ar, 
                     blood_group,
                     phone, image_path AS picUrl, member_id, acc_type AS role,
-                    mail, COALESCE(title1, title2, class) AS title
+                    COALESCE(title1, title2, class) AS title
                     FROM people people WHERE member_id IS NOT NULL
                 """)
             members = cursor.fetchall()

@@ -66,7 +66,7 @@ def add_person():
         log_event("add_people_missing", phone, "Missing fields")
         return jsonify({"message": "fullname, phone and acc_type are required"}), 400
 
-    person_id = get_id(phone, fullname)
+    person_id = get_id(formatted_phone, fullname)
     acc_type = get_acc_type.lower()
 
     if not person_id:

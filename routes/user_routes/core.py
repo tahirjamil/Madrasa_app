@@ -184,7 +184,7 @@ def get_info():
             if lastfetched:
                 cursor.execute("""
                     SELECT name_en, name_bn, name_ar,
-                    present_address AS address_en, address_bn, address_ar,
+                    address_en, address_bn, address_ar,
                     degree, 
                     father_en, father_bn, father_ar, 
                     blood_group,
@@ -195,7 +195,7 @@ def get_info():
             else:
                 cursor.execute("""
                     SELECT name_en, name_bn, name_ar,
-                    present_address AS address_en, address_bn, address_ar,
+                    address_en, address_bn, address_ar,
                     degree, 
                     father_en, father_bn, father_ar, 
                     blood_group,

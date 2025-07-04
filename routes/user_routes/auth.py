@@ -253,7 +253,7 @@ def reset_password():
         if validate_code:
             return validate_code
         elif not new_password:
-            return jsonify({"success": "code successfully matched"})
+            return jsonify({"success": "code successfully matched"}), 200
 
     # Fetch the user
     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
@@ -278,6 +278,4 @@ def reset_password():
             (hashed_password, fullname, formatted_phone)
         )
         conn.commit()
-        return jsonify({"success": "Password Reset Successful"})
-
-    return jsonify({"message": "Password reset successful"}), 200
+        return jsonify({"success": "Password Reset Successful"}), 201

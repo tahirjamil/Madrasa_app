@@ -14,7 +14,7 @@ from helpers import get_id, insert_person, update_person, format_phone_number
 
 # ========== Config ==========
 IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'HEIC'}
 
 os.makedirs(IMG_UPLOAD_FOLDER, exist_ok=True)
 
@@ -166,7 +166,7 @@ def add_person():
 
         optional = [
             "source", "present_address",
-            "blood_group", "gender", "degree", "mail"
+            "blood_group", "gender", "degree"
         ]
         fields.update({k: f(k) for k in optional if f(k)})
 

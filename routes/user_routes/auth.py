@@ -179,10 +179,6 @@ def send_verification_code():
                 cursor.execute("SELECT email FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s", (fullname, formatted_phone))
                 row = cursor.fetchone()
                 email = row["email"] if row else None
-                if email:
-                    print("email set from user successfull")
-                else:
-                    print("email set from user unsuccessfull")
 
             # Rate limit check
             cursor.execute("""
@@ -243,7 +239,7 @@ def reset_password():
     new_password = data.get("new_password")
 
     # Check required fields (except old_password and code, because one of them must be present)
-    if not all([phone, fullname, new_password]):
+    if not all([phone, fullname]):
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
         return jsonify({"message": "Phone, Fullname, and New Password are required"}), 400
 
@@ -274,11 +270,15 @@ def reset_password():
                 return jsonify({"message": "Incorrect old password"}), 401
 
         # Update the password
-        hashed_password = generate_password_hash(new_password)
-        cursor.execute(
-            "UPDATE users SET password = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
-            (hashed_password, fullname, formatted_phone)
-        )
-        conn.commit()
+        if new_password:
+            hashed_password = generate_password_hash(new_password)
+            cursor.execute(
+                "UPDATE users SET password = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+                (hashed_password, fullname, formatted_phone)
+            )
+            conn.commit()
+            return jsonify({"success": "Password Reset Successful"})
+        else:
+            return jsonify({"success": "code successfully matched"})
 
     return jsonify({"message": "Password reset successful"}), 200

@@ -42,7 +42,7 @@ csrf.init_app(app)
 def require_secret(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if request.headers.get("X-RESTART-KEY") != RESTART_KEY:
+        if request.headers.get("RESTART-KEY") != RESTART_KEY:
             return jsonify({"message": "Unauthorized"}), 403
         return f(*args, **kwargs)
     return wrapper
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     if env_flag == "development":
         app.run(debug=True, host=host, port=port)
     else:
-        restart_cmd = 'curl -X POST http://(your-domain)/restart -H "X-RESTART-KEY: (your-restart-key)"'
+        restart_cmd = 'curl -X POST http://(your-domain)/restart -H "RESTART-KEY: (your-restart-key)"'
         # production
         port = 80
         URL = Config.BASE_URL

@@ -145,8 +145,8 @@ def get_transactions():
 @user_routes.route('/pay_sslcommerz', methods=['POST'])
 def pay_sslcommerz():
     data = request.get_json() or {}
-    phone            = data.get('phone')
-    fullname         = (data.get('fullname') or '').strip()
+    phone            = data.get('phone') or "01900000000"
+    fullname         = (data.get('fullname') or 'guest').strip()
     amount           = data.get('amount')
     months           = data.get('months')
     transaction_type = data.get('type')
@@ -156,9 +156,9 @@ def pay_sslcommerz():
     if not email:
        email = "user@no-reply.annurmadrasa.com"
 
-    if not phone or not fullname or not transaction_type or amount is None:
+    if not transaction_type or amount is None:
         log_event("payment_missing_fields", phone, "Missing payment info")
-        return jsonify({"error": "Phone, fullname and amount required"}), 400
+        return jsonify({"error": "amount and type required"}), 400
 
     tran_id    = f"ssl_{int(time.time())}"
     store_id   = os.getenv("SSLCOMMERZ_STORE_ID")

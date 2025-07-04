@@ -33,6 +33,11 @@ TRANSLATIONS = {
         "en": "Internal server error",
         "bn": "সার্ভারে ত্রুটি হয়েছে",
         "ar": "خطأ في الخادم الداخلي"
+    },
+    "password_same_error": {
+        "en": "New password cannot be the same as the current password.",
+        "bn": "নতুন পাসওয়ার্ড পূর্বের পাসওয়ার্ডের সাথে একই হতে পারে না।",
+        "ar": "لا يمكن أن تكون كلمة المرور الجديدة مثل الكلمة الحالية."
     }
 }
 

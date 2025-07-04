@@ -237,6 +237,7 @@ def reset_password():
     user_code = data.get("code")
     old_password = data.get("old_password")
     new_password = data.get("new_password")
+    lang = data.get("language") or "en"
 
     # Check required fields (except old_password and code, because one of them must be present)
     if not all([phone, fullname]):
@@ -245,7 +246,7 @@ def reset_password():
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": "Invalid phone number format"}), 400
+        return jsonify({"message": t("invalid_phone_format", lang)}), 400
 
     # If old password is not provided, use code verification instead
     if not old_password:
@@ -264,15 +265,19 @@ def reset_password():
         result = cursor.fetchone()
 
         if not result:
-            return jsonify({"message": "User not found"}), 404
+            return jsonify({"message": t("user_not_found", lang)}), 404
 
         # If old_password is given, check it
         if old_password:
             if not check_password_hash(result['password'], old_password):
                 return jsonify({"message": "Incorrect old password"}), 401
+            
+        hashed_password = generate_password_hash(new_password)
+
+        if check_password_hash(result['password'], new_password):
+            return jsonify({"message": t("password_same_error", lang)}), 400
 
         # Update the password
-        hashed_password = generate_password_hash(new_password)
         cursor.execute(
             "UPDATE users SET password = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
             (hashed_password, fullname, formatted_phone)

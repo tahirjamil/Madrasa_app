@@ -34,7 +34,7 @@ app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
 
-API_SECRET = os.getenv()
+RESTART_KEY = os.getenv("RESTART_KEY", "fallback-key")
 
 csrf = CSRFProtect()
 csrf.init_app(app)
@@ -42,7 +42,7 @@ csrf.init_app(app)
 def require_secret(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if request.headers.get("X-API-KEY") != API_SECRET:
+        if request.headers.get("X-API-KEY") != RESTART_KEY:
             return jsonify({"message": "Unauthorized"}), 403
         return f(*args, **kwargs)
     return wrapper
@@ -105,7 +105,7 @@ def donate():
 def home():
     return render_template("home.html", current_year=datetime.now().year)
 
-@app.route("/admin/restart", methods=["POST"])
+@app.route("/restart", methods=["POST"])
 @require_secret
 def restart_service():
     try:

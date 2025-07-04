@@ -106,6 +106,7 @@ def donate():
 def home():
     return render_template("home.html", current_year=datetime.now().year)
 
+@csrf.exempt
 @app.route("/restart", methods=["POST"])
 @require_secret
 def restart_service():

@@ -101,7 +101,7 @@ def send_email(to_email, code):
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")  # App password
 
     subject = "Your Verification Code"
-    body = f"Your verification code is: {code}"
+    body = f"Your verification code is: {code}\n@annur.app"
 
     try:
         msg = MIMEText(body)

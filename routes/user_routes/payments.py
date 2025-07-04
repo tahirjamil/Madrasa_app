@@ -17,12 +17,8 @@ def payment():
     conn = connect_to_db()
 
     data = request.get_json()
-    phone = data.get('phone')
-    fullname = (data.get('fullname') or '').strip()
-
-    if not phone or not fullname:
-        log_event("payment_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"error": "Phone and fullname are required"}), 400
+    phone = data.get('phone') or "01900000000"
+    fullname = (data.get('fullname') or 'guest').strip()
 
     phone = format_phone_number(phone)
 

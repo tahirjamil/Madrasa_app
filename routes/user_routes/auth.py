@@ -252,6 +252,8 @@ def reset_password():
         validate_code = check_code(user_code, formatted_phone)
         if validate_code:
             return validate_code
+        elif not new_password:
+            return jsonify({"success": "code successfully matched"})
 
     # Fetch the user
     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
@@ -270,15 +272,12 @@ def reset_password():
                 return jsonify({"message": "Incorrect old password"}), 401
 
         # Update the password
-        if new_password:
-            hashed_password = generate_password_hash(new_password)
-            cursor.execute(
-                "UPDATE users SET password = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
-                (hashed_password, fullname, formatted_phone)
-            )
-            conn.commit()
-            return jsonify({"success": "Password Reset Successful"})
-        else:
-            return jsonify({"success": "code successfully matched"})
+        hashed_password = generate_password_hash(new_password)
+        cursor.execute(
+            "UPDATE users SET password = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+            (hashed_password, fullname, formatted_phone)
+        )
+        conn.commit()
+        return jsonify({"success": "Password Reset Successful"})
 
     return jsonify({"message": "Password reset successful"}), 200

@@ -104,7 +104,7 @@ def create_tables():
                 mother_bn          VARCHAR(255),
                 mother_ar          VARCHAR(255),
                 class              VARCHAR(100),
-                phone              VARCHAR(15)     NOT NULL,
+                phone              TEXT            NOT NULL,
                 guardian_number    TEXT,
                 available          BOOLEAN         DEFAULT 1,
                 degree             VARCHAR(50),

@@ -110,7 +110,9 @@ def home():
 @require_secret
 def restart_service():
     try:
-        os.system("sudo systemctl restart madrasa-app.service")
+        print("Restart endpoint hit, trying to restart...")
+        result = os.system("sudo systemctl restart madrasa-app.service")
+        print(f"System call result: {result}")
         return jsonify({"message": "Service restarted"}), 200
     except Exception as e:
         return jsonify({"message": f"Error: {str(e)}"}), 500

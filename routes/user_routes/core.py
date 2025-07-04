@@ -181,14 +181,22 @@ def add_person():
 
             if person:
                 update_person(fields, fullname, formatted_phone)
+                conn.commit
+
                 cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
-                img_path = cursor.fetchone()
+                row = cursor.fetchone()
+                img_path = row["image_path"] if row else None
                 return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
+            
             else:
                 insert_person(fields, acc_type)
+                conn.commit
+
                 cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
-                img_path = cursor.fetchone()
+                row = cursor.fetchone()
+                img_path = row["image_path"] if row else None
                 return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
+            
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409
     except Exception as e:

@@ -135,13 +135,15 @@ def login():
 @user_routes.route("/send_code", methods=["POST"])
 def send_verification_code():
     conn = connect_to_db()
+    SMS_LIMIT_PER_HOUR = 5
+    EMAIL_LIMIT_PER_HOUR = 15
 
-    SEND_LIMIT_PER_HOUR = 3
     data = request.get_json()
     phone = data.get("phone")
     fullname = data.get("fullname").strip()
     password = data.get("password")
-    email = data.get("email")
+    email = data.get("email") or None
+    signature = data.get("app_signature")
 
     if not phone or not fullname:
         return jsonify({"message": "Phone number and fullname required"}), 400
@@ -174,27 +176,43 @@ def send_verification_code():
             result = cursor.fetchone()
             count = result["recent_count"] if result else 0
 
-            if count >= SEND_LIMIT_PER_HOUR:
-                log_event("rate_limit_blocked", phone, "SMS send limit exceeded")
-                return jsonify({"message": "Limit reached. Try again later."}), 429
-
-
             # Send verification code
             code = generate_code()
-            cursor.execute("INSERT INTO verifications (phone, code) VALUES (%s, %s)", (formatted_phone, code))
-            conn.commit()
+            
+        if count < SMS_LIMIT_PER_HOUR:
+                # Send SMS
+                if send_sms(formatted_phone, code, signature):
+                    cursor.execute(
+                        "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
+                        (formatted_phone, code)
+                    )
+                    conn.commit()
+                    return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
+                # If SMS fails, fall back to email below
 
-        if send_sms(formatted_phone, code):
-            return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
-        elif email != "" and send_email(email, code):
-            return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
-        else:
-            return jsonify({"message": "Failed to send SMS"}), 500
+            # SMS limit reached or SMS failed => try EMAIL
+        if email:
+            if count < EMAIL_LIMIT_PER_HOUR:
+                if send_email(email, code):
+                    cursor.execute(
+                        "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
+                        (formatted_phone, code)
+                    )
+                    conn.commit()
+                    return jsonify({"success": f"Verification code sent to {email}"}), 200
+                    # else fall through to failure
+            else:
+                log_event("rate_limit_blocked", phone, "Both send limit exceeded")
+                return jsonify({"message": "Limit reached. Try again later."}), 429
 
+        # If we get here, both sends failed or no email provided
+        log_event("verification_failed", phone, f"count={count}")
+        return jsonify({"message": "Failed to send verification code"}), 500
 
     except Exception as e:
+        log_event("internal_error", formatted_phone, str(e))
         return jsonify({"message": f"Internal error: {str(e)}"}), 500
-
+    
 
 @user_routes.route("/reset_password", methods=["POST"])
 def reset_password():

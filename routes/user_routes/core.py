@@ -161,7 +161,7 @@ def add_person():
         return jsonify({"message": "Invalid Account type"}), 400
 
     try:
-        insert_person(fields)
+        insert_person(fields, acc_type)
         return jsonify({"message": f"{acc_type} profile added successfully", "id": person_id}), 201
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409
@@ -181,28 +181,21 @@ def get_info():
 
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            sql = """SELECT name_en, name_bn, name_ar,
+                    address_en, address_bn, address_ar,
+                    degree, 
+                    father_en, father_bn, father_ar, 
+                    blood_group,
+                    phone, image_path AS picUrl, member_id, acc_type AS role,
+                    COALESCE(title1, title2, class) AS title
+                    FROM people WHERE member_id IS NOT NULL"""
+            params = []
+
             if lastfetched:
-                cursor.execute("""
-                    SELECT name_en, name_bn, name_ar,
-                    address_en, address_bn, address_ar,
-                    degree, 
-                    father_en, father_bn, father_ar, 
-                    blood_group,
-                    phone, image_path AS picUrl, member_id, acc_type AS role,
-                    COALESCE(title1, title2, class) AS title
-                    FROM people WHERE updated_at > %s AND member_id IS NOT NULL
-                """, (corrected_time))
-            else:
-                cursor.execute("""
-                    SELECT name_en, name_bn, name_ar,
-                    address_en, address_bn, address_ar,
-                    degree, 
-                    father_en, father_bn, father_ar, 
-                    blood_group,
-                    phone, image_path AS picUrl, member_id, acc_type AS role,
-                    COALESCE(title1, title2, class) AS title
-                    FROM people people WHERE member_id IS NOT NULL
-                """)
+                sql += " AND updated_at > %s"
+                params.append(corrected_time)
+            
+            cursor.execute(sql, params)
             members = cursor.fetchall()
         return jsonify({
             "members": members,

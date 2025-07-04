@@ -73,14 +73,14 @@ def delete_code():
         conn.close()
 
 # SMS Sender
-def send_sms(phone, code):
+def send_sms(phone, code, signature):
     delete_code()
     TEXTBELT_URL = "https://textbelt.com/text"
 
     try:
         response = requests.post(TEXTBELT_URL, {
             'phone': phone,
-            'message': f"Your verification code is: {code}",
+            'message': f"Your verification code is: {code}\n{signature}",
             'key': os.getenv("TEXTBELT_KEY")
         })
         result = response.json()
@@ -165,14 +165,33 @@ def check_code(user_code, phone):
 
 
 # Phone formatter
-def format_phone_number(phone, region="BD"):
+import phonenumbers
+from phonenumbers import NumberParseException
+
+def format_phone_number(phone):
+    if not phone:
+        return None
+
+    phone = phone.strip().replace(" ", "").replace("-", "")
+
+    if phone.startswith("8801") and len(phone) == 13:
+        # User entered "8801..." without plus ➜ add "+"
+        phone = "+" + phone
+    elif phone.startswith("01") and len(phone) == 11:
+        # User entered local BD number ➜ add "+880"
+        phone = "+88" + phone
+    elif not phone.startswith("+"):
+        # Foreign number but no + ➜ invalid (force +<countrycode> for non-BD)
+        return None
+
     try:
-        number = phonenumbers.parse(phone, region)
+        number = phonenumbers.parse(phone, None)
         if not phonenumbers.is_valid_number(number):
             return None
         return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)
     except NumberParseException:
         return None
+
 
 # Password Validator
 def validate_password(pwd):
@@ -243,17 +262,28 @@ def get_id(phone, fullname):
         conn.close()
 
 # Insert People
-def insert_person(fields: dict):
+def insert_person(fields: dict, acc_type):
     conn = connect_to_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             columns = ', '.join(fields.keys())
             placeholders = ', '.join(['%s'] * len(fields))
-            sql = f"INSERT INTO verify_people ({columns}) VALUES ({placeholders})"
-            cursor.execute(sql, list(fields.values()))
+            tables = ["people"]
+            if acc_type == 'students':
+                tables.append("verify_people")
+
+            for table in tables:
+                sql = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+                cursor.execute(sql, list(fields.values()))
+                
         conn.commit()
+        log_event("insert_success", fields.get("phone", "unknown"), f"Inserted into: {tables}")
+    except pymysql.MySQLError as e:
+        log_event("db_insert_error", fields.get("phone", "unknown"), str(e))
+        raise
     finally:
         conn.close()
+
 
 
 

@@ -42,7 +42,7 @@ csrf.init_app(app)
 def require_secret(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if request.headers.get("X-API-KEY") != RESTART_KEY:
+        if request.headers.get("X-RESTART-KEY") != RESTART_KEY:
             return jsonify({"message": "Unauthorized"}), 403
         return f(*args, **kwargs)
     return wrapper
@@ -83,6 +83,7 @@ def log_every_request():
     request_response_log.append(entry)
     if len(request_response_log) > 100:
         request_response_log.pop(0)
+
 @app.after_request
 def attach_response_data(response):
     entry = getattr(g, "log_entry", None)
@@ -140,12 +141,12 @@ if __name__ == "__main__":
     host, port = "0.0.0.0", 8000
 
     if env_flag == "development":
-        print(f"Starting Flask dev server at http://{host}:{port}")
         app.run(debug=True, host=host, port=port)
     else:
+        restart_cmd = "curl -X POST http://yourserver.com/admin/restart -H 'X-RESTART-KEY: (your-restart-key)'"
         # production
         port = 80
         URL = Config.BASE_URL
-        print(f"Starting production server with Waitress at {URL}")
         print(f"Quick logs available at {URL}/admin/info")
+        print(f"restart though: {restart_cmd}")
         serve(app, host=host, port=port)

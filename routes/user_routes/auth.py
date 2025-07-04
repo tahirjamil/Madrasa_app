@@ -10,6 +10,7 @@ from helpers import (validate_fullname, validate_password,
 send_sms, format_phone_number,
 generate_code, check_code, send_email)
 from translations import t
+import datetime
 
 
 # ========== Routes ==========
@@ -128,6 +129,9 @@ def login():
                 return jsonify({"message": "Additional info required"}), 400
             
             info.pop("password", None)
+            dob = info.get("date_of_birth")
+            if isinstance(dob, (datetime.date, datetime.datetime)):
+                info["date_of_birth"] = dob.strftime("%d/%m/%Y")
 
             return jsonify({"success": "Login successful", "info": info}), 200
             

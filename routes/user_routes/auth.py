@@ -181,35 +181,35 @@ def send_verification_code():
             # Send verification code
             code = generate_code()
             
-        if count < SMS_LIMIT_PER_HOUR:
-                # Send SMS
-                if send_sms(formatted_phone, code, signature):
-                    cursor.execute(
-                        "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
-                        (formatted_phone, code)
-                    )
-                    conn.commit()
-                    return jsonify({"success": t("verification_sms_sent", lang, target=formatted_phone)}), 200
-                    # If SMS fails, fall back to email below
+            if count < SMS_LIMIT_PER_HOUR:
+                    # Send SMS
+                    if send_sms(formatted_phone, code, signature):
+                        cursor.execute(
+                            "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
+                            (formatted_phone, code)
+                        )
+                        conn.commit()
+                        return jsonify({"success": t("verification_sms_sent", lang, target=formatted_phone)}), 200
+                        # If SMS fails, fall back to email below
 
-        # SMS limit reached or SMS failed => try EMAIL
-        if email:
-            if count < EMAIL_LIMIT_PER_HOUR:
-                if send_email(email, code):
-                    cursor.execute(
-                        "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
-                        (formatted_phone, code)
-                    )
-                    conn.commit()
-                    return jsonify({"success": t("verification_sms_sent", lang, target=email)}), 200
-                    # else fall through to failure
-            else:
-                log_event("rate_limit_blocked", phone, "Both send limit exceeded")
-                return jsonify({"message": t("limit_reached", lang)}), 429
+            # SMS limit reached or SMS failed => try EMAIL
+            if email:
+                if count < EMAIL_LIMIT_PER_HOUR:
+                    if send_email(email, code):
+                        cursor.execute(
+                            "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
+                            (formatted_phone, code)
+                        )
+                        conn.commit()
+                        return jsonify({"success": t("verification_sms_sent", lang, target=email)}), 200
+                        # else fall through to failure
+                else:
+                    log_event("rate_limit_blocked", phone, "Both send limit exceeded")
+                    return jsonify({"message": t("limit_reached", lang)}), 429
 
-        # If we get here, both sends failed or no email provided
-        log_event("verification_failed", phone, f"count={count}")
-        return jsonify({"message": "Failed to send verification code"}), 500
+            # If we get here, both sends failed or no email provided
+            log_event("verification_failed", phone, f"count={count}")
+            return jsonify({"message": "Failed to send verification code"}), 500
 
     except Exception as e:
         log_event("internal_error", formatted_phone, str(e))

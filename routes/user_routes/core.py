@@ -45,7 +45,7 @@ def add_person():
     print('Content-Type:', request.content_type)
     print('Form data:', dict(request.form))
     print('Files:', request.files)
-    
+
     conn = connect_to_db()
     BASE_URL = current_app.config['BASE_URL']
     
@@ -56,6 +56,8 @@ def add_person():
     phone = data.get('phone')
     formatted_phone = format_phone_number(phone)
     get_acc_type = data.get('acc_type')
+
+    print(get_acc_type, fullname, phone)
 
     if not get_acc_type in ['admins','students','teachers', 'staffs','others','badri_members', 'donors']:
         get_acc_type = 'others'

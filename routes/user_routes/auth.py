@@ -9,6 +9,7 @@ from logger import log_event
 from helpers import (validate_fullname, validate_password, 
 send_sms, format_phone_number,
 generate_code, check_code, send_email)
+from translations import t
 
 
 # ========== Routes ==========
@@ -143,6 +144,7 @@ def send_verification_code():
     fullname = data.get("fullname").strip()
     password = data.get("password")
     email = data.get("email") or None
+    lang = request.args.get("lang") or request.headers.get("Accept-Language", "en")[:2]
     signature = data.get("app_signature")
 
     if not phone or not fullname:
@@ -187,10 +189,10 @@ def send_verification_code():
                         (formatted_phone, code)
                     )
                     conn.commit()
-                    return jsonify({"success": f"Verification code sent to {formatted_phone}"}), 200
-                # If SMS fails, fall back to email below
+                    return jsonify({"success": t("verification_sms_sent", lang, target=formatted_phone)}), 200
+                    # If SMS fails, fall back to email below
 
-            # SMS limit reached or SMS failed => try EMAIL
+        # SMS limit reached or SMS failed => try EMAIL
         if email:
             if count < EMAIL_LIMIT_PER_HOUR:
                 if send_email(email, code):
@@ -199,11 +201,11 @@ def send_verification_code():
                         (formatted_phone, code)
                     )
                     conn.commit()
-                    return jsonify({"success": f"Verification code sent to {email}"}), 200
+                    return jsonify({"success": t("verification_sms_sent", lang, target=email)}), 200
                     # else fall through to failure
             else:
                 log_event("rate_limit_blocked", phone, "Both send limit exceeded")
-                return jsonify({"message": "Limit reached. Try again later."}), 429
+                return jsonify({"message": t("limit_reached", lang)}), 429
 
         # If we get here, both sends failed or no email provided
         log_event("verification_failed", phone, f"count={count}")

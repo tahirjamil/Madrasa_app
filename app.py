@@ -1,10 +1,10 @@
 import os
 from datetime import datetime
 from pathlib import Path
-
+from functools import wraps
 from flask import (
     Flask, render_template, request, session, g,
-    send_from_directory
+    send_from_directory, jsonify
 )
 from flask_cors import CORS
 from flask_wtf import CSRFProtect
@@ -34,8 +34,18 @@ app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
 
+API_SECRET = os.getenv()
+
 csrf = CSRFProtect()
 csrf.init_app(app)
+
+def require_secret(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if request.headers.get("X-API-KEY") != API_SECRET:
+            return jsonify({"message": "Unauthorized"}), 403
+        return f(*args, **kwargs)
+    return wrapper
 
 # ensure upload folder exists
 os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
@@ -94,6 +104,15 @@ def donate():
 @app.route("/")
 def home():
     return render_template("home.html", current_year=datetime.now().year)
+
+@app.route("/admin/restart", methods=["POST"])
+@require_secret
+def restart_service():
+    try:
+        os.system("sudo systemctl restart madrasa-app.service")
+        return jsonify({"message": "Service restarted"}), 200
+    except Exception as e:
+        return jsonify({"message": f"Error: {str(e)}"}), 500
 
 # ─── Error & Favicon ────────────────────────────────────────
 @app.errorhandler(404)

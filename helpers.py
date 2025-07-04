@@ -123,7 +123,7 @@ def send_email(to_email, code):
 
 # Code Generator
 def generate_code():
-    return random.randint(1000, 9999)
+    return random.randint(100000, 999999)
 
 # Check Code
 def check_code(user_code, phone):

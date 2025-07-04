@@ -65,7 +65,10 @@ def register():
                 )
                 conn.commit()
 
-            return jsonify({"success": "Registration successful"}), 201
+            return jsonify({
+                "success": "Registration successful",
+                "info": people_result
+                }), 201
 
         except IntegrityError:
             return jsonify({"message": "User with this fullname and phone already registered"}), 400

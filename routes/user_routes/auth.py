@@ -144,7 +144,7 @@ def send_verification_code():
     fullname = data.get("fullname").strip()
     password = data.get("password")
     email = data.get("email") or None
-    lang = request.args.get("lang") or request.headers.get("Accept-Language", "en")[:2]
+    lang = data.get("language")
     signature = data.get("app_signature")
 
     if not phone or not fullname:

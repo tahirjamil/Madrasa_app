@@ -33,7 +33,7 @@ def uploaded_file(filename):
     return send_from_directory(upload_folder, filename), 200
 
 @user_routes.route('/uploads/notices/<path:filename>')
-def serve_notice_file(filename):
+def notices_file(filename):
     filename = secure_filename(filename)
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'notices')
     file_path = os.path.join(upload_folder, filename)
@@ -44,7 +44,7 @@ def serve_notice_file(filename):
     return send_from_directory(upload_folder, filename), 200
 
 @user_routes.route('/uploads/exam_results/<path:filename>')
-def serve_notice_file(filename):
+def exam_results_file(filename):
     filename = secure_filename(filename)
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'exam_results')
     file_path = os.path.join(upload_folder, filename)

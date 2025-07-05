@@ -33,7 +33,7 @@ def uploaded_file(filename):
     if not filename.rsplit('.', 1)[-1].lower() in {'png', 'jpg', 'jpeg', 'webp'}:
         return jsonify({"message": "File type not allowed"}), 403
 
-    return send_from_directory(upload_folder, filename)
+    return send_from_directory(upload_folder, filename), 200
 
 @user_routes.route('/uploads/notices/<path:filename>')
 def serve_notice_file(filename):
@@ -43,7 +43,7 @@ def serve_notice_file(filename):
     if not os.path.isfile(file_path):
         return jsonify({"message": "File not found"}), 404
     
-    return send_from_directory(upload_folder, filename)
+    return send_from_directory(upload_folder, filename), 200
 
 # ========== Routes ==========
 

@@ -1,10 +1,10 @@
 [
-  {
-    "filename": "1.jpg",
-    "section": "kitab",
-    "class": "ifta",
-    "year": "2025",
-    "exam_type": "monthly",
-    "uploaded_at": "2025-07-05 05:03:31"
-  }
+    {
+        "filename": "1.webp",
+        "section": "kitab",
+        "class": "ifta",
+        "year": "2025",
+        "exam_type": "monthly",
+        "uploaded_at": "2025-07-05 05:03:31"
+    }
 ]

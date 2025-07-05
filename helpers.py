@@ -13,6 +13,8 @@ import pymysql.cursors
 import json
 from functools import wraps
 from config import Config
+import smtplib
+from email.mime.text import MIMEText
 
 
 # ─── Compute Upload Folder ───────────
@@ -71,14 +73,14 @@ def delete_code():
         conn.close()
 
 # SMS Sender
-def send_sms(phone, code):
+def send_sms(phone, code, signature):
     delete_code()
     TEXTBELT_URL = "https://textbelt.com/text"
 
     try:
         response = requests.post(TEXTBELT_URL, {
             'phone': phone,
-            'message': f"Your verification code is: {code}",
+            'message': f"Your verification code is: {code}\n@annur.app #{signature}",
             'key': os.getenv("TEXTBELT_KEY")
         })
         result = response.json()
@@ -89,9 +91,39 @@ def send_sms(phone, code):
         return False
 
 
+# Email Sender
+def send_email(to_email, code):
+    delete_code()
+    
+    EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+    EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")  # Your email
+    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")  # App password
+
+    subject = "Your Verification Code"
+    body = f"Your verification code is: {code}\n@annur.app"
+
+    try:
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = EMAIL_ADDRESS
+        msg['To'] = to_email
+
+        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print("Email Error:", e)
+        log_event("email_error", to_email, str(e))
+        return False
+    
+
 # Code Generator
 def generate_code():
-    return random.randint(1000, 9999)
+    return random.randint(100000, 999999)
 
 # Check Code
 def check_code(user_code, phone):
@@ -133,14 +165,33 @@ def check_code(user_code, phone):
 
 
 # Phone formatter
-def format_phone_number(phone, region="BD"):
+import phonenumbers
+from phonenumbers import NumberParseException
+
+def format_phone_number(phone):
+    if not phone:
+        return None
+
+    phone = phone.strip().replace(" ", "").replace("-", "")
+
+    if phone.startswith("8801") and len(phone) == 13:
+        # User entered "8801..." without plus ➜ add "+"
+        phone = "+" + phone
+    elif phone.startswith("01") and len(phone) == 11:
+        # User entered local BD number ➜ add "+880"
+        phone = "+88" + phone
+    elif not phone.startswith("+"):
+        # Foreign number but no + ➜ invalid (force +<countrycode> for non-BD)
+        return None
+
     try:
-        number = phonenumbers.parse(phone, region)
+        number = phonenumbers.parse(phone, None)
         if not phonenumbers.is_valid_number(number):
             return None
         return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)
     except NumberParseException:
         return None
+
 
 # Password Validator
 def validate_password(pwd):
@@ -211,17 +262,61 @@ def get_id(phone, fullname):
         conn.close()
 
 # Insert People
-def insert_person(fields: dict):
+def insert_person(fields: dict, acc_type):
     conn = connect_to_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             columns = ', '.join(fields.keys())
             placeholders = ', '.join(['%s'] * len(fields))
-            sql = f"INSERT INTO verify_people ({columns}) VALUES ({placeholders})"
-            cursor.execute(sql, list(fields.values()))
+            tables = ["people"]
+            if acc_type in ['students', 'teachers', 'staffs', 'admins']:
+                tables.append("verify_people")
+
+            for table in tables:
+                sql = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+                cursor.execute(sql, list(fields.values()))
+                
         conn.commit()
+        log_event("insert_success", fields.get("phone", "unknown"), f"Inserted into: {tables}")
+    except pymysql.MySQLError as e:
+        log_event("db_insert_error", fields.get("phone", "unknown"), str(e))
+        raise
     finally:
         conn.close()
+
+
+# Update People
+def update_person(fields: dict, fullname, phone):
+    # Build the SET clause: "col1=%s, col2=%s, ..."
+    set_clause = ", ".join(f"{col} = %s" for col in fields.keys())
+    # Build the parameter list: [val1, val2, ..., fullname, phone]
+    params = list(fields.values()) + [fullname, phone]
+
+    sql = f"""
+        UPDATE people
+           SET {set_clause}
+         WHERE LOWER(name_en) = LOWER(%s)
+           AND phone = %s
+    """
+
+    conn = connect_to_db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(sql, params)
+
+        conn.commit()
+        log_event(
+            "update_success",
+            phone,
+            f"Updated people: set {list(fields.keys())} for name_en={fullname!r}"
+        )
+    except pymysql.MySQLError as e:
+        log_event("db_update_error", phone, str(e))
+        raise
+    finally:
+        conn.close()
+
+
 
 
 

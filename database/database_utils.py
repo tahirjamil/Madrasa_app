@@ -28,6 +28,7 @@ def create_tables():
             fullname VARCHAR(50)    NOT NULL,
             phone    VARCHAR(20)    NOT NULL,
             password TEXT           NOT NULL,
+            email     TEXT,
             UNIQUE KEY unique_user (fullname, phone)
         )
         """)
@@ -103,8 +104,7 @@ def create_tables():
                 mother_bn          VARCHAR(255),
                 mother_ar          VARCHAR(255),
                 class              VARCHAR(100),
-                phone              VARCHAR(15)     NOT NULL,
-                mail               TEXT,
+                phone              TEXT            NOT NULL,
                 guardian_number    TEXT,
                 available          BOOLEAN         DEFAULT 1,
                 degree             VARCHAR(50),

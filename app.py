@@ -1,10 +1,10 @@
 import os
 from datetime import datetime
 from pathlib import Path
-
+from functools import wraps
 from flask import (
     Flask, render_template, request, session, g,
-    send_from_directory
+    send_from_directory, jsonify
 )
 from flask_cors import CORS
 from flask_wtf import CSRFProtect
@@ -34,8 +34,18 @@ app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
 
+RESTART_KEY = os.getenv("RESTART_KEY", "fallback-key")
+
 csrf = CSRFProtect()
 csrf.init_app(app)
+
+def require_secret(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if request.headers.get("RESTART-KEY") != RESTART_KEY:
+            return jsonify({"message": "Unauthorized"}), 403
+        return f(*args, **kwargs)
+    return wrapper
 
 # ensure upload folder exists
 os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
@@ -73,6 +83,7 @@ def log_every_request():
     request_response_log.append(entry)
     if len(request_response_log) > 100:
         request_response_log.pop(0)
+
 @app.after_request
 def attach_response_data(response):
     entry = getattr(g, "log_entry", None)
@@ -94,6 +105,18 @@ def donate():
 @app.route("/")
 def home():
     return render_template("home.html", current_year=datetime.now().year)
+
+@csrf.exempt
+@app.route("/restart", methods=["POST"])
+@require_secret
+def restart_service():
+    try:
+        print("Restart endpoint hit, trying to restart...")
+        result = os.system("sudo systemctl restart madrasa-app.service")
+        print(f"System call result: {result}")
+        return jsonify({"message": "Service restarted"}), 200
+    except Exception as e:
+        return jsonify({"message": f"Error: {str(e)}"}), 500
 
 # ─── Error & Favicon ────────────────────────────────────────
 @app.errorhandler(404)
@@ -121,12 +144,12 @@ if __name__ == "__main__":
     host, port = "0.0.0.0", 8000
 
     if env_flag == "development":
-        print(f"Starting Flask dev server at http://{host}:{port}")
         app.run(debug=True, host=host, port=port)
     else:
+        restart_cmd = 'curl -X POST http://(your-domain)/restart -H "RESTART-KEY: (your-restart-key)"'
         # production
         port = 80
         URL = Config.BASE_URL
-        print(f"Starting production server with Waitress at {URL}")
         print(f"Quick logs available at {URL}/admin/info")
+        print(f"restart though: {restart_cmd}")
         serve(app, host=host, port=port)

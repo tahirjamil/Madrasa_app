@@ -7,12 +7,12 @@ class Config:
     # Basic Info
     SECRET_KEY = os.getenv("SECRET_KEY", "fallback-key")
     WTF_CSRF_SECRET_KEY = os.getenv("CSRF_SECRET_KEY", "fallback-csrf-key")
-    BASE_URL = 'http://localhost:80/'
+    BASE_URL = os.getenv("BASE_URL")
     BASE_UPLOAD_FOLDER = os.path.join('uploads')
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 
-    # Advanced
+    # Advanced Info
     API_KEY = os.getenv("API_KEY")
     SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
     SESSION_COOKIE_SAMESITE = "Lax"

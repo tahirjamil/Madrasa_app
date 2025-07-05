@@ -10,11 +10,11 @@ from werkzeug.utils import secure_filename
 from database import connect_to_db
 from logger import log_event
 from config import Config
-from helpers import get_id, insert_person
+from helpers import get_id, insert_person, update_person, format_phone_number
 
 # ========== Config ==========
 IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'HEIC'}
 
 os.makedirs(IMG_UPLOAD_FOLDER, exist_ok=True)
 
@@ -40,20 +40,36 @@ def uploaded_file(filename):
 
 @user_routes.route('/add_people', methods=['POST'])
 def add_person():
+    print(request.content_type)
+    print('Headers:', dict(request.headers))
+    print('Content-Type:', request.content_type)
+    print('Form data:', dict(request.form))
+    print('Files:', request.files)
+
+    conn = connect_to_db()
     BASE_URL = current_app.config['BASE_URL']
     
     data = request.form
     image = request.files.get('image')
 
-    fullname = data.get('fullname')
+    fullname = data.get('name_en')
     phone = data.get('phone')
+    formatted_phone = format_phone_number(phone)
     get_acc_type = data.get('acc_type')
+
+    if not get_acc_type.endswith('s'):
+        get_acc_type += 's'
+
+    print(get_acc_type, fullname, phone)
+
+    if not get_acc_type in ['admins','students','teachers', 'staffs','others','badri_members', 'donors']:
+        get_acc_type = 'others'
 
     if not fullname or not phone or not get_acc_type:
         log_event("add_people_missing", phone, "Missing fields")
         return jsonify({"message": "fullname, phone and acc_type are required"}), 400
 
-    person_id = get_id(phone, fullname)
+    person_id = get_id(formatted_phone, fullname)
     acc_type = get_acc_type.lower()
 
     if not person_id:
@@ -106,8 +122,8 @@ def add_person():
             return jsonify({"message": "All required fields must be provided for Student"}), 400
         fields.update({k: f(k) for k in required})
 
-        optional = ["mail"]
-        fields.update({k: f(k) for k in optional if f(k)})
+        # optional = ["email"]
+        # fields.update({k: f(k) for k in optional if f(k)})
 
     elif acc_type in ['teachers', 'admins']:
         required = [
@@ -138,11 +154,11 @@ def add_person():
             return jsonify({"message": f"All required fields must be provided for {acc_type}"}), 400
         fields.update({k: f(k) for k in required})
 
-        optional = ["mail"]
-        fields.update({k: f(k) for k in optional if f(k)})
+        # optional = ["email"]
+        # fields.update({k: f(k) for k in optional if f(k)})
         
 
-    elif acc_type in ['others','badri_members','donors']:
+    else:
         if not f("name_en") or not f("phone") or not f("father_or_spouse") or not f("date_of_birth"):
             return jsonify({"message": "Name, Phone, and Father/Spouse are required for Guest"}), 400
 
@@ -153,16 +169,34 @@ def add_person():
 
         optional = [
             "source", "present_address",
-            "blood_group", "gender", "degree", "mail"
+            "blood_group", "gender", "degree"
         ]
         fields.update({k: f(k) for k in optional if f(k)})
 
-    else:
-        return jsonify({"message": "Invalid Account type"}), 400
 
     try:
-        insert_person(fields)
-        return jsonify({"message": f"{acc_type} profile added successfully", "id": person_id}), 201
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+            person = cursor.fetchone()
+
+            if person:
+                update_person(fields, fullname, formatted_phone)
+                conn.commit
+
+                cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+                row = cursor.fetchone()
+                img_path = row["image_path"] if row else None
+                return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
+            
+            else:
+                insert_person(fields, acc_type)
+                conn.commit
+
+                cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+                row = cursor.fetchone()
+                img_path = row["image_path"] if row else None
+                return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
+            
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409
     except Exception as e:
@@ -181,28 +215,21 @@ def get_info():
 
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            sql = """SELECT name_en, name_bn, name_ar,
+                    address_en, address_bn, address_ar,
+                    degree, 
+                    father_en, father_bn, father_ar, 
+                    blood_group,
+                    phone, image_path AS picUrl, member_id, acc_type AS role,
+                    COALESCE(title1, title2, class) AS title
+                    FROM people WHERE member_id IS NOT NULL"""
+            params = []
+
             if lastfetched:
-                cursor.execute("""
-                    SELECT name_en, name_bn, name_ar,
-                    present_address AS address_en, address_bn, address_ar,
-                    degree, 
-                    father_en, father_bn, father_ar, 
-                    blood_group,
-                    phone, image_path AS picUrl, member_id, acc_type AS role,
-                    mail, COALESCE(title1, title2, class) AS title
-                    FROM people WHERE updated_at > %s AND member_id IS NOT NULL
-                """, (corrected_time))
-            else:
-                cursor.execute("""
-                    SELECT name_en, name_bn, name_ar,
-                    present_address AS address_en, address_bn, address_ar,
-                    degree, 
-                    father_en, father_bn, father_ar, 
-                    blood_group,
-                    phone, image_path AS picUrl, member_id, acc_type AS role,
-                    mail, COALESCE(title1, title2, class) AS title
-                    FROM people people WHERE member_id IS NOT NULL
-                """)
+                sql += " AND updated_at > %s"
+                params.append(corrected_time)
+            
+            cursor.execute(sql, params)
             members = cursor.fetchall()
         return jsonify({
             "members": members,

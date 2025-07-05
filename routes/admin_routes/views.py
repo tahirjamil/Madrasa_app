@@ -315,7 +315,7 @@ def add_member():
         fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",
                   "date_of_birth","national_id","blood_group","degree","gender",
                   "title1","source","address_en","address_bn","address_ar",
-                  "permanent_address","father_or_spouse","mail","father_en",
+                  "permanent_address","father_or_spouse","father_en",
                   "father_bn","father_ar","mother_en","mother_bn","mother_ar",
                   "acc_type"]
         data = {f: request.form.get(f) for f in fields if request.form.get(f)}

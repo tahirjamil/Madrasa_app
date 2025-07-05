@@ -35,6 +35,15 @@ def uploaded_file(filename):
 
     return send_from_directory(upload_folder, filename)
 
+@user_routes.route('/uploads/notices/<path:filename>')
+def serve_notice_file(filename):
+    upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'notices')
+    file_path = os.path.join(upload_folder, filename)
+
+    if not os.path.isfile(file_path):
+        return jsonify({"message": "File not found"}), 404
+    
+    return send_from_directory(upload_folder, filename)
 
 # ========== Routes ==========
 
@@ -379,3 +388,4 @@ def get_exams():
         return jsonify({"message": f"Database error: {e}"}), 500
     finally:
         conn.close()
+

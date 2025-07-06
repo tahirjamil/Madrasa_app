@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
 from config import Config
 import json
+import re
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
@@ -17,11 +18,17 @@ NOTICES_DIR = Config.NOTICES_DIR
 MADRASA_IMG_DIR = Config.MADRASA_IMG_DIR
 PIC_INDEX_PATH       = os.path.join(MADRASA_IMG_DIR, 'index.json')
 
+# RE
+_FORBIDDEN_RE = re.compile(
+    r'\b(?:drop|truncate|alter|rename|create\s+database|use)\b',
+    re.IGNORECASE
+)
 
 # ------------- Root / Dashboard ----------------
 
 @admin_routes.route('/', methods=['GET', 'POST'])
 def admin_dashboard():
+    # 1) Ensure admin is logged in
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
@@ -34,58 +41,66 @@ def admin_dashboard():
 
     try:
         with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            # Load database list
             cursor.execute("SHOW DATABASES")
             databases = [row["Database"] for row in cursor.fetchall()]
 
+            # Validate selected_db
             if selected_db not in databases:
                 selected_db = databases[0] if databases else None
 
+            # Load tables & descriptions
             if selected_db:
-                cursor.execute(f"USE {selected_db}")
+                cursor.execute(f"USE `{selected_db}`")
                 cursor.execute("SHOW TABLES")
                 table_list = [row[f'Tables_in_{selected_db}'] for row in cursor.fetchall()]
                 for table in table_list:
-                    cursor.execute(f"DESCRIBE {table}")
+                    cursor.execute(f"DESCRIBE `{table}`")
                     tables[table] = cursor.fetchall()
 
+            # Handle SQL form submission
             if request.method == "POST":
-                username = request.form.get('username')
-                password = request.form.get('password')
-                raw_sql = request.form.get('sql', '')
+                raw_sql = request.form.get('sql', '').strip()
+                username = request.form.get('username', '')
+                password = request.form.get('password', '')
 
                 ADMIN_USER = os.getenv("ADMIN_USERNAME")
                 ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
 
+                # Authenticate admin credentials
                 if username != ADMIN_USER or password != ADMIN_PASS:
                     flash("Unauthorized admin login.", "danger")
+                # Forbid dangerous keywords (whole‑word match)
+                elif _FORBIDDEN_RE.search(raw_sql):
+                    flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
+                    log_event("forbidden_query_attempt", username, raw_sql)
                 else:
-                    forbidden = ['drop', 'truncate', 'alter', 'rename', 'create database', 'use']
-                    if any(word in raw_sql.lower() for word in forbidden):
-                        flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
-                        log_event("forbidden_query_attempt", username, raw_sql)
-                    else:
-                        try:
-                            cursor.execute(raw_sql)
-                            if cursor.description:  # SELECT-like
-                                query_result = cursor.fetchall()
-                            else:
-                                conn.commit()
-                                query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
-                            log_event("query_run", username, raw_sql)
-                        except Exception as e:
-                            query_error = str(e)
-                            log_event("query_error", username, f"{raw_sql} | {str(e)}")
+                    try:
+                        cursor.execute(raw_sql)
+                        # If it's a SELECT or similar, fetch results
+                        if cursor.description:
+                            query_result = cursor.fetchall()
+                        else:
+                            conn.commit()
+                            query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
+                        log_event("query_run", username, raw_sql)
+                    except Exception as e:
+                        query_error = str(e)
+                        log_event("query_error", username, f"{raw_sql} | {str(e)}")
+
     except Exception as e:
         query_error = str(e)
     finally:
         conn.close()
 
-    return render_template("admin/dashboard.html",
-                           databases=databases,
-                           tables=tables,
-                           selected_db=selected_db,
-                           query_result=query_result,
-                           query_error=query_error)
+    return render_template(
+        "admin/dashboard.html",
+        databases=databases,
+        tables=tables,
+        selected_db=selected_db,
+        query_result=query_result,
+        query_error=query_error
+    )
 
 
 # ------------------ Logs ---------------------

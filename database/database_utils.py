@@ -117,6 +117,7 @@ def create_tables():
                                       'staffs','others','badri_members',
                                       'donors'
                                     ),
+                UNIQUE KEY unique_person (LOWER(name_en), phone)
                 FOREIGN KEY (id) REFERENCES users(id)
             )
             """)

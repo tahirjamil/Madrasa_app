@@ -15,6 +15,7 @@ from functools import wraps
 from config import Config
 import smtplib
 from email.mime.text import MIMEText
+import re
 
 
 # ─── Compute Upload Folder ───────────
@@ -203,15 +204,24 @@ def validate_password(pwd):
 
 # Fullname Validator
 def validate_fullname(fullname):
-    special_chars = "!@#$%^&*()_+=-"
-    words = fullname.strip().split()
+    _FULLNAME_RE = re.compile(
+    r'^(?!.*[\d])'                     # no digits
+    r'(?!.*[!@#$%^&*()_+=-])'          # no forbidden special chars
+    r'([A-Z][a-z]+)'                   # first word
+    r'(?: [A-Z][a-z]+)*$'              # additional words
+    )
+    
+    fullname = fullname.strip()
 
-    if not all(any(c.isupper() for c in word) for word in words):
-        return False, "Fullname should have Proper Uppercase letter"
-    if any(c.isdigit() for c in fullname):
+    # 1) Quick checks for specific errors
+    if re.search(r'\d', fullname):
         return False, "Fullname shouldn’t contain digits"
-    if any(c in special_chars for c in fullname):
+    if re.search(r'[!@#$%^&*()_+=-]', fullname):
         return False, "Fullname shouldn’t contain special characters"
+
+    # 2) Full regex for proper casing & spacing
+    if not _FULLNAME_RE.match(fullname):
+        return False, "Fullname must be words starting with uppercase, followed by lowercase letters"
 
     return True, ""
 

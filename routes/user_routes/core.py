@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from database import connect_to_db
 from logger import log_event
 from config import Config
-from helpers import get_id, insert_person, update_person, format_phone_number
+from helpers import get_id, insert_person, format_phone_number
 
 # ========== Config ==========
 IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')

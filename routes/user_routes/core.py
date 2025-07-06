@@ -194,26 +194,12 @@ def add_person():
 
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
-            person = cursor.fetchone()
-
-            if person:
-                update_person(fields, fullname, formatted_phone)
-                conn.commit
-
-                cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
-                row = cursor.fetchone()
-                img_path = row["image_path"] if row else None
-                return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
-            
-            else:
-                insert_person(fields, acc_type)
-                conn.commit
-
-                cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
-                row = cursor.fetchone()
-                img_path = row["image_path"] if row else None
-                return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
+            insert_person(fields, acc_type, phone)
+            conn.commit()
+            cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+            row = cursor.fetchone()
+            img_path = row["image_path"] if row else None
+            return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
             
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409

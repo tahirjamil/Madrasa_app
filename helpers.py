@@ -262,62 +262,43 @@ def get_id(phone, fullname):
         conn.close()
 
 # Insert People
-def insert_person(fields: dict, acc_type):
+def insert_person(fields: dict, acc_type, phone):
     conn = connect_to_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            # Prepare fields
             columns = ', '.join(fields.keys())
             placeholders = ', '.join(['%s'] * len(fields))
-            tables = ["people"]
+
+            # Only update non-identity or safe fields (exclude 'id', 'created_at', etc.)
+            updatable_fields = [col for col in fields.keys() if col not in ('id', 'created_at')]
+            updates = ', '.join([f"{col} = VALUES({col})" for col in updatable_fields])
+
+            # UPSERT for people
+            sql = f"""
+                INSERT INTO people ({columns}) 
+                VALUES ({placeholders}) 
+                ON DUPLICATE KEY UPDATE {updates}
+            """
+            cursor.execute(sql, list(fields.values()))
+
+            # Conditional insert for verify_people
             if acc_type in ['students', 'teachers', 'staffs', 'admins']:
-                tables.append("verify_people")
+                # Safe: insert only if not exists
+                verify_sql = f"""
+                    INSERT IGNORE INTO verify_people ({columns}) 
+                    VALUES ({placeholders})
+                """
+                cursor.execute(verify_sql, list(fields.values()))
 
-            for table in tables:
-                sql = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
-                cursor.execute(sql, list(fields.values()))
-                
         conn.commit()
-        log_event("insert_success", fields.get("phone", "unknown"), f"Inserted into: {tables}")
+        log_event("insert_success", phone, "Upserted into people and conditionally inserted into verify_people")
     except pymysql.MySQLError as e:
-        log_event("db_insert_error", fields.get("phone", "unknown"), str(e))
+        conn.rollback()
+        log_event("db_insert_error", phone, str(e))
         raise
     finally:
         conn.close()
-
-
-# Update People
-def update_person(fields: dict, fullname, phone):
-    # Build the SET clause: "col1=%s, col2=%s, ..."
-    set_clause = ", ".join(f"{col} = %s" for col in fields.keys())
-    # Build the parameter list: [val1, val2, ..., fullname, phone]
-    params = list(fields.values()) + [fullname, phone]
-
-    sql = f"""
-        UPDATE people
-           SET {set_clause}
-         WHERE LOWER(name_en) = LOWER(%s)
-           AND phone = %s
-    """
-
-    conn = connect_to_db()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(sql, params)
-
-        conn.commit()
-        log_event(
-            "update_success",
-            phone,
-            f"Updated people: set {list(fields.keys())} for name_en={fullname!r}"
-        )
-    except pymysql.MySQLError as e:
-        log_event("db_update_error", phone, str(e))
-        raise
-    finally:
-        conn.close()
-
-
-
 
 
 # ------------------------------------ Admin -------------------------------------------

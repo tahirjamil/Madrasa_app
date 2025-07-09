@@ -17,6 +17,7 @@ from database import create_tables
 # API & Web Blueprints
 from routes.user_routes import user_routes
 from routes.admin_routes import admin_routes
+from routes.web_routes import web_routes
 
 # ─── App Setup ──────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
@@ -134,6 +135,7 @@ def favicon():
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(user_routes)
 app.register_blueprint(admin_routes, url_prefix='/admin')
+app.register_blueprint(web_routes)
 
 csrf.exempt(user_routes)
 csrf.exempt(admin_routes)

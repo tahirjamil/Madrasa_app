@@ -1,8 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}Contact Us{% endblock %}
+
 {% block content %}
 <div class="container mt-5">
   <h1 class="mb-4">Contact Us</h1>
+
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, msg in messages %}
@@ -15,6 +17,7 @@
   {% endwith %}
 
   <div class="row">
+    <!-- Contact Form -->
     <div class="col-md-6">
       <form id="contactForm" method="POST" novalidate>
         <div class="mb-3">
@@ -32,34 +35,46 @@
         <button type="submit" class="btn btn-primary" id="submitBtn">Send Message</button>
       </form>
     </div>
+
+    <!-- Contact Info -->
     <div class="col-md-6">
       <h5>Our Contact Information</h5>
-      <ul class="list-unstyled">
-        <li><strong>Phone:</strong>
+
+      {% if phones %}
+        {% if phones|length > 1 %}
+          <strong>Phone numbers:</strong>
           <ul>
             {% for p in phones %}
-            <li>{{ p }}</li>
+              <li>{{ p }}</li>
             {% endfor %}
           </ul>
-        </li>
-        <li><strong>Email:</strong>
+        {% else %}
+          <p><strong>Phone:</strong> {{ phones[0] }}</p>
+        {% endif %}
+      {% endif %}
+
+      {% if emails %}
+        {% if emails|length > 1 %}
+          <strong>Emails:</strong>
           <ul>
             {% for e in emails %}
-            <li>{{ e }}</li>
+              <li>{{ e }}</li>
             {% endfor %}
           </ul>
-        </li>
-      </ul>
+        {% else %}
+          <p><strong>Email:</strong> {{ emails[0] }}</p>
+        {% endif %}
+      {% endif %}
     </div>
   </div>
 </div>
+{% endblock %}
 
 {% block scripts %}
 <script>
-  // Simple front-end validation
   document.getElementById('contactForm').addEventListener('submit', function(e) {
     const full = document.getElementById('fullname').value.trim();
-    const ep = document.getElementById('email_or_phone').value.trim();
+    const ep   = document.getElementById('email_or_phone').value.trim();
     const desc = document.getElementById('description').value.trim();
     if (!full || !ep || !desc) {
       e.preventDefault();

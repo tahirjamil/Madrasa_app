@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Terms & Conditions - Annur{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+  <h1>Terms &amp; Conditions for Annur</h1>
+  <p><strong>Effective Date:</strong> {{ effective_date }}</p>
+  <p>
+    <strong>App Name:</strong> Annur<br>
+    <strong>Developers:</strong> Tahir Jamil and Tareq Jamil<br>
+    <strong>Contact Email:</strong> <a href="mailto:annurcomplex@gmail.com">annurcomplex@gmail.com</a>
+  </p>
+
+  <h2>1. Acceptance of Terms</h2>
+  <p>
+    By downloading, installing, or using <strong>Annur</strong>, you agree to these Terms &amp; Conditions and our
+    <a href="{{ url_for('web_routes.privacy') }}">Privacy Policy</a>. If you do not agree, please do not use the app.
+  </p>
+
+  <h2>2. License to Use</h2>
+  <p>
+    We grant you a limited, non‑exclusive, non‑transferable, revocable license to use the app for personal or internal educational purposes.
+  </p>
+
+  <h2>3. User Accounts</h2>
+  <ol>
+    <li>You must register with accurate information.</li>
+    <li>You are responsible for safeguarding your login credentials.</li>
+    <li>You agree not to share your account or let others use it.</li>
+  </ol>
+
+  <h2>4. Your Obligations</h2>
+  <ol>
+    <li>Use the app in compliance with all applicable laws.</li>
+    <li>Do not reverse engineer, decompile, or attempt to extract source code.</li>
+    <li>Do not upload harmful content or misuse any feature.</li>
+  </ol>
+
+  <h2>5. Intellectual Property</h2>
+  <p>
+    All code, design, graphics, and content in Annur are the property of Tahir Jamil and Tareq Jamil and are protected by copyright and trademark law.
+  </p>
+
+  <h2>6. Data and Privacy</h2>
+  <p>
+    Your use of data in Annur is subject to our
+    <a href="{{ url_for('web_routes.privacy') }}">Privacy Policy</a>. You authorize us to collect and process data as described there.
+  </p>
+
+  <h2>7. Termination</h2>
+  <p>
+    We may suspend or terminate your access at any time, with or without cause, including if you violate these terms.
+  </p>
+
+  <h2>8. Disclaimers</h2>
+  <p>
+    Annur is provided “as is” without warranties of any kind. We do not guarantee uninterrupted access or error‑free operation.
+  </p>
+
+  <h2>9. Limitation of Liability</h2>
+  <p>
+    To the fullest extent permitted by law, we are not liable for any indirect, incidental, special, or consequential damages arising out of your use of the app.
+  </p>
+
+  <h2>10. Governing Law</h2>
+  <p>
+    These terms are governed by the laws of Bangladesh, and any dispute will be resolved in its courts.
+  </p>
+
+  <h2>11. Changes to Terms</h2>
+  <p>
+    We may update these Terms &amp; Conditions. You’ll be notified in‑app or via email. Continued use after changes constitutes acceptance.
+  </p>
+
+  <h2>12. Contact Us</h2>
+  <p>
+    If you have any questions about these Terms, contact:
+    <a href="mailto:annurcomplex@gmail.com">annurcomplex@gmail.com</a>
+  </p>
+</div>
+{% endblock %}

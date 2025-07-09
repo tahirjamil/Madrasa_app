@@ -221,7 +221,7 @@ def get_info():
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             sql = """SELECT name_en, name_bn, name_ar,
                     address_en, address_bn, address_ar,
-                    degree, 
+                    degree, gender,
                     father_en, father_bn, father_ar, 
                     blood_group,
                     phone, image_path AS picUrl, member_id, acc_type AS role,

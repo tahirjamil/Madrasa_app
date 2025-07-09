@@ -93,16 +93,17 @@ def send_sms(phone, code, signature):
 
 
 # Email Sender
-def send_email(to_email, code):
+def send_email(to_email, code=None, subject=None, body=None):
     delete_code()
     
     EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
     EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-    EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")  # Your email
-    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")  # App password
+    EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "fallback-email")
+    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "fallback-pass")
 
-    subject = "Your Verification Code"
-    body = f"Your verification code is: {code}\n@annur.app"
+    if not subject or not body:
+        subject = "Your Verification Code"
+        body = f"Your verification code is: {code}\n@annur.app"
 
     try:
         msg = MIMEText(body)

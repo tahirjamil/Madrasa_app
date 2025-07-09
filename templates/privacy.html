@@ -1,0 +1,105 @@
+
+{% extends 'base.html' %}
+{% block title %}Privacy Policy{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <h1 class="mb-4 text-primary">Privacy Policy for Annur</h1>
+  <p class="text-muted"><strong>Effective Date:</strong> {{ effective_date }}</p>
+
+  <div class="accordion" id="privacyAccordion">
+    <!-- Introduction -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingIntro">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseIntro" aria-expanded="true" aria-controls="collapseIntro">
+          1. Introduction
+        </button>
+      </h2>
+      <div id="collapseIntro" class="accordion-collapse collapse show" aria-labelledby="headingIntro" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <p>At <strong>Annur</strong>, your privacy matters to us. This Privacy Policy explains how we collect, use, and protect your personal information when you use our application.</p>
+        </div>
+      </div>
+    </div>
+    <!-- Information We Collect -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingCollect">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCollect" aria-expanded="false" aria-controls="collapseCollect">
+          2. What Information We Collect
+        </button>
+      </h2>
+      <div id="collapseCollect" class="accordion-collapse collapse" aria-labelledby="headingCollect" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <h5>a. Personal Information</h5>
+          <ul>
+            <li>Full Name</li>
+            <li>Phone Number</li>
+            <li>Email Address</li>
+            <li>Account Type (Student, Teacher, Admin, Staff)</li>
+            <li>Class, Gender (for students)</li>
+          </ul>
+          <h5>b. Authentication Data</h5>
+          <p>Passwords are securely <strong>hashed</strong> before storage.</p>
+          <h5>c. Device Information</h5>
+          <p>We collect basic technical data to improve performance.</p>
+        </div>
+      </div>
+    </div>
+    <!-- Usage -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingUse">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseUse" aria-expanded="false" aria-controls="collapseUse">
+          3. How We Use Your Information
+        </button>
+      </h2>
+      <div id="collapseUse" class="accordion-collapse collapse" aria-labelledby="headingUse" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <ul>
+            <li>Manage user accounts and access</li>
+            <li>Allow authorized staff to view academic data</li>
+            <li>Improve app functionality and security</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <!-- Disclosure -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingDisclosure">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDisclosure" aria-expanded="false" aria-controls="collapseDisclosure">
+          4. Data Sharing and Disclosure
+        </button>
+      </h2>
+      <div id="collapseDisclosure" class="accordion-collapse collapse" aria-labelledby="headingDisclosure" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <p>We <strong>do not sell</strong> or trade your personal information. Data is shared only with authorized madrasa staff.</p>
+        </div>
+      </div>
+    </div>
+    <!-- Security -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingSecurity">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSecurity" aria-expanded="false" aria-controls="collapseSecurity">
+          5. Data Storage and Security
+        </button>
+      </h2>
+      <div id="collapseSecurity" class="accordion-collapse collapse" aria-labelledby="headingSecurity" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <p>All data is encrypted in transit and at rest. Access is limited to authorized personnel.</p>
+        </div>
+      </div>
+    </div>
+    <!-- Contact -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingContact">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseContact" aria-expanded="false" aria-controls="collapseContact">
+          6. Contact Us
+        </button>
+      </h2>
+      <div id="collapseContact" class="accordion-collapse collapse" aria-labelledby="headingContact" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <p>If you have questions, email us at <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

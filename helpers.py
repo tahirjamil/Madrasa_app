@@ -74,18 +74,26 @@ def delete_code():
         conn.close()
 
 # SMS Sender
-def send_sms(phone, code, signature):
+def send_sms(phone, signature=None, code=None, msg=None):
     delete_code()
     TEXTBELT_URL = "https://textbelt.com/text"
 
+    response = requests.post(TEXTBELT_URL, {
+                'phone': phone,
+                'message': f"{msg}\n\n@annur.app",
+                'key': os.getenv("TEXTBELT_KEY")
+            })
+
     try:
-        response = requests.post(TEXTBELT_URL, {
-            'phone': phone,
-            'message': f"Your verification code is: {code}\n@annur.app #{signature}",
-            'key': os.getenv("TEXTBELT_KEY")
-        })
+        if not msg:
+            response = requests.post(TEXTBELT_URL, {
+                'phone': phone,
+                'message': f"Your verification code is: {code}\n\n@annur.app #{signature}",
+                'key': os.getenv("TEXTBELT_KEY")
+            })
         result = response.json()
         return result.get("success", False)
+    
     except Exception as e:
         print("SMS Error:", e)
         log_event("sms_error", phone, str(e))
@@ -103,7 +111,7 @@ def send_email(to_email, code=None, subject=None, body=None):
 
     if not subject or not body:
         subject = "Your Verification Code"
-        body = f"Your verification code is: {code}\n@annur.app"
+        body = f"Your verification code is: {code}\n\n@annur.app"
 
     try:
         msg = MIMEText(body)
@@ -164,6 +172,22 @@ def check_code(user_code, phone):
         return jsonify({"message": f"Error: {str(e)}"}), 500
     finally:
         conn.close()
+
+# Get Email
+def get_email(fullname, phone):
+    conn = connect_to_db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("""SELECT email FROM users 
+                              WHERE fullname = %s AND phone = %s""", (fullname, phone))
+            result = cursor.fetchone()
+            if result:
+                return result['email']
+            else:
+                return None
+    except pymysql.MySQLError as e:
+        log_event("db_error", phone, str(e))
+        return None
 
 
 # Phone formatter
@@ -308,6 +332,56 @@ def insert_person(fields: dict, acc_type, phone):
         conn.rollback()
         log_event("db_insert_error", phone, str(e))
         raise
+    finally:
+        conn.close()
+
+def auto_delete_users():
+    conn = connect_to_db()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT u.id p.acc_type 
+                FROM users u
+                JOIN people p ON u.id = p.id
+                WHERE scheduled_deletion_at IS NOT NULL
+                AND scheduled_deletion_at < NOW()
+            """)
+            users_to_delete = cursor.fetchall()
+
+            for user in users_to_delete:
+                uid = user["id"]
+                acc_type = user["acc_type"]
+
+                people_sql = """UPDATE people
+                        SET 
+                            date_of_birth = NULL,
+                            birth_certificate = NULL,
+                            national_id = NULL,
+                            source = NULL,
+                            present_address = NULL,
+                            permanent_address = NULL,
+                            father_or_spouse = NULL,
+                            mother_en = NULL,
+                            mother_bn = NULL,
+                            mother_ar = NULL,
+                            guardian_number = NULL,
+                            available = NULL,
+                            is_donor = NULL,
+                            is_badri_member = NULL,
+                            is_foundation_member = NULL"""
+
+                if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
+                    people_sql = "DELETE FROM people WHERE id = %s"
+
+                cursor.execute(people_sql, (uid,))
+                cursor.execute("DELETE FROM transactions WHERE id = %s", (uid,))
+                cursor.execute("DELETE FROM verifications WHERE id = %s", (uid,))
+                cursor.execute("DELETE FROM users WHERE id = %s", (uid,))
+                return None
+        conn.commit()
+    except pymysql.MySQLError as e:
+        log_event("auto_delete_error", "Null", str(e))
+        return True
     finally:
         conn.close()
 

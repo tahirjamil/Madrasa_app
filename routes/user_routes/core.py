@@ -73,10 +73,10 @@ def add_person():
     fullname = data.get('name_en')
     phone = data.get('phone')
     formatted_phone = format_phone_number(phone)
-    get_acc_type = data.get('acc_type')
+    get_acc_type = data.get('acc_type') or ""
 
     if not get_acc_type.endswith('s'):
-        get_acc_type += 's'
+        get_acc_type = (f"{get_acc_type}s")
 
     print(get_acc_type, fullname, phone)
 
@@ -383,4 +383,3 @@ def get_exams():
         return jsonify({"message": f"Database error: {e}"}), 500
     finally:
         conn.close()
-

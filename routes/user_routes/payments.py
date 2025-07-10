@@ -174,10 +174,10 @@ def pay_sslcommerz():
         "total_amount":  amount,
         "currency":      "BDT",
         "tran_id":       tran_id,
-        "success_url":   Config.BASE_URL + 'payment_success_ssl',
-        "fail_url":      Config.BASE_URL + 'payment_fail_ssl',
-        "cancel_url":    Config.BASE_URL + 'payment_cancel_ssl',   # new
-        "ipn_url":       Config.BASE_URL + 'payment_ipn',          # optional
+        "success_url":   f"{Config.BASE_URL}payment/payment_success_ssl",
+        "fail_url":      f"{Config.BASE_URL}payment/payment_fail_ssl",
+        "cancel_url":    f"{Config.BASE_URL}payment/payment_cancel_ssl",   # new
+        "ipn_url":       f"{Config.BASE_URL}payment/payment_ipn",          # optional
 
         # product
         "product_name":      transaction_type.capitalize(),
@@ -236,8 +236,16 @@ def pay_sslcommerz():
         }), 400
 
 
-@user_routes.route('/payment_success_ssl', methods=['POST'])
-def payment_success_ssl():
+@user_routes.route('/payment/<return_type>', methods=['POST'])
+def payment_success_ssl(return_type):
+    valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']
+    if return_type not in valid_types:
+        return jsonify({"error": "Invalid return type"}), 400
+    if return_type == 'payment_fail_ssl':
+        return jsonify({"error": "Payment failed"}), 400
+    elif return_type == 'payment_cancel_ssl':
+        return jsonify({"error": "Payment cancelled"}), 400
+    
     data            = request.form.to_dict() or {}
     phone           = data.get('value_a')
     fullname        = data.get('value_b')

@@ -25,10 +25,12 @@ def create_tables():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            fullname VARCHAR(50)    NOT NULL,
-            phone    VARCHAR(20)    NOT NULL,
-            password TEXT           NOT NULL,
-            email     TEXT,
+            fullname    VARCHAR(50)            NOT NULL,
+            phone       VARCHAR(20)            NOT NULL,
+            password    TEXT                   NOT NULL,
+            email       TEXT,
+            deactivated_at  DATETIME            NULL,
+            scheduled_deletion_at  DATETIME     NULL;
             UNIQUE KEY unique_user (fullname, phone)
         )
         """)
@@ -117,6 +119,9 @@ def create_tables():
                                       'staffs','others','badri_members',
                                       'donors'
                                     ),
+                is_donor            BOOLEAN         DEFAULT 0,
+                is_badri_member     BOOLEAN         DEFAULT 0,
+                is_foundation_member BOOLEAN        DEFAULT 0,
                 UNIQUE KEY unique_person (name_en, phone),
                 FOREIGN KEY (id) REFERENCES users(id)
             )

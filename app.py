@@ -25,11 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent
 dev_env = BASE_DIR / "dev.env"
 env = BASE_DIR / ".env"
 
-# load the correct .env
+# load development
+dev_mode = False
 if dev_env.is_file():
-    load_dotenv(dev_env, override=True)
-else:
-    load_dotenv(env)
+    dev_mode = True
+
+load_dotenv(env)
 
 app = Flask(__name__)
 CORS(app)
@@ -142,10 +143,9 @@ csrf.exempt(admin_routes)
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
-    env_flag = os.environ.get("FLASK_ENV")
     host, port = "0.0.0.0", 8000
 
-    if env_flag == "development":
+    if dev_mode == True:
         app.run(debug=True, host=host, port=port)
     else:
         restart_cmd = 'curl -X POST http://(your-domain)/restart -H "RESTART-KEY: (your-restart-key)"'

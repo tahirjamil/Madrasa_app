@@ -30,7 +30,7 @@ def create_tables():
             password    TEXT                   NOT NULL,
             email       TEXT,
             deactivated_at  DATETIME            NULL,
-            scheduled_deletion_at  DATETIME     NULL;
+            scheduled_deletion_at  DATETIME     NULL,
             UNIQUE KEY unique_user (fullname, phone)
         )
         """)

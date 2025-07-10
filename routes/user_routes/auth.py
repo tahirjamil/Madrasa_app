@@ -431,7 +431,7 @@ def get_account_status():
     Maintenace = os.getenv("MAINTENANCE_MODE", False)
     Maintenace_mssg = os.getenv("MAINTENANCE_MASSAGE", "Under maintenance")
 
-    if Maintenace == "True":
+    if Maintenace == True:
         return jsonify({"message": Maintenace_mssg}), 503
     
     data = request.get_json()

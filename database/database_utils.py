@@ -209,6 +209,16 @@ def create_tables():
             date         DATE      NOT NULL,
             function_url TEXT
         )
+        # ─── event(s) ──────────────────────────────────────────────────────────
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS interactions (
+            device_id      TEXT NOT NULL,
+            device_brand   TEXT,
+            ip_address     TEXT NOT NULL,
+            id             INT  NOT NULL,
+            open_times     INT  NOT NULL DEFAULT 1
+        )
         """)
 
         conn.commit()

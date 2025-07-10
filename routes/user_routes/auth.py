@@ -1,4 +1,4 @@
-from flask import request, jsonify
+from flask import request, jsonify, render_template
 from . import user_routes
 import pymysql.cursors
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -291,107 +291,103 @@ def reset_password():
         conn.commit()
         return jsonify({"success": "Password Reset Successful"}), 201
 
-
-@user_routes.route("/account/<page_type>", methods=['POST', 'GET'])
+@user_routes.route("/account/<page_type>", methods=["GET", "POST"])
 def manage_account(page_type):
+    # clean up any expired accounts
     auto_delete_users()
-    if page_type not in ["remove", "deactivate"]:
+
+    if page_type not in ("remove", "deactivate"):
         return jsonify({"message": "Invalid page type"}), 400
+
+    if request.method == "GET":
+        # Render the form
+        return render_template(
+            "account_manage.html",
+            page_type=page_type.capitalize()
+        )
+
+    # POST: gather input
+    data     = request.get_json() if request.method == "POST" else request.form
+    phone    = data.get("phone", "").strip()
+    fullname = (data.get("fullname") or "").strip()
+    password = data.get("password", "")
+    lang     = data.get("language") or "en"
+    email    = data.get("email")
+
+    if not phone or not fullname or not password:
+        return jsonify({"message": "All fields are required"}), 400
+
+    formatted_phone = format_phone_number(phone)
+    if not formatted_phone:
+        return jsonify({"message": "Invalid phone number"}), 400
+
+    # lookup user
     conn = connect_to_db()
-
-    data = request.get_json() if request.method == 'POST' else request.args
-    phone = data.get('phone')
-    fullname = (data.get('fullname') or "").strip()
-    password = data.get('password')
-    code = data.get('code')
-    lang = data.get('language') or "en"
-    email = data.get('email')
-
-    deletion_time = 30  # in days, can be adjusted
-
-    if not phone or not fullname or not password or not code:
-        return jsonify({"message": "All info are required"}), 400
-    
-    
     try:
-        formatted_phone = format_phone_number(phone)
-
-        if not email:
-            email = get_email(phone=formatted_phone, fullname=fullname)
-
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-            
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute(
-                "SELECT id, password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                "SELECT id, password FROM users "
+                "WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (formatted_phone, fullname)
             )
             user = cursor.fetchone()
 
-            if request.method == 'GET' and not user:
-                return jsonify({"success": f"No Users available by '{fullname}' name and '{phone}' phone to delete or deactivate"}), 200
-
             if not user or not check_password_hash(user["password"], password):
-                log_event("delete_invalid_credentials", formatted_phone, "Invalid login details")
-                return jsonify({"message": t("invalid_credentials", lang)}), 401
+                log_event("delete_invalid_credentials", formatted_phone, "Invalid credentials")
+                return jsonify({"message": "Invalid login details"}), 401
 
-            validate_code = check_code(code, formatted_phone)
-            if validate_code:
-                return validate_code
-            
-
-            not_sent = 0
-            msg = t("account_deletion_confirmation_msg", lang, days=deletion_time)
+            # prepare confirmation message
+            deletion_days = 30
+            msg     = t("account_deletion_confirmation_msg", lang, days=deletion_days)
             subject = t("subject_deletion_confirmation", lang)
-            
-            if page_type == "deactivate":
-                msg = t("account_deactivation_confirmation_msg", lang)
+            if page_type == "Deactivate":
+                msg     = t("account_deactivation_confirmation_msg", lang)
                 subject = t("subject_deactivation_confirmation", lang)
 
+            # send notifications
+            errors = 0
             if email:
                 if not send_email(to_email=email, subject=subject, body=msg):
-                    log_event("Send Message", phone , "Could not send email")
-                    not_sent += 1
+                    errors += 1
+                    log_event("notify_email_failed", formatted_phone, "Email send failed")
             else:
-                not_sent += 1
-                        
+                errors += 1
+
             if not send_sms(phone=formatted_phone, msg=msg):
-                log_event("Send Message", phone , "Could not send sms")
-                not_sent += 1
+                errors += 1
+                log_event("notify_sms_failed", formatted_phone, "SMS send failed")
 
+            if errors > 1:
+                return jsonify({"message": "Could not send confirmation. Try again later."}), 500
 
-            if not_sent > 1:
-                if not email:
-                    return jsonify({"message": "Cannot send Message, no email provided"}), 500
-                return jsonify({"message": "Cannot send Message, server error"}), 500
-            
-            id = user["id"]
-
-            now = datetime.datetime.now()
-            scheduled_delete = now + timedelta(days=deletion_time)
-
-            sql = "UPDATE users SET deactivated_at = %s"
+            # schedule deactivation/deletion
+            now = datetime.datetime.utcnow()
+            scheduled = now + timedelta(days=deletion_days)
+            sql = "UPDATE users SET deactivated_at=%s"
             params = [now]
             if page_type == "remove":
-                sql += ", scheduled_deletion_at = %s"
-                params.append(scheduled_delete)
-            sql += " WHERE id = %s"
-            params.append(id)
-                        
-            
+                sql += ", scheduled_deletion_at=%s"
+                params.append(scheduled)
+            sql += " WHERE id=%s"
+            params.append(user["id"])
+
             cursor.execute(sql, params)
             conn.commit()
 
-            if page_type == "remove":
-                log_event("deletion_success", phone, f"The account of {fullname} sceduled for deletion")
-                return jsonify({"success": "Account deletion initiated. You will receive a confirmation message."}), 200
-            
-            log_event("deletion_success", phone, f"The account of {fullname} has been deactivated")
-            return jsonify({"success": "Account deactivated successfully"}), 200
+        # success response
+        if page_type == "remove":
+            log_event("deletion_scheduled", formatted_phone, f"User {fullname} scheduled for deletion")
+            return jsonify({"success": "Account deletion initiated. Check your messages."}), 200
+
+        log_event("account_deactivated", formatted_phone, f"User {fullname} deactivated")
+        return jsonify({"success": "Account deactivated successfully."}), 200
 
     except Exception as e:
-        log_event("deletion_failed", phone, str(e))
-        return jsonify({"message": "Failed to Delete Account"}), 500
+        log_event("manage_account_error", phone, str(e))
+        return jsonify({"message": "An error occurred"}), 500
 
+    finally:
+        conn.close()
 
 @user_routes.route("/account/undo_remove", methods=['POST'])
 def undo_remove():
@@ -438,6 +434,10 @@ def get_account_status():
         return jsonify({"message": Maintenace_mssg}), 503
     
     data = request.get_json()
+    device_id = data.get("device_id")
+    device_brand = data.get("device_brand")
+    ip_address = data.get("ip_address")
+
     phone        = format_phone_number(data.get("phone") or "")
     user_id      = data.get("user_id")
     fullname     = (data.get("name_en") or "").strip()
@@ -531,7 +531,32 @@ def get_account_status():
                     log_event("account_check_mismatch", record["id"], f"{col}: {provided} != {db_val}")
                     return jsonify({"message": LOGOUT_MSG}), 401
 
-        # all checks passed
+        cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id))
+        result = cursor.fetchall()
+        conn.commit()
+
+        try:
+            if not result:
+                cursor.execute("""INSERT INTO interactions 
+                            (device_id, ip_address, device_brand, id)
+                            VALUES
+                            (%s, %s, %s, %s, %s)
+                            """, (device_id, ip_address, device_brand, user_id))
+            else:
+                cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND id = %s", (user_id))
+                open_times = cursor.fetchone()
+                opened = open_times['open_times'] if open_times else 0
+                
+                opened += 1
+                cursor.execute("""UPDATE interactions SET open_times = %s
+                            WHERE device_id = %s AND device_brand = %s AND id = %s
+                            """, (opened, device_id, device_brand, user_id))
+        except pymysql.MySQLError as e:
+            log_event("Saving interactions failed", phone, str(e))
+        finally:
+            conn.close()
+                
+            # all checks passed
         return jsonify({"success": "Account is valid", "id": record["id"]}), 200
 
     except Exception as e:

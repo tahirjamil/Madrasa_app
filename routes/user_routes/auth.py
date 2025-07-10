@@ -292,14 +292,14 @@ def reset_password():
         return jsonify({"success": "Password Reset Successful"}), 201
 
 
-@user_routes.route("/account/<page_type>", methods=['POST'])
+@user_routes.route("/account/<page_type>", methods=['POST', 'GET'])
 def manage_account(page_type):
     auto_delete_users()
     if page_type not in ["remove", "deactivate"]:
         return jsonify({"message": "Invalid page type"}), 400
     conn = connect_to_db()
 
-    data = request.get_json()
+    data = request.get_json() or request.args
     phone = data.get('phone')
     fullname = (data.get('fullname') or "").strip()
     password = data.get('password')
@@ -326,6 +326,9 @@ def manage_account(page_type):
                 (formatted_phone, fullname)
             )
             user = cursor.fetchone()
+
+            if request.method == 'GET' and not user:
+                return jsonify({"success": f"No Users available by '{fullname}' name and '{phone}' phone to delete or deactivate"}), 200
 
             if not user or not check_password_hash(user["password"], password):
                 log_event("delete_invalid_credentials", formatted_phone, "Invalid login details")

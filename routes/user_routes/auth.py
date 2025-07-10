@@ -299,7 +299,7 @@ def manage_account(page_type):
         return jsonify({"message": "Invalid page type"}), 400
     conn = connect_to_db()
 
-    data = request.get_json() or request.args
+    data = request.get_json() if request.method == 'POST' else request.args
     phone = data.get('phone')
     fullname = (data.get('fullname') or "").strip()
     password = data.get('password')

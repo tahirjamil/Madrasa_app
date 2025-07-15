@@ -58,6 +58,84 @@
     </div>
   </form>
 
+  <!-- Payment Transactions Section -->
+  <div class="mb-5">
+    <form method="get" class="d-flex align-items-end gap-3 mb-2">
+      <input type="hidden" name="db" value="{{ selected_db }}">
+      <label for="txn_limit" class="form-label">Show Transactions:</label>
+      <select id="txn_limit" name="txn_limit" class="form-select w-auto d-inline" onchange="this.form.submit()">
+        <option value="100" {% if txn_limit == '100' %}selected{% endif %}>Last 100</option>
+        <option value="200" {% if txn_limit == '200' %}selected{% endif %}>Last 200</option>
+        <option value="all" {% if txn_limit == 'all' %}selected{% endif %}>All</option>
+      </select>
+    </form>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered">
+        <thead class="table-dark">
+          <tr>
+            {% if transactions and transactions[0] %}
+              {% for col in transactions[0].keys() %}
+                <th>{{ col }}</th>
+              {% endfor %}
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in transactions %}
+            <tr>
+              {% for val in t.values() %}
+                <td>{{ val }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if not transactions %}<div class="text-muted">No transactions found.</div>{% endif %}
+    </div>
+  </div>
+
+  <!-- Students Payment Info Section -->
+  <div class="mb-5">
+    <form method="get" class="d-flex align-items-end gap-3 mb-2">
+      <input type="hidden" name="db" value="{{ selected_db }}">
+      <label for="student_class" class="form-label">Filter by Class:</label>
+      <select id="student_class" name="student_class" class="form-select w-auto d-inline" onchange="this.form.submit()">
+        <option value="all" {% if student_class == 'all' %}selected{% endif %}>All</option>
+        {% for s in student_payments|map(attribute='class')|unique %}
+          <option value="{{ s }}" {% if student_class == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <a href="{{ url_for('admin_routes.modify_payment', modify='add') }}" class="btn btn-success ms-2">Add Payment</a>
+    </form>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered">
+        <thead class="table-dark">
+          <tr>
+            {% if student_payments and student_payments[0] %}
+              {% for col in student_payments[0].keys() %}
+                <th>{{ col }}</th>
+              {% endfor %}
+              <th>Action</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in student_payments %}
+            <tr>
+              {% for val in s.values() %}
+                <td>{{ val }}</td>
+              {% endfor %}
+              <td>
+                <a href="{{ url_for('admin_routes.modify_payment', modify='edit', user_id=s['user_id']) }}" class="btn btn-sm btn-primary">Edit</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if not student_payments %}<div class="text-muted">No student payment info found.</div>{% endif %}
+    </div>
+  </div>
+
   <!-- Query Output + Filter -->
   {% if query_result %}
     <h5>Result:</h5>

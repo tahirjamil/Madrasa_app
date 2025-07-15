@@ -39,6 +39,18 @@ def admin_dashboard():
     query_result = None
     query_error = None
 
+    # --- Payment Transactions Section ---
+    txn_limit = request.args.get('txn_limit', '100')
+    txn_limit_val = 100
+    if txn_limit == '200':
+        txn_limit_val = 200
+    elif txn_limit == 'all':
+        txn_limit_val = None
+
+    transactions = []
+    student_payments = []
+    student_class = request.args.get('student_class', 'all')
+
     try:
         with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
             # Load database list
@@ -88,6 +100,30 @@ def admin_dashboard():
                         query_error = str(e)
                         log_event("query_error", username, f"{raw_sql} | {str(e)}")
 
+            # --- Fetch transactions ---
+            txn_sql = "SELECT * FROM transactions ORDER BY date DESC"
+            if txn_limit_val:
+                txn_sql += f" LIMIT {txn_limit_val}"
+            cursor.execute(txn_sql)
+            transactions = cursor.fetchall()
+
+            # --- Fetch all students payment info ---
+            student_sql = '''
+                SELECT users.fullname, users.phone, people.class, people.gender, payment.special_food, payment.reduce_fee,
+                       payment.food, payment.due_months AS month, payment.id, payment.id as user_id
+                FROM users
+                JOIN people ON people.id = users.id
+                JOIN payment ON payment.id = users.id
+                WHERE people.acc_type = 'students'
+            '''
+            params = []
+            if student_class and student_class != 'all':
+                student_sql += " AND people.class = %s"
+                params.append(student_class)
+            student_sql += " ORDER BY people.class, users.fullname"
+            cursor.execute(student_sql, params)
+            student_payments = cursor.fetchall()
+
     except Exception as e:
         query_error = str(e)
     finally:
@@ -99,7 +135,11 @@ def admin_dashboard():
         tables=tables,
         selected_db=selected_db,
         query_result=query_result,
-        query_error=query_error
+        query_error=query_error,
+        transactions=transactions,
+        txn_limit=txn_limit,
+        student_payments=student_payments,
+        student_class=student_class
     )
 
 
@@ -260,10 +300,10 @@ def members():
 
     conn = connect_to_db()
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             # Fetch all people and pending verifies
             cursor.execute("SELECT * FROM people")
-            people = cursor.fetchall()
+            people = list(cursor.fetchall())
             cursor.execute("SELECT * FROM verify_people")
             pending = cursor.fetchall()
     finally:
@@ -272,59 +312,67 @@ def members():
     # Build list of distinct account types
     types = sorted({m['acc_type'] for m in people if m.get('acc_type')})
     selected_type = request.args.get('type', types[0] if types else None)
-    members = [m for m in people if m['acc_type'] == selected_type] if selected_type else []
+    sort_key = request.args.get('sort', 'user_id_asc')
+
+    # Filter members by type (or all)
+    if selected_type == 'all':
+        members = people[:]
+    else:
+        members = [m for m in people if m['acc_type'] == selected_type] if selected_type else []
+
+    # Sorting logic
+    reverse = False
+    if sort_key.endswith('_desc'):
+        reverse = True
+    if sort_key.startswith('name_en'):
+        members.sort(key=lambda m: (m.get('name_en') or '').lower(), reverse=reverse)
+    elif sort_key.startswith('member_id'):
+        def member_id_int(m):
+            try:
+                return int(m.get('member_id') or 0)
+            except Exception:
+                return 0
+        members.sort(key=member_id_int, reverse=reverse)
+    else:  # default user_id
+        def user_id_int(m):
+            try:
+                return int(m.get('user_id') or 0)
+            except Exception:
+                return 0
+        members.sort(key=user_id_int, reverse=reverse)
 
     return render_template("admin/members.html",
                            types=types,
                            selected_type=selected_type,
                            members=members,
-                           pending=pending)
+                           pending=pending,
+                           sort=sort_key)
 
 
-@admin_routes.route('/members/verify_people/<int:verify_people_id>', methods=['POST'])
-def verify_member(verify_people_id):
+@admin_routes.route('/member/<modify>', methods=['GET','POST'])
+def manage_member(modify):
+    pages = ['add','edit']
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
-    try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-            # Fetch pending user
-            cursor.execute("SELECT * FROM verify_people WHERE id = %s", (verify_people_id,))
-            row = cursor.fetchone()
-            if not row:
-                flash("No pending user found.", "warning")
-                return redirect(url_for('admin_routes.members'))
-
-            # Prepare insert into people
-            cols = ', '.join(row.keys())
-            placeholders = ', '.join(['%s'] * len(row))
-            sql = f"INSERT INTO people ({cols}) VALUES ({placeholders})"
-            cursor.execute(sql, tuple(row.values()))
-
-            # Remove from verify_people table
-            cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
-            conn.commit()
-
-            flash("Member verified successfully.", "success")
-            log_event("member_verified", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
-    except Exception as e:
-        conn.rollback()
-        flash(f"Error verifying member: {e}", "danger")
-        log_event("verify_people_error", session.get('admin_username', 'admin'), str(e))
-    finally:
-        conn.close()
-
-    return redirect(url_for('admin_routes.members'))
-
-@admin_routes.route('/member/add', methods=['GET','POST'])
-def add_member():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not modify in pages:
+        return redirect(url_for('admin_routes.members'))
 
     genders = ['Male','Female']
     blood_groups = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
     types = ['admins','students','teachers','staffs','donors','badri_members','others']
+
+    member = None
+    if modify == 'edit':
+        user_id = request.args.get('user_id')
+        if user_id:
+            conn = connect_to_db()
+            try:
+                with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                    cursor.execute("SELECT * FROM people WHERE user_id = %s", (user_id,))
+                    member = cursor.fetchone()
+            finally:
+                conn.close()
 
     if request.method == 'POST':
         fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",
@@ -358,10 +406,11 @@ def add_member():
         finally:
             conn.close()
 
-    return render_template('admin/add_member.html',
+    return render_template('admin/manage_member.html',
                            genders=genders,
                            types=types,
-                           blood_groups=blood_groups)
+                           blood_groups=blood_groups,
+                           member=member)
 
 
 
@@ -460,9 +509,11 @@ def routine():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
+    sort = request.args.get('sort', 'default')
+
     conn = connect_to_db()
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("""
                 SELECT *
                   FROM routine
@@ -477,9 +528,22 @@ def routine():
     for r in rows:
         routines_by_class.setdefault(r['class_group'], []).append(r)
 
+    # Sorting logic
+    if sort == 'class':
+        routines_by_class = dict(sorted(routines_by_class.items(), key=lambda x: x[0]))
+    elif sort == 'weekday':
+        weekday_order = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday']
+        for k in routines_by_class:
+            routines_by_class[k].sort(key=lambda r: weekday_order.index(r['weekday'].lower()) if r['weekday'] else 0)
+    elif sort == 'serial':
+        for k in routines_by_class:
+            routines_by_class[k].sort(key=lambda r: int(r.get('serial', 0)))
+    # else: default (serial from db order)
+
     return render_template(
         'admin/routine.html',
-        routines_by_class=routines_by_class
+        routines_by_class=routines_by_class,
+        sort=sort
     )
 
 @admin_routes.route('/routine/add', methods=['GET', 'POST'])
@@ -769,3 +833,98 @@ def add_exam():
     conn.close()
 
     return redirect(url_for('admin_routes.exams'))
+
+@admin_routes.route('/members/delete_pending/<int:verify_people_id>', methods=['POST'])
+def delete_pending_member(verify_people_id):
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    conn = connect_to_db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
+            conn.commit()
+            flash("Pending verification deleted.", "info")
+            log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Error deleting pending verification: {e}", "danger")
+        log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
+    finally:
+        conn.close()
+
+    return redirect(url_for('admin_routes.members'))
+
+@admin_routes.route('/payment/<modify>', methods=['GET', 'POST'])
+def modify_payment(modify):
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+    pages = ["edit", "add"]
+    if modify not in pages:
+        return redirect(url_for('admin_routes.admin_dashboard'))
+
+    mode = modify
+    user_id = request.args.get('user_id')
+    payment = None
+    if user_id:
+        conn = connect_to_db()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("SELECT * FROM payment WHERE id = %s", (user_id,))
+                payment = cursor.fetchone()
+        finally:
+            conn.close()
+
+    if request.method == 'POST':
+        id_val = request.form.get('id')
+        food = 1 if request.form.get('food') else 0
+        special_food = 1 if request.form.get('special_food') else 0
+        reduce_fee = request.form.get('reduce_fee') or 0
+        due_months = request.form.get('due_months') or 0
+        conn = connect_to_db()
+        try:
+            with conn.cursor() as cursor:
+                if mode == 'edit':
+                    cursor.execute(
+                        "UPDATE payment SET food=%s, special_food=%s, reduce_fee=%s, due_months=%s WHERE id=%s",
+                        (food, special_food, reduce_fee, due_months, id_val)
+                    )
+                    conn.commit()
+                    flash("Payment info updated.", "success")
+                else:  # add
+                    cursor.execute(
+                        "INSERT INTO payment (id, food, special_food, reduce_fee, due_months) VALUES (%s, %s, %s, %s, %s)",
+                        (id_val, food, special_food, reduce_fee, due_months)
+                    )
+                    conn.commit()
+                    flash("Payment info added.", "success")
+            return redirect(url_for('admin_routes.admin_dashboard'))
+        finally:
+            conn.close()
+
+    return render_template('admin/payment_form.html', payment=payment, mode=mode)
+
+@admin_routes.route('/interactions', methods=['GET'])
+def interactions():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+
+    sort = request.args.get('sort', 'default')
+    conn = connect_to_db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT * FROM interactions")
+            rows = list(cursor.fetchall())
+    finally:
+        conn.close()
+
+    # Sorting logic
+    if sort == 'device_brand':
+        rows.sort(key=lambda r: (r.get('device_brand') or '').lower())
+    elif sort == 'ip_address':
+        rows.sort(key=lambda r: (r.get('ip_address') or '').lower())
+    elif sort == 'open_times':
+        rows.sort(key=lambda r: int(r.get('open_times', 0)), reverse=True)
+    # else: default order
+
+    return render_template('admin/interactions.html', interactions=rows, sort=sort)

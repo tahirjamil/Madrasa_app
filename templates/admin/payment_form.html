@@ -1,0 +1,34 @@
+{% extends 'admin/base.html' %}
+{% block title %}{{ 'Edit' if mode == 'edit' else 'Add' }} Payment{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">{{ 'Edit' if mode == 'edit' else 'Add' }} Payment</h2>
+  <form method="POST" class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">User ID</label>
+      <input type="number" name="id" class="form-control" required value="{{ payment.id if payment else '' }}" {% if mode == 'edit' %}readonly{% endif %}>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Food</label>
+      <input type="checkbox" name="food" value="1" {% if payment and payment.food %}checked{% endif %}>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Special Food</label>
+      <input type="checkbox" name="special_food" value="1" {% if payment and payment.special_food %}checked{% endif %}>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Reduce Fee</label>
+      <input type="number" name="reduce_fee" class="form-control" value="{{ payment.reduce_fee if payment else 0 }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Due Months</label>
+      <input type="number" name="due_months" class="form-control" value="{{ payment.due_months if payment else 0 }}">
+    </div>
+    <div class="col-12 mt-3">
+      <button type="submit" class="btn btn-success">{{ 'Save Changes' if mode == 'edit' else 'Add Payment' }}</button>
+      <a href="{{ url_for('admin_routes.admin_dashboard') }}" class="btn btn-secondary ms-2">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %} 

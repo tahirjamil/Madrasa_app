@@ -20,9 +20,12 @@
              placeholder="Search by Subject or Teacher…">
     </div>
     <div class="col-auto">
-      <button id="clear-search" class="btn btn-secondary">
-        Clear
-      </button>
+      <select id="sort_by" name="sort" class="form-select" onchange="this.form.submit()">
+        <option value="default" {% if sort == 'default' or not sort %}selected{% endif %}>Sort: Default</option>
+        <option value="class" {% if sort == 'class' %}selected{% endif %}>Sort: Class</option>
+        <option value="weekday" {% if sort == 'weekday' %}selected{% endif %}>Sort: Weekday</option>
+        <option value="serial" {% if sort == 'serial' %}selected{% endif %}>Sort: Serial</option>
+      </select>
     </div>
   </div>
 

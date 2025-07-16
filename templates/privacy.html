@@ -1,4 +1,3 @@
-
 {% extends 'base.html' %}
 {% block title %}Privacy Policy{% endblock %}
 {% block content %}
@@ -7,7 +6,7 @@
   <p class="text-muted"><strong>Effective Date:</strong> {{ effective_date }}</p>
 
   <div class="accordion" id="privacyAccordion">
-    <!-- Introduction -->
+    <!-- 1. Introduction -->
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingIntro">
         <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseIntro" aria-expanded="true" aria-controls="collapseIntro">
@@ -20,7 +19,8 @@
         </div>
       </div>
     </div>
-    <!-- Information We Collect -->
+
+    <!-- 2. What Information We Collect -->
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingCollect">
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCollect" aria-expanded="false" aria-controls="collapseCollect">
@@ -29,23 +29,37 @@
       </h2>
       <div id="collapseCollect" class="accordion-collapse collapse" aria-labelledby="headingCollect" data-bs-parent="#privacyAccordion">
         <div class="accordion-body">
-          <h5>a. Personal Information</h5>
+          <h5>a. Personal & Profile Data</h5>
           <ul>
             <li>Full Name</li>
             <li>Phone Number</li>
             <li>Email Address</li>
-            <li>Account Type (Student, Teacher, Admin, Staff)</li>
-            <li>Class, Gender (for students)</li>
+            <li>Account Type (Student, Teacher, Admin, Staff, Guest)</li>
+            <li>Class/Jamat or Degree & Title (students, teachers, staff)</li>
+            <li>Gender & Blood Group</li>
+            <li>National ID & Birth Certificate Numbers</li>
+            <li>Guardian/Parent Names (in multiple languages) & Phone Numbers</li>
+            <li>Permanent & Present Address</li>
+            <li>Profile Images (uploaded via camera/gallery)</li>
+            <li>Source of Information (how you heard about the app)</li>
           </ul>
-          <h5>b. Authentication Data</h5>
-          <p>Passwords are securely <strong>hashed</strong> before storage.</p>
-          <h5>c. Device Information</h5>
-          <p>We collect basic technical data to improve performance.</p>
-          <p>Data Will be deleted after 30 days.</p>
+          <h5>b. Authentication & Security Data</h5>
+          <ul>
+            <li>Passwords (securely hashed on the server)</li>
+            <li>Verification Codes (for registration & password reset)</li>
+          </ul>
+          <h5>c. Device & Technical Data</h5>
+          <ul>
+            <li>App Signature (for SMS autofill/verification)</li>
+            <li>Language Preference</li>
+            <li>Theme Preference (light/dark/system)</li>
+            <li>Basic technical device info to improve performance</li>
+          </ul>
         </div>
       </div>
     </div>
-    <!-- Usage -->
+
+    <!-- 3. How We Use Your Information -->
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingUse">
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseUse" aria-expanded="false" aria-controls="collapseUse">
@@ -57,47 +71,142 @@
           <ul>
             <li>Manage user accounts and access</li>
             <li>Allow authorized staff to view academic data</li>
-            <li>Improve app functionality and security</li>
+            <li>Authenticate registrations, payments, and password resets</li>
+            <li>Enhance app functionality, personalization, and security</li>
+            <li>Communicate notifications, updates, and support messages</li>
           </ul>
         </div>
       </div>
     </div>
-    <!-- Disclosure -->
+
+    <!-- 4. Payment and Donation Data -->
     <div class="accordion-item">
-      <h2 class="accordion-header" id="headingDisclosure">
-        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDisclosure" aria-expanded="false" aria-controls="collapseDisclosure">
-          4. Data Sharing and Disclosure
+      <h2 class="accordion-header" id="headingPayment">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePayment" aria-expanded="false" aria-controls="collapsePayment">
+          4. Payment & Donation Data
         </button>
       </h2>
-      <div id="collapseDisclosure" class="accordion-collapse collapse" aria-labelledby="headingDisclosure" data-bs-parent="#privacyAccordion">
+      <div id="collapsePayment" class="accordion-collapse collapse" aria-labelledby="headingPayment" data-bs-parent="#privacyAccordion">
         <div class="accordion-body">
-          <p>We <strong>do not sell</strong> or trade your personal information. Data is shared only with authorized madrasa staff.</p>
+          <p>When you make fee payments or donations, we collect:</p>
+          <ul>
+            <li>Full Name, Phone Number, Email (if provided)</li>
+            <li>Amount, Type of Payment (fee or donation), Number of Months (fees)</li>
+            <li>Transaction History (stored and displayed in your account)</li>
+          </ul>
+          <p>Data is processed via third-party processor (SSLCommerz) under their own privacy terms.</p>
         </div>
       </div>
     </div>
-    <!-- Security -->
+
+    <!-- 5. Data Storage & Retention -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingRetention">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseRetention" aria-expanded="false" aria-controls="#collapseRetention">
+          5. Data Storage & Retention
+        </button>
+      </h2>
+      <div id="collapseRetention" class="accordion-collapse collapse" aria-labelledby="headingRetention" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <p>Server-side data is retained for the duration of your account unless you request deletion.</p>
+          <p>Local data (profile, preferences, cached images, etc.) is stored via SharedPreferences and Hive. Cached images may be deleted if not in use.</p>
+          <p>Some data (e.g., logs, verification codes) is automatically purged after 30 days.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Data Sharing & Third-Party Services -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingThirdParty">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThirdParty" aria-expanded="false" aria-controls="collapseThirdParty">
+          6. Data Sharing & Third-Party Services
+        </button>
+      </h2>
+      <div id="collapseThirdParty" class="accordion-collapse collapse" aria-labelledby="headingThirdParty" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <p>We do not sell or trade your personal information. Data is shared only:</p>
+          <ul>
+            <li>With authorized madrasa staff for educational administration</li>
+            <li>With third-party services (SSLCommerz for payments, image picker plugins) as needed to provide features</li>
+          </ul>
+          <p>Any analytics or crash-reporting services will be disclosed before implementation.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Third-Party Plugins & SDKs -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingPlugins">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePlugins" aria-expanded="false" aria-controls="collapsePlugins">
+          7. Third-Party Plugins & SDKs
+        </button>
+      </h2>
+      <div id="collapsePlugins" class="accordion-collapse collapse" aria-labelledby="headingPlugins" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <ul>
+            <li><strong>image_picker</strong> and <strong>sms_autofill</strong>: Use device capabilities for image uploads and SMS autofill. No personal data is sent to plugin authors.</li>
+            <li><strong>webview_flutter</strong>: Renders external payment pages. Those pages are governed by their own privacy policies and data practices.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. Multiple Accounts -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingAccounts">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAccounts" aria-expanded="false" aria-controls="collapseAccounts">
+          8. Multiple Accounts
+        </button>
+      </h2>
+      <div id="collapseAccounts" class="accordion-collapse collapse" aria-labelledby="headingAccounts" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <p>Our app supports multiple accounts per device. Account data is stored locally (e.g., in SharedPreferences) and can be switched or managed within the app settings.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9. User Rights -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingRights">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseRights" aria-expanded="false" aria-controls="collapseRights">
+          9. User Rights
+        </button>
+      </h2>
+      <div id="collapseRights" class="accordion-collapse collapse" aria-labelledby="headingRights" data-bs-parent="#privacyAccordion">
+        <div class="accordion-body">
+          <ul>
+            <li>You can view and update your personal information in the profile section.</li>
+            <li>You may request account deletion and data removal by contacting support.</li>
+            <li>You can correct inaccurate information at any time.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10. Security Measures -->
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingSecurity">
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSecurity" aria-expanded="false" aria-controls="collapseSecurity">
-          5. Data Storage and Security
+          10. Security Measures
         </button>
       </h2>
       <div id="collapseSecurity" class="accordion-collapse collapse" aria-labelledby="headingSecurity" data-bs-parent="#privacyAccordion">
         <div class="accordion-body">
-          <p>All data is encrypted in transit and at rest. Access is limited to authorized personnel.</p>
+          <p>All data is encrypted in transit (HTTPS) and at rest. Passwords are hashed and never stored in plaintext. Access is limited to authorized personnel only.</p>
         </div>
       </div>
     </div>
-    <!-- Contact -->
+
+    <!-- 11. Contact Us -->
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingContact">
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseContact" aria-expanded="false" aria-controls="collapseContact">
-          6. Contact Us
+          11. Contact Us
         </button>
       </h2>
       <div id="collapseContact" class="accordion-collapse collapse" aria-labelledby="headingContact" data-bs-parent="#privacyAccordion">
         <div class="accordion-body">
-          <p>If you have questions, email us at <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+          <p>If you have questions or wish to exercise your rights, email us at <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
         </div>
       </div>
     </div>

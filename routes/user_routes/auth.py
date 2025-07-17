@@ -131,7 +131,10 @@ def login():
 
             if not info or not info.get("phone"):
                 log_event("auth_additional_info_required", formatted_phone, "Missing profile info")
-                return jsonify({"problem": "needmoreinfo", "message": t("additional_info_required", lang)}), 400
+                return jsonify({
+                    "error": "incomplete_profile", 
+                    "message": t("additional_info_required", lang)
+                }), 422
             
             info.pop("password", None)
             dob = info.get("date_of_birth")

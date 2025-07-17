@@ -115,7 +115,7 @@ def login():
                 return jsonify({"message": t("incorrect_password", lang)}), 401
             
             if user["deactivated_at"] is not None:
-                return jsonify({"message": "Account is deactivated."}), 403
+                return jsonify({"message": "Account is deactivated."}), 403 #TODO: in app
             
             cursor.execute(
                 """
@@ -130,7 +130,7 @@ def login():
 
             if not info or not info.get("phone"):
                 log_event("auth_additional_info_required", formatted_phone, "Missing profile info")
-                return jsonify({"message": "Additional info required"}), 400
+                return jsonify({"problem": "needmoreinfo", "message": "Additional info required"}), 400
             
             info.pop("password", None)
             dob = info.get("date_of_birth")

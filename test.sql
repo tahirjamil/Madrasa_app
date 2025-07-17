@@ -1,138 +1,138 @@
 -- hadith
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Al-Wajeez fi Mustalahil Hadith',      'আল-ওয়াজীজ ফি মুস্তালাহ আল-হাদীস',      'الوجيز في مصطلح الحديث',        'hadith'),
-('Ibn Majah''s Method in Hadith Criticism','ইবনে মাজাহ-এর হাদীস সমালোচনা পদ্ধতি',    'الإمام ابن ماجه ومنهج النقد',      'hadith'),
-('Al-Madkhal ila Ulumil Hadith',        'আল-মাদখাল ইলা উলূমুল হাদীস',           'المدخل إلى علوم الحديث',        'hadith'),
-('Ma''rifatu Anwayi''  Ilmil Hadith 1',     'মা’রিফাহ আনওয়া ইলমুল হাদীস ১',         'معرفة أنواع علم الحديث١',         'hadith'),
-('Ma''rifatu Anwayi''  Ilmil Hadith 2',     'মা’রিফাহ আনওয়া ইলমুল হাদীস ২',         'معرفة أنواع علم الحديث٢',         'hadith'),
-('Sharhu Lugatil Muhaddith',            'শারহ ভাষাতুল মুহাদ্দিস',                 'شرح لغة المحدث',                'hadith'),
-('Ar-Rafwu'' Wat Takmeel',               'আর-রাফ ওয়াত তাকমীল',                     'الرفع والتكميل',                'hadith'),
-('Al-Madkhal ila Fahmil Ilal',             'মাদখাল ইলা ফাহমুল ইলাল',                 'المدخل إلى فهم العلل',           'hadith'),
-('Asarul Hadisush Shareef',           'আথারুল হাদীস আশ-শরীফ',                  'أثر الحديث الشريف',             'hadith'),
-('Al-Muhadara',                         'আল-মুহাদারাহ',                           'المحاضرة',                     'hadith');
+('Al-Wajeez fi Mustalahil Hadith', 'আল-ওয়াজীজ ফি মুস্তালাহিল হাদীস', 'الوجيز في مصطلح الحديث', 'hadith'),
+('Al-Imam Ibn Majah wa Manhaj an-Naqd', 'আল-ইমাম ইবনে মাজাহ ওয়া মানহাজ আন-নাকদ', 'الإمام ابن ماجه ومنهج النقد', 'hadith'),
+('Al-Madkhal ila Ulum al-Hadith', 'আল-মাদখাল ইলা উলুমিল হাদীস', 'المدخل إلى علوم الحديث', 'hadith'),
+('Ma’rifatu Anwa’i ‘Ilm al-Hadith 1', 'মা’রিফাতু আনওয়া ইলমিল হাদীস ১', 'معرفة أنواع علم الحديث١', 'hadith'),
+('Ma’rifatu Anwa’i ‘Ilm al-Hadith 2', 'মা’রিফাতু আনওয়া ইলমিল হাদীস ২', 'معرفة أنواع علم الحديث٢', 'hadith'),
+('Sharh Lughat al-Muhaddith', 'শারহ লুগাতুল মুহাদ্দিস', 'شرح لغة المحدث', 'hadith'),
+('Ar-Raf‘ wa at-Takmil', 'আর-রাফ ওয়াত তাকমীল', 'الرفع والتكميل', 'hadith'),
+('Al-Madkhal ila Fahm al-‘Ilal', 'আল-মাদখাল ইলা ফাহমিল ইলাল', 'المدخل إلى فهم العلل', 'hadith'),
+('Athar al-Hadith ash-Sharif', 'আথারুল হাদীস আশ-শরীফ', 'أثر الحديث الشريف', 'hadith'),
+('Al-Muhadara', 'আল-মুহাদারাহ', 'المحاضرة', 'hadith');
 
 -- ifta
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Qawaidul Fiqh Wal Ashbaah Wan Nazair', 'ফিকহ ও আশবাহ্ ও নাজায়েরের কাওয়ায়েদ',       'قواعد الفقه والأشباه والنظائر', 'ifta'),
-('As-Siraji fil Miras',                   'আস-সিরাজী ফিল মিরাস',                     'السراجى في الميراث',            'ifta'),
-('Kitabul Waqf Minad Durril Mukhtar',   'কিতাবুল ওয়াক্ফ মিন আদ-দুররুল মুখতার',       'كتاب الوقف من الدر المختار',    'ifta'),
-('Buhus fi Qadhaya Fiqhiyyah 1',          'বুহূস ফি কাদায়া ফিকহিয়্যাহ ১',               'بحوث في قضايا فقهية-١',          'ifta'),
-('Buhuth fi Qadhaya Fiqhiyyah 2',          'বুহূস ফি কাদায়া ফিকহিয়্যাহ ২',               'بحوث في قضايا فقهية-٢',          'ifta'),
-('Usulul-Ifta',                           'উসূলুল ইফতা',                              'أصول الإفتاء',                 'ifta'),
-('Al-Wajeez fi Usulil Fiqh',              'আল-ওয়াজীজ ফি উসূলুল ফিকহ',                'الوجيز في أصول الفقه',          'ifta'),
-('Al-Aqidatul Islamiyyah',                'আল-আকিদাহ আল-ইসলামিয়্যাহ',               'العقيدة الإسلامية',            'ifta'),
-('Kitabut-Talaq minad-Durril Mukhtar',  'কিতাবুত তালাক মিন আদ-দুররুল মুখতার',       'كتاب الطلاق من الدر المختار',   'ifta'),
-('Contemporary Context (Samokalīn)',       'সমকালীন প্রেক্ষাপট',                       'সমকালীন প্রেক্ষাপট ',                              'ifta');
+('Qawa‘id al-Fiqh wa al-Ashbah wa an-Nazair', 'কাওয়ায়েদুল ফিকহ ও আশবাহ ও নাজায়ের', 'قواعد الفقه والأشباه والنظائر', 'ifta'),
+('As-Siraji fi al-Miras', 'আস-সিরাজী ফিল মিরাস', 'السراجى في الميراث', 'ifta'),
+('Kitab al-Waqf min ad-Durr al-Mukhtar', 'কিতাবুল ওয়াক্ফ মিন আদ-দুররুল মুখতার', 'كتاب الوقف من الدر المختار', 'ifta'),
+('Buhuth fi Qadaya Fiqhiyyah 1', 'বুহূস ফি কাদায়া ফিকহিয়্যাহ ১', 'بحوث في قضايا فقهية ١', 'ifta'),
+('Buhuth fi Qadaya Fiqhiyyah 2', 'বুহূস ফি কাদায়া ফিকহিয়্যাহ ২', 'بحوث في قضايا فقهية ٢', 'ifta'),
+('Usul al-Ifta', 'উসূলুল ইফতা', 'أصول الإفتاء', 'ifta'),
+('Al-Wajeez fi Usul al-Fiqh', 'আল-ওয়াজীজ ফি উসূলুল ফিকহ', 'الوجيز في أصول الفقه', 'ifta'),
+('Al-‘Aqidah al-Islamiyyah', 'আল-আকিদাহ আল-ইসলামিয়্যাহ', 'العقيدة الإسلامية', 'ifta'),
+('Kitab at-Talaq min ad-Durr al-Mukhtar', 'কিতাবুত তালাক মিন আদ-দুররুল মুখতার', 'كتاب الطلاق من الدر المختار', 'ifta'),
+('Al-Ufuq al-Mu‘asir', 'আল-উফুক আল-মু''আসির', 'المعاصر', 'ifta');
 
 -- hidayatun_nahu
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Bangla and Grammar',                     'বাংলা ও ব্যাকরণ',                         'বাংলা ও ব্যাকরণ ',                             'hidayatun_nahu'),
-('English and Grammar',                    'ইংলিশ এন্ড গ্রামর',                      'ইংলিশ এন্ড গ্রামর ',                             'hidayatun_nahu'),
-('Mathematics',                            'মাধ্যমিক গণিত',                           'মাধ্যমিক গণিত ',                             'hidayatun_nahu'),
-('Ilmus-Sighah wa Fusulu Akbarī',          'علم الصيغة وفصول أكبرى ',                                        'علم الصيغة وفصول أكبرى',        'hidayatun_nahu'),
-('Al-Qiraatur-Rashidah 1-3',              'القراءة الراشدة ٣-١',                                        'القراءة الراشدة ٣-١',           'hidayatun_nahu'),
-('Nurul-Idhah',                           'نور الإيضاح',                                        'نور الإيضاح',                  'hidayatun_nahu'),
-( '1-2 At-Tariqu ilal-Qur''an',         'الطريق إلى القرآن جـ١-٢ ',                                        'الطريق إلى القرآن جـ١-٢',      'hidayatun_nahu'),
-('Taysirul-Mantiq',                       'تيسير المنطق',                                        'تيسير المنطق',                'hidayatun_nahu'),
-('Khilafat-e-Rashidah (Bangla)',           'খিলাফতে রাশেদা (বাংলা)',                  'খিলাফতে রাশেদা (বাংলা)',                             'hidayatun_nahu'),
-('Hidayatun Nahw',                         'هداية النحو',                                        'هداية النحو',                  'hidayatun_nahu');
+('Bangla wa an-Nahw', 'বাংলা ও নাহু', 'বাংলা ও ব্যাকরণ ', 'hidayatun_nahu'),
+('English wa an-Nahw', 'ইংলিশ ও নাহু', 'ইংলিশ এন্ড গ্রামর ', 'hidayatun_nahu'),
+('Riyadiyyat', 'রিয়াদিয়্যাত', 'মাধ্যমিক গণিত ', 'hidayatun_nahu'),
+('‘Ilm as-Sighah wa Fusul Akbari', 'ইলমুস-সীগাহ ও ফুসুল আকবারী', 'علم الصيغة وفصول أكبرى', 'hidayatun_nahu'),
+('Al-Qira’ah ar-Rashidah 1-3', 'আল-কিরাআতুর রাশিদাহ ১-৩', 'القراءة الراشدة ٣-١', 'hidayatun_nahu'),
+('Nur al-Idah', 'নূরুল ইদাহ', 'نور الإيضاح', 'hidayatun_nahu'),
+('At-Tariq ila al-Qur’an 1-2', 'আত-তারীক ইলা আল-কুরআন ১-২', 'الطريق إلى القرآن جـ١-٢', 'hidayatun_nahu'),
+('Taysir al-Mantiq', 'তাইসীরুল মানতিক', 'تيسير المنطق', 'hidayatun_nahu'),
+('Khilafah ar-Rashidah (Bangla)', 'খিলাফাতে রাশেদা (বাংলা)', 'খিলাফতে রাশেদা (বাংলা)', 'hidayatun_nahu'),
+('Hidayatun Nahw', 'হিদায়াতুন নাহু', 'هداية النحو', 'hidayatun_nahu');
 
 -- nahwemeer
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Bangla and Grammar',                     'বাংলা ও ব্যাকরণ',                         'বাংলা ও ব্যাকরণ',                             'nahwemeer'),
-('English and Grammar',                    'ইংলিশ এন্ড গ্রামর',                      'ইংলিশ এন্ড গ্রামর',                             'nahwemeer'),
-('Mathematics',                            'মাধ্যমিক গণিত',                           'মাধ্যমিক গণিত',                             'nahwemeer'),
-('Sharhu Mi’’ati ‘Amil',                     'شرح مائة عامل',                                        'شرح مائة عامل',                'nahwemeer'),
-('Rawdatul-Adab ma’at-Tarkib',           'روضة الأدب مع التركيب',                                        'روضة الأدب مع التركيب',        'nahwemeer'),
-('Nahwe Meer',                              'نحو مير',                                        'نحو مير',                      'nahwemeer'),
-('Sirate Khatmul Ambiya (Bangla)',         'সীরাতে  খাতামুল-আম্বিয়া (বাংলা)',               'سیرت خاتم الأنبياء بنغالية',                             'nahwemeer'),
-('Al-Fiqhul-Muyassar',                    'الفقه الميسر',                                        'الفقه الميسر',                'nahwemeer'),
-('Ilmus-Sarf',                            'علم الصرف',                                        'علم الصرف',                    'nahwemeer');
+('Bangla wa an-Nahw', 'বাংলা ও নাহু', 'বাংলা ও ব্যাকরণ', 'nahwemeer'),
+('English wa an-Nahw', 'ইংলিশ ও নাহু', 'ইংলিশ এন্ড গ্রামর', 'nahwemeer'),
+('Riyadiyyat', 'রিয়াদিয়্যাত', 'মাধ্যমিক গণিত', 'nahwemeer'),
+('Sharh Mi’ati ‘Amil', 'শারহ মিয়াতি আমিল', 'شرح مائة عامل', 'nahwemeer'),
+('Rawdat al-Adab ma‘ at-Tarkib', 'রাওদাতুল আদাব মা’ আত-তারকিব', 'روضة الأدب مع التركيب', 'nahwemeer'),
+('Nahw Meer', 'নাহু মীর', 'نحو مير', 'nahwemeer'),
+('Sirat Khatm al-Anbiya (Bangla)', 'সীরাত খাতমুল আম্বিয়া (বাংলা)', 'سیرت خاتم الأنبياء بنغالية', 'nahwemeer'),
+('Al-Fiqh al-Muyassar', 'আল-ফিকহুল মুইয়াসসার', 'الفقه الميسر', 'nahwemeer'),
+('‘Ilm as-Sarf', 'ইলমুস-সারফ', 'علم الصرف', 'nahwemeer');
 
 -- taeseer_meejan
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Kareema',                       'কারিমা',                      'كريمة',                          'taeseer_meejan'),
-('Farsi First Book',                       'ফারসি কী প্রথম কিতাব',                      'الكتاب الفارسي ١',                          'taeseer_meejan'),
-('Taiseerul Mubtadi',              'তাইসীরুল মুপ্তাদি',                  'تيسير المبتدئ ',                         'taeseer_meejan'),
-('Pandenama 1-14',                         'পান্দে নামা ১-১৪',                        'باندا نامة ١-١٤ ',                              'taeseer_meejan'),
-('Bangla and Grammar',                     'বাংলা ও ব্যাকরণ',                         'বাংলা ও ব্যাকরণ',                                 'taeseer_meejan'),
-('Tarikhul Islam (Bangla)',                'তারিখুল ইসলাম (বাংলা)',                    'তারিখুল ইসলাম (বাংলা)',                         'taeseer_meejan'),
-('Deen Ki Baati (Bangla)',                 'দ্বীন কী বাত (বাংলা)',                      'دين كي باتي (بنغالي)',                           'taeseer_meejan'),
-('Talimul Islam 1-4',                      'তালিমুল ইসলাম ১-৪',                       'تعليم الإسلام ١-٤',                             'taeseer_meejan'),
-('Esho Arbi Shikhi (1st, 2nd & 3rd Vol)', 'এসো আরবি শিখি (১ম, ২য়, ৩য় খণ্ড)',           '(الطريق الى العربية (الجزء ١-٣)',                     'taeseer_meejan'),
-('Esho English Shikhi',                     'এসো ইংরেজি শিখি',                         'এসো ইংরেজি শিখি',                               'taeseer_meejan'),
-('English and Grammar',                    'ইংলিশ এন্ড গ্রামর',                      'ইংলিশ এন্ড গ্রামর',                             'taeseer_meejan'),
-('Elementary Mathematics',                    'প্রাথমিক গণিত',                            'প্রাথমিক গণিত',                          'taeseer_meejan'),
-('Safwatul Masadir',                       'সফওয়াতুল মাসাদির',                        'صفوة المصادر',                                  'taeseer_meejan'),
-('Meezan-Munshaib',                        'মিযান-মুনশাইব',                            'ميزان المنشعب',                                  'taeseer_meejan'),
-('Esho Urdu Shikhi, Urdu Qaida',                'এসো উর্দু শিখি, উর্দু কায়দা',                'এসো উর্দু শিখি, উর্দু কায়দা',                          'taeseer_meejan'),
-('Urdu First & Second',                    'উর্দু কী প্রথম ও দ্বিতীয়',                  'উর্দু কী প্রথম ও দ্বিতীয়',                          'taeseer_meejan');
+('Karimah', 'কারিমা', 'كريمة', 'taeseer_meejan'),
+('Farsi Kitab Awwal', 'ফারসি কিতাব আওয়াল', 'الكتاب الفارسي ١', 'taeseer_meejan'),
+('Taysir al-Mubtadi', 'তাইসীরুল মুপ্তাদি', 'تيسير المبتدئ ', 'taeseer_meejan'),
+('Pandnama 1-14', 'পান্দে নামা ১-১৪', 'باندا نامة ١-١٤ ', 'taeseer_meejan'),
+('Bangla wa an-Nahw', 'বাংলা ও নাহু', 'বাংলা ও ব্যাকরণ', 'taeseer_meejan'),
+('Tarikh al-Islam (Bangla)', 'তারিখুল ইসলাম (বাংলা)', 'তারিখুল ইসলাম (বাংলা)', 'taeseer_meejan'),
+('Din ki Baat (Bangla)', 'দ্বীন কি বাত (বাংলা)', 'دين كي باتي (بنغالي)', 'taeseer_meejan'),
+('Ta‘lim al-Islam 1-4', 'তালিমুল ইসলাম ১-৪', 'تعليم الإسلام ١-٤', 'taeseer_meejan'),
+('Ta‘allam al-‘Arabiyyah (1st, 2nd & 3rd Vol)', 'এসো আরবি শিখি (১ম, ২য়, ৩য় খণ্ড)', '(الطريق الى العربية (الجزء ١-٣)', 'taeseer_meejan'),
+('Ta‘allam al-Injiliziyyah', 'এসো ইংরেজি শিখি', 'এসো ইংরেজি শিখি', 'taeseer_meejan'),
+('English wa an-Nahw', 'ইংলিশ ও নাহু', 'ইংলিশ এন্ড গ্রামর', 'taeseer_meejan'),
+('Riyadiyyat Ibtidaiyyah', 'প্রাথমিক গণিত', 'প্রাথমিক গণিত', 'taeseer_meejan'),
+('Safwat al-Masadir', 'সফওয়াতুল মাসাদির', 'صفوة المصادر', 'taeseer_meejan'),
+('Meezan-Munshaib', 'মিযান-মুনশাইব', 'ميزان المنشعب', 'taeseer_meejan'),
+('Ta‘allam al-Urdu wa al-Qa‘idah', 'এসো উর্দু শিখি, উর্দু কায়দা', 'এসো উর্দু শিখি, উর্দু কায়দা', 'taeseer_meejan'),
+('Urdu Awwal wa Thani', 'উর্দু কি প্রথম ও দ্বিতীয়', 'উর্দু কী প্রথম ও দ্বিতীয়', 'taeseer_meejan');
 
 -- daora
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Sunanut Tirmidhi Vol 1',                'সুনানে তিরমিজী খন্ড ১',                     'السنن للإمام الترمذي ج١',      'daora'),
-('Sunane Abu Dawood Vol 1',                 'সুনানে আবূ দাউদ খন্ড ১',                    'السنن للإمام أبي داود ج١',      'daora'),
-('Sahihul Bukhari Vol 1',                 'সহীহ বুখারী খন্ড ১',                       'الصحيح للإمام البخاري ج١',     'daora'),
-('Sunane Nasa’i',                        'সুনানে নাসাঈ',                             'السنن للإمام النسائي',         'daora'),
-('Ash Shama’ilul Muhammadiyah',            'আশ-শামাইল আল-মুহাম্মাদিয়্যাহ',                'والشمائل المحمدية',             'daora'),
-('Sunane Ibn Majah',                        'সুনানে ইবনে মাজাহ',                         'السنن للإمام ابن ماجة',         'daora'),
-('Sahih Muslim Vol 1',                     'সহীহ মুসলিম খন্ড ১',                        'الصحيح للإمام مسلم ج١',        'daora'),
-('Sahihul Bukhari Vol 2',                 'সহীহ বুখারী খন্ড ২',                       'الصحيح للإمام البخاري ج٢',     'daora'),
-('Kitabul Maghazi',                       'কিতাবুল মাগাজি',                            'كتاب المغازي',                 'daora'),
-('Kitabut Tafsir',                        'কিতাবুল তাফসীর',                           'كتاب التفسير',                'daora'),
-('Sahih Muslim Vol 2',                     'সহীহ মুসলিম খন্ড ২',                        'الصحيح للإمام مسلم ج٢',        'daora'),
-('Sharh Ma’anil Acaar 1-2',            'শারহ মা"আনী আল-আসার ১-২',                                         'شرح معاني الآثار ۱-۲',         'daora'),
-('Al Muwatta’',                            'আল-মাওয়াত্তা',                                'الموطأ',                       'daora'),
-('Sunane Abu Dawood Vol 2',                 'সুনানে আবূ দাউদ খন্ড ২',                    'السنن للإمام أبي داود ج٢',      'daora'),
-('Sunane at Tirmidhi Vol 2',                'সুনানে তিরমিজী খন্ড ২',                     'السنن للإمام الترمذي ج٢',      'daora');
+('Sunan at-Tirmidhi Jild 1', 'সুনানুত তিরমিজি খন্ড ১', 'السنن للإمام الترمذي ج١', 'daora'),
+('Sunan Abi Dawud Jild 1', 'সুনানে আবু দাউদ খন্ড ১', 'السنن للإمام أبي داود ج١', 'daora'),
+('Sahih al-Bukhari Jild 1', 'সহীহ বুখারী খন্ড ১', 'الصحيح للإمام البخاري ج١', 'daora'),
+('Sunan an-Nasa’i', 'সুনানে নাসাঈ', 'السنن للإمام النسائي', 'daora'),
+('ash-Shama’il al-Muhammadiyyah', 'আশ-শামাইল আল-মুহাম্মাদিয়্যাহ', 'والشمائل المحمدية', 'daora'),
+('Sunan Ibn Majah', 'সুনানে ইবনে মাজাহ', 'السنن للإمام ابن ماجة', 'daora'),
+('Sahih Muslim Jild 1', 'সহীহ মুসলিম খন্ড ১', 'الصحيح للإمام مسلم ج١', 'daora'),
+('Sahih al-Bukhari Jild 2', 'সহীহ বুখারী খন্ড ২', 'الصحيح للإمام البخاري ج٢', 'daora'),
+('Kitab al-Maghazi', 'কিতাবুল মাগাজি', 'كتاب المغازي', 'daora'),
+('Kitab at-Tafsir', 'কিতাবুল তাফসীর', 'كتاب التفسير', 'daora'),
+('Sahih Muslim Jild 2', 'সহীহ মুসলিম খন্ড ২', 'الصحيح للإمام مسلم ج٢', 'daora'),
+('Sharh Ma‘ani al-Athar 1-2', 'শারহ মা‘আনী আল-আসার ১-২', 'شرح معاني الآثار ۱-۲', 'daora'),
+('al-Muwatta’', 'আল-মাওয়াত্তা', 'الموطأ', 'daora'),
+('Sunan Abi Dawud Jild 2', 'সুনানে আবু দাউদ খন্ড ২', 'السنن للإمام أبي داود ج٢', 'daora'),
+('Sunan at-Tirmidhi Jild 2', 'সুনানে তিরমিজি খন্ড ২', 'السنن للإمام الترمذي ج٢', 'daora');
 
 -- meshkat
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Mishkatull Masabih Vol 1',               'মিশকাতুল মাসাবিহ খন্ড ১',                   'مشكاة المصابيح ج١',            'meshkat'),
-('Al-Hidayah Vol 4',                       'আল-হিদায়াহ খন্ড ৪',                        'الهداية ج٤',                  'meshkat'),
-('Mishkatul Masabih Vol 2',               'মিশকাতুল মাসাবিহ খন্ড ২',                   'مشكاة المصابيح ج٢',            'meshkat'),
-('Hatifatul Durar wa Sharh Khunbat al-Fikr','হাতিফাতুদ দুরার ও শারহ খুনবাতুল ফিকর',   'حتفة الدرر و شرح خنبة الفكر',  'meshkat'),
-('Al-Hidayah Vol 3',                       'আল-হিদায়াহ খন্ড ৩',                        'الهداية ج٣',                  'meshkat'),
-('Sharhul Aqa’idun Nasafiyyah',         'শারহ আকাঈদুন নাসাফিয়্যাহ',                  'شرح العقائد النسفية',         'meshkat'),
-('Tafsirul Baydawi',                      'তাফসীরুল বাইদাউই',                         'التفسيري للإمام البيضاوي',     'meshkat'),
-('Harkat Deoband wal Firaqul Batilah',    'হরকাত দেইবন্দ ওল ফিরাকুল বাতিলা',            'حركة ديوبند والفرق الباطلة',    'meshkat');
+('Mishkat al-Masabih Jild 1', 'মিশকাতুল মাসাবিহ খন্ড ১', 'مشكاة المصابيح ج١', 'meshkat'),
+('al-Hidayah Jild 4', 'আল-হিদায়াহ খন্ড ৪', 'الهداية ج٤', 'meshkat'),
+('Mishkat al-Masabih Jild 2', 'মিশকাতুল মাসাবিহ খন্ড ২', 'مشكاة المصابيح ج٢', 'meshkat'),
+('Hatifat ad-Durar wa Sharh Khunbat al-Fikr', 'হাতিফাতুদ দুরার ও শারহ খুনবাতুল ফিকর', 'حتفة الدرر و شرح خنبة الفكر', 'meshkat'),
+('al-Hidayah Jild 3', 'আল-হিদায়াহ খন্ড ৩', 'الهداية ج٣', 'meshkat'),
+('Sharh al-‘Aqa’id an-Nasafiyyah', 'শারহ আকাঈদুন নাসাফিয়্যাহ', 'شرح العقائد النسفية', 'meshkat'),
+('Tafsir al-Baydawi', 'তাফসীরুল বাইদাউই', 'التفسيري للإمام البيضاوي', 'meshkat'),
+('Harkat Deoband wa al-Firaq al-Batilah', 'হরকাত দেইবন্দ ওল ফিরাকুল বাতিলা', 'حركة ديوبند والفرق الباطلة', 'meshkat');
 
 -- jalalain
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Nurul Anwar wa Kitabul-Amyan wash Shirka', 'নূরুল আনওয়ার ও কিতাবুল আমিয়ান ওয়াল শির্কা', 'نور الأنوار وكتاب الأميان والشركة', 'jalalain'),
-('Kitabul Waqf minal Hidayah',            'কিতাবুল ওয়াক্ফ মিন আল-হিদায়াহ',           'الوقف من الهداية',             'jalalain'),
-('Al-Hidayah Vol 2',                        'আল-হিদায়াহ খন্ড ২',                        'الهداية ج٢',                  'jalalain'),
-('Kitabul Hajj minal Hidayah',            'কিতাবুল হজ্জ মিন আল-হিদায়াহ',              'كتاب الحج من الهداية',        'jalalain'),
-('Rashtraneeti o Orthoniti (Bangla)',       'রাষ্ট্রনীতি ও অর্থনীতি',                   'রাষ্ট্রনীতি ও অর্থনীতি',                             'jalalain'),
-('Tafsirul Jalalain ٣٠-١٦',               'تفسير الجلالين (٣٠-١٦)',                                         'تفسير الجلالين (٣٠-١٦)',       'jalalain'),
-('Tafsir al-Jalalain ١٥-١',                'تفسير الجلالين (١٥-١)',                                         'تفسير الجلالين (١٥-١)',        'jalalain'),
-('Al-Fawz al-Kabir wa Aqidah al-Tahawi',    'الفوز الكبري وعقيدة الطحاوي',                                         'الفوز الكبري وعقيدة الطحاوي',  'jalalain'),
-('Ahadith al-Ahkam',                        'وأحاديث الأحكام',                                         'وأحاديث الأحكام',             'jalalain'),
-('Al-Hidayah Vol 1',                        'আল-হিদায়াহ খন্ড ১',                        'الهداية ج١',                  'jalalain');
+('Nur al-Anwar wa Kitab al-Amyan wa ash-Shirkah', 'নূরুল আনওয়ার ও কিতাবুল আমিয়ান ওয়াল শির্কা', 'نور الأنوار وكتاب الأميان والشركة', 'jalalain'),
+('Kitab al-Waqf min al-Hidayah', 'কিতাবুল ওয়াক্ফ মিন আল-হিদায়াহ', 'الوقف من الهداية', 'jalalain'),
+('al-Hidayah Jild 2', 'আল-হিদায়াহ খন্ড ২', 'الهداية ج٢', 'jalalain'),
+('Kitab al-Hajj min al-Hidayah', 'কিতাবুল হজ্জ মিন আল-হিদায়াহ', 'كتاب الحج من الهداية', 'jalalain'),
+('Rashtraniti wa Orthoniti (Bangla)', 'রাষ্ট্রনীতি ও অর্থনীতি', 'রাষ্ট্রনীতি ও অর্থনীতি', 'jalalain'),
+('Tafsir al-Jalalain 16-30', 'তাফসীরুল জালালাইন ১৬-৩০', 'تفسير الجلالين (٣٠-١٦)', 'jalalain'),
+('Tafsir al-Jalalain 1-15', 'তাফসীরুল জালালাইন ১-১৫', 'تفسير الجلالين (١٥-١)', 'jalalain'),
+('al-Fawz al-Kabir wa ‘Aqidah at-Tahawi', 'আল-ফাওযুল কবীর ও আকীদাতুত তাহাবী', 'الفوز الكبري وعقيدة الطحاوي', 'jalalain'),
+('Ahadith al-Ahkam', 'আহাদিসুল আহকাম', 'وأحاديث الأحكام', 'jalalain'),
+('al-Hidayah Jild 1', 'আল-হিদায়াহ খন্ড ১', 'الهداية ج١', 'jalalain');
 
 -- sharhe_yakiya
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('At Tariq ilal-Insha Vol 3',             'আল-তারীক ইলা আল-ইনশা খন্ড ৩',               'الطريق إلى الإنشاء ٣',        'sharhe_yakiya'),
-('Nurul-Anwar (Kitabullah)',              'নূরুল আনওয়ার (কিতাবুল্লাহ)',               'نور الأنوار (كتاب الله)',        'sharhe_yakiya'),
-('Tarjamatul-Qur''an 1-10',               'ترجمة القرآن (١٥-١)',                                         'ترجمة القرآن (١٥-١)',          'sharhe_yakiya'),
-('Sharh al-Wiqaya Vol 1',                   'شرح الوقاية ج١',                                         'شرح الوقاية ج١',               'sharhe_yakiya'),
-('Mukhtasar al-Mu''ayan',                  'مختصر المعين',                                         'مختصر المعين',                  'sharhe_yakiya'),
-('As-Siraji fil Miras',                   'আস-সিরাজী ফিল মিরাস',                     'السراجى في الميراث',            'sharhe_yakiya'),
-('Sharhul-Wiqaya Vol 2',                   'شرح الوقاية ج٢',                                         'شرح الوقاية ج٢',               'sharhe_yakiya'),
-('Al-Maqamat al-Hurriyah',                  'المقامات الحريرية',                                         'المقامات الحريرية',            'sharhe_yakiya');
+('At-Tariq ila al-Insha Jild 3', 'আত-তারীক ইলা আল-ইনশা খন্ড ৩', 'الطريق إلى الإنشاء ٣', 'sharhe_yakiya'),
+('Nur al-Anwar (Kitabullah)', 'নূরুল আনওয়ার (কিতাবুল্লাহ)', 'نور الأنوار (كتاب الله)', 'sharhe_yakiya'),
+('Tarjamat al-Qur’an 1-10', 'তারজামাতুল কুরআন ১-১০', 'ترجمة القرآن (١٥-١)', 'sharhe_yakiya'),
+('Sharh al-Wiqayah Jild 1', 'শারহুল উইকায়া খন্ড ১', 'شرح الوقاية ج١', 'sharhe_yakiya'),
+('Mukhtasar al-Mu‘in', 'মুখতাসারুল মু’ইন', 'مختصر المعين', 'sharhe_yakiya'),
+('As-Siraji fi al-Miras', 'আস-সিরাজী ফিল মিরাস', 'السراجى في الميراث', 'sharhe_yakiya'),
+('Sharh al-Wiqayah Jild 2', 'শারহুল উইকায়া খন্ড ২', 'شرح الوقاية ج٢', 'sharhe_yakiya'),
+('al-Maqamat al-Hurriyah', 'আল-মাকামাতুল হুররিয়্যাহ', 'المقامات الحريرية', 'sharhe_yakiya');
 
 -- kafiya
 INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
-('Nafhatul-Adab',                          'নাফহাতুল আদাব',                           'نفحة الأدب',                   'kafiya'),
-('Muallimul-Insha Vol 1',                  'মুয়াল্লিমুল ইনশা খন্ড ১',                'معلم الإنشاء جـ١',            'kafiya'),
-('Kafiyah (Ism)',                           'কাফিয়াহ (ইসম)',                           'كافية (الاسم)',               'kafiya'),
-('Mishkatul-Athar wa Marqat',              'মিশকাতুল আছার ও মারকাত',                  'مشكاة الآثار ومرقات',          'kafiya'),
-('Taleemul Muta''allim',                   'তালীমুল মুত্তালিম',                       'تعليم المتعلم',               'kafiya'),
-('Khilafate Banu Umayyah',                 'খিলাফতে বানু উমাইয়া',                      'الخلافة بني أمية',             'kafiya'),
-('Mukhtasar al-Quduri',                     'মুখতাসারুল কুদুরী',                         'مختصر القدوري',               'kafiya'),
-('Usulush-Shashi',                         'উসুলুশ-শাশি',                            'أصول الشاشي',                 'kafiya'),
-('Ma'' baadiul-Usul',                     'মা’বাদিউল উসূল',                         'مع مبادى الأصول',             'kafiya'),
-('Tarjamat al-Qur''an ٣٠-٢٦',             'ترجمة القرآن (٣٠-٢٦)',                                         'ترجمة القرآن (٣٠-٢٦)',        'kafiya');
+('Nafhat al-Adab', 'নাফহাতুল আদাব', 'نفحة الأدب', 'kafiya'),
+('Mu‘allim al-Insha Jild 1', 'মুয়াল্লিমুল ইনশা খন্ড ১', 'معلم الإنشاء جـ١', 'kafiya'),
+('Kafiyah (Ism)', 'কাফিয়াহ (ইসম)', 'كافية (الاسم)', 'kafiya'),
+('Mishkat al-Athar wa Marqat', 'মিশকাতুল আছার ও মারকাত', 'مشكاة الآثار ومرقات', 'kafiya'),
+('Ta‘lim al-Muta‘allim', 'তালীমুল মুত্তালিম', 'تعليم المتعلم', 'kafiya'),
+('Khilafah Banu Umayyah', 'খিলাফাতে বানু উমাইয়া', 'الخلافة بني أمية', 'kafiya'),
+('Mukhtasar al-Quduri', 'মুখতাসারুল কুদুরী', 'مختصر القدوري', 'kafiya'),
+('Usul ash-Shashi', 'উসুলুশ-শাশি', 'أصول الشاشي', 'kafiya'),
+('Ma’badi al-Usul', 'মা’বাদিউল উসূল', 'مع مبادى الأصول', 'kafiya'),
+('Tarjamat al-Qur’an 26-30', 'তারজামাতুল কুরআন ২৬-৩০', 'ترجمة القرآن (٣٠-٢٦)', 'kafiya');
 
 
 
@@ -181,7 +181,7 @@ INSERT INTO book (name_en, name_bn,           name_ar,                          
 ('Safwatul Masadir',              'সফওয়াতুল মাসাদির',                  'صفوة المصادر',                    'madani_nesab'),
 ('Meezan-Munshaib',               'মিযান-মুনশাইব',                      'ميزان المنشا',                    'madani_nesab'),
 ('Aso Urdu Shikhi & Qaida',       'এসো উর্দু শিখি, উর্দু কায়দা',         'تعلم الأردية والقواعد',            'madani_nesab'),
-('Urdu First & Second',           'উর্দু কী প্রথম ও দ্বিতীয়',            'الأردية الأولى والثانية',         'madani_nesab');
+('Urdu Awwal & Thani',           'উর্দু কী প্রথম ও দ্বিতীয়',            'الأردية الأولى والثانية',         'madani_nesab');
 
 
 
@@ -289,13 +289,13 @@ INSERT INTO people (
      'Male', 'Mawlana', 'teachers', 'Mudarres'),
 
 (22, 'Tanvir Ahmad',              'তানভীর আহমাদ',            'تنوير أحمد',
-     'Md. Rafiqur Islam',         'মোঃ রફिकুল ইসলাম',        'محمد رفيق الاسلام',
+     'Md. Rafiqur Islam',         'মোঃ রફিকুল ইসলাম',        'محمد رفيق الاسلام',
      '+8801916717159',
      'Muttagach, Mymensingh',     'মুত্তাগাছ, ময়মনসিংহ',     'موتاجاج، ميمينسين',
      'Male', 'Mawlana', 'teachers', 'Mudarres'),
 
 (23, 'Masudur Rahman',    'মাসুদুর রহমান','مسعود الرحمن)',
-     'Mobarak Hossain',           'মোবারक ہোসেন',            'مبارك حسين',
+     'Mobarak Hossain',           'মোবারك ہোসেন',            'مبارك حسين',
      '+8801883233799',
      'Madhabdi, Narsingdi',       'মাধবদী, নরসিংদী',        'ماذابدي، نرسينغدي',
      'Male', 'Mawlana', 'teachers', 'Mudarres'),
@@ -313,7 +313,7 @@ INSERT INTO people (
      'Male', 'Mawlana', 'teachers', 'Mudarres'),
 
 (26, 'Sir Rabiul Islam',         'জনাব স্যার রবিউল ইসলাম',  'السيد ربيعل إسلام',
-     'Habib Hossain',             'হাবิบ হোসেন',             'حبيب حسين',
+     'Habib Hossain',             'হাব঴ব হোসেন',             'حبيب حسين',
      '+8801727688297',
      'Shibchar, Madaripur',       'শিবচর, মাদারীপুর',        'شيبچار، ماداريপুর',
      'Male', 'Mawlana', 'teachers', 'Senior Mudarres'),
@@ -337,7 +337,7 @@ INSERT INTO people (
      'Male', 'Mawlana', 'teachers', 'Nurani Department Head'),
 
 (32, 'Masudur Rahman',  'মাসউদুর রহমান',  'مسعود الرحمن)',
-     'Azibar Sardar',            'আজибর সর্দার',            'عجيب صردار',
+     'Azibar Sardar',            'আজিবর সর্দার',            'عجيب صردار',
      '+8801915614070',
      'Mollahat, Bagerhat',        'মোল্লাহাট, বাগেরহাট',     'موللاحات، باجهرا',
      'Male', 'Mawlana', 'teachers', 'Mudarres'),
@@ -349,7 +349,7 @@ INSERT INTO people (
      'Male', 'Mawlana', 'teachers', 'Mudarres'),
 
 
-(35, 'Sultan Enamur Rahman',     'সুলতান এনামুর রহমান',      'سلطان إنعام الرحمن',
+(35, 'Sultan Anamur Rahman',     'সুলতান এনামুর রহমান',      'سلطان إنعام الرحمن',
      'Fakhruddin Ahmad',           'ফখরুদ্দীন আহমাদ',         'فخر الدين أحمد',
      '+8801992215+88019',
      'Demra, Dhaka',              'ডেমরা, ঢাকা',             'دمرا، دكا',

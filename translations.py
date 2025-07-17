@@ -82,6 +82,234 @@ TRANSLATIONS = {
         "en": "Account Deactivation Confirmation",
         "bn": "নিশ্চিতকরণ: অ্যাকাউন্ট নিষ্ক্রিয়করণ",
         "ar": "تأكيد تعطيل الحساب"
+    },
+    # General
+    "all_fields_including_code_required": {
+        "en": "All fields including code are required",
+        "bn": "সমস্ত তথ্য এবং কোড প্রয়োজন",
+        "ar": "جميع الحقول بما في ذلك الرمز مطلوبة"
+    },
+    "all_fields_required": {
+        "en": "All fields are required",
+        "bn": "সমস্ত তথ্য প্রয়োজন",
+        "ar": "جميع الحقول مطلوبة"
+    },
+    "phone_and_fullname_required": {
+        "en": "Phone number and fullname required",
+        "bn": "ফোন নম্বর এবং পুরো নাম প্রয়োজন",
+        "ar": "رقم الهاتف والاسم الكامل مطلوبان"
+    },
+    "user_already_registered": {
+        "en": "User with this fullname and phone already registered",
+        "bn": "এই নাম এবং নম্বরের ব্যবহারকারী ইতিমধ্যে নিবন্ধিত",
+        "ar": "المستخدم بهذا الاسم الكامل ورقم الهاتف مسجل بالفعل"
+    },
+    "registration_successful": {
+        "en": "Registration successful",
+        "bn": "নিবন্ধন সফল হয়েছে",
+        "ar": "تم التسجيل بنجاح"
+    },
+    "login_successful": {
+        "en": "Login successful",
+        "bn": "লগইন সফল হয়েছে",
+        "ar": "تم تسجيل الدخول بنجاح"
+    },
+    "additional_info_required": {
+        "en": "Additional info required",
+        "bn": "অতিরিক্ত তথ্য প্রয়োজন",
+        "ar": "مطلوب معلومات إضافية"
+    },
+    "failed_to_send_verification_code": {
+        "en": "Failed to send verification code",
+        "bn": "ভেরিফিকেশন কোড পাঠাতে ব্যর্থ হয়েছে",
+        "ar": "فشل في إرسال رمز التحقق"
+    },
+    "internal_error": {
+        "en": "Internal error: {error}",
+        "bn": "অভ্যন্তরীণ ত্রুটি: {error}",
+        "ar": "خطأ داخلي: {error}"
+    },
+    "phone_fullname_new_password_required": {
+        "en": "Phone, Fullname, and New Password are required",
+        "bn": "ফোন, পুরো নাম এবং নতুন পাসওয়ার্ড প্রয়োজন",
+        "ar": "رقم الهاتف والاسم الكامل وكلمة المرور الجديدة مطلوبة"
+    },
+    "incorrect_old_password": {
+        "en": "Incorrect old password",
+        "bn": "পুরানো পাসওয়ার্ড ভুল",
+        "ar": "كلمة المرور القديمة غير صحيحة"
+    },
+    "password_reset_successful": {
+        "en": "Password Reset Successful",
+        "bn": "পাসওয়ার্ড সফলভাবে রিসেট হয়েছে",
+        "ar": "تم إعادة تعيين كلمة المرور بنجاح"
+    },
+    "invalid_page_type": {
+        "en": "Invalid page type",
+        "bn": "পৃষ্ঠার ধরন সঠিক নয়",
+        "ar": "نوع الصفحة غير صالح"
+    },
+    "invalid_phone_number": {
+        "en": "Invalid phone number",
+        "bn": "ফোন নম্বর সঠিক নয়",
+        "ar": "رقم الهاتف غير صالح"
+    },
+    "invalid_login_details": {
+        "en": "Invalid login details",
+        "bn": "লগইন তথ্য সঠিক নয়",
+        "ar": "تفاصيل تسجيل الدخول غير صحيحة"
+    },
+    "could_not_send_confirmation": {
+        "en": "Could not send confirmation. Try again later.",
+        "bn": "নিশ্চিতকরণ পাঠানো যায়নি। পরে আবার চেষ্টা করুন।",
+        "ar": "تعذر إرسال التأكيد. حاول مرة أخرى لاحقًا."
+    },
+    "account_deletion_initiated": {
+        "en": "Account deletion initiated. Check your messages.",
+        "bn": "অ্যাকাউন্ট মুছে ফেলার প্রক্রিয়া শুরু হয়েছে। আপনার বার্তা চেক করুন।",
+        "ar": "تم بدء حذف الحساب. تحقق من رسائلك."
+    },
+    "account_deactivated_successfully": {
+        "en": "Account deactivated successfully.",
+        "bn": "অ্যাকাউন্ট সফলভাবে নিষ্ক্রিয় করা হয়েছে।",
+        "ar": "تم تعطيل الحساب بنجاح."
+    },
+    "an_error_occurred": {
+        "en": "An error occurred",
+        "bn": "একটি ত্রুটি ঘটেছে",
+        "ar": "حدث خطأ"
+    },
+    "maintenance_message": {
+        "en": "{msg}",
+        "bn": "{msg}",
+        "ar": "{msg}"
+    },
+    "session_invalidated": {
+        "en": "Session invalidated. Please log in again.",
+        "bn": "সেশন বাতিল হয়েছে। দয়া করে আবার লগইন করুন।",
+        "ar": "تم إبطال الجلسة. الرجاء تسجيل الدخول مرة أخرى."
+    },
+    "account_is_valid": {
+        "en": "Account is valid",
+        "bn": "অ্যাকাউন্ট বৈধ",
+        "ar": "الحساب صالح"
+    },
+    "code_successfully_matched": {
+        "en": "Code successfully matched",
+        "bn": "কোড সফলভাবে মিলেছে",
+        "ar": "تمت مطابقة الرمز بنجاح"
+    },
+    # core.py
+    "fullname_phone_acc_type_required": {
+        "en": "fullname, phone and acc_type are required",
+        "bn": "পূর্ণ নাম, ফোন এবং অ্যাকাউন্ট টাইপ প্রয়োজন",
+        "ar": "الاسم الكامل، رقم الهاتف ونوع الحساب مطلوبة"
+    },
+    "id_not_found": {
+        "en": "ID not found",
+        "bn": "আইডি পাওয়া যায়নি",
+        "ar": "لم يتم العثور على المعرف"
+    },
+    "all_required_fields_student": {
+        "en": "All required fields must be provided for Student",
+        "bn": "ছাত্রের জন্য সমস্ত প্রয়োজনীয় তথ্য দিতে হবে",
+        "ar": "يجب تقديم جميع الحقول المطلوبة للطالب"
+    },
+    "all_required_fields_type": {
+        "en": "All required fields must be provided for {type}",
+        "bn": "{type} এর জন্য সমস্ত প্রয়োজনীয় তথ্য দিতে হবে",
+        "ar": "يجب تقديم جميع الحقول المطلوبة لـ {type}"
+    },
+    "name_phone_father_required_guest": {
+        "en": "Name, Phone, and Father/Spouse are required for Guest",
+        "bn": "গেস্টের জন্য নাম, ফোন এবং পিতার/স্বামীর নাম প্রয়োজন",
+        "ar": "الاسم، رقم الهاتف واسم الأب/الزوج مطلوبة للضيف"
+    },
+    "user_exists_with_id": {
+        "en": "User already exists with this ID",
+        "bn": "এই আইডি সহ ব্যবহারকারী ইতিমধ্যে আছে",
+        "ar": "المستخدم موجود بالفعل بهذا المعرف"
+    },
+    "database_error": {
+        "en": "Database error: {error}",
+        "bn": "ডাটাবেস ত্রুটি: {error}",
+        "ar": "خطأ في قاعدة البيانات: {error}"
+    },
+    "file_not_found": {
+        "en": "File not found",
+        "bn": "ফাইল পাওয়া যায়নি",
+        "ar": "الملف غير موجود"
+    },
+    "database_connection_failed": {
+        "en": "Database connection failed.",
+        "bn": "ডাটাবেস সংযোগ ব্যর্থ হয়েছে।",
+        "ar": "فشل الاتصال بقاعدة البيانات."
+    },
+    # payments.py
+    "user_not_found_payment": {
+        "en": "User not found",
+        "bn": "ব্যবহারকারী পাওয়া যায়নি",
+        "ar": "المستخدم غير موجود"
+    },
+    "transaction_failed": {
+        "en": "Transaction failed",
+        "bn": "লেনদেন ব্যর্থ হয়েছে",
+        "ar": "فشلت المعاملة"
+    },
+    "phone_fullname_type_required": {
+        "en": "Phone, fullname and type are required",
+        "bn": "ফোন, পুরো নাম এবং টাইপ প্রয়োজন",
+        "ar": "رقم الهاتف، الاسم الكامل والنوع مطلوبة"
+    },
+    "invalid_updated_since_format": {
+        "en": "Invalid updatedSince format",
+        "bn": "updatedSince ফরম্যাট সঠিক নয়",
+        "ar": "تنسيق updatedSince غير صالح"
+    },
+    "internal_server_error_payment": {
+        "en": "Internal server error",
+        "bn": "সার্ভারে ত্রুটি হয়েছে",
+        "ar": "خطأ في الخادم الداخلي"
+    },
+    "no_transactions_found": {
+        "en": "No transactions found",
+        "bn": "কোনো লেনদেন পাওয়া যায়নি",
+        "ar": "لم يتم العثور على معاملات"
+    },
+    "amount_and_type_required": {
+        "en": "amount and type required",
+        "bn": "পরিমাণ এবং টাইপ প্রয়োজন",
+        "ar": "المبلغ والنوع مطلوبان"
+    },
+    "payment_gateway_misconfigured": {
+        "en": "Payment gateway misconfigured",
+        "bn": "পেমেন্ট গেটওয়ে ভুলভাবে কনফিগার করা হয়েছে",
+        "ar": "بوابة الدفع غير مهيأة بشكل صحيح"
+    },
+    "gateway_unreachable": {
+        "en": "Gateway unreachable",
+        "bn": "গেটওয়ে অ্যাক্সেসযোগ্য নয়",
+        "ar": "البوابة غير متاحة"
+    },
+    "payment_initiation_failed": {
+        "en": "Payment initiation failed",
+        "bn": "পেমেন্ট শুরু করতে ব্যর্থ হয়েছে",
+        "ar": "فشل بدء الدفع"
+    },
+    "payment_validation_failed": {
+        "en": "Payment validation failed",
+        "bn": "পেমেন্ট যাচাই ব্যর্থ হয়েছে",
+        "ar": "فشل التحقق من الدفع"
+    },
+    "payment_validation_error": {
+        "en": "Payment validation error",
+        "bn": "পেমেন্ট যাচাই ত্রুটি",
+        "ar": "خطأ في التحقق من الدفع"
+    },
+    "payment_recorded": {
+        "en": "Payment recorded",
+        "bn": "পেমেন্ট রেকর্ড করা হয়েছে",
+        "ar": "تم تسجيل الدفع"
     }
 }
 

@@ -69,7 +69,7 @@ def register():
                 conn.commit()
 
             return jsonify({
-                "success": "True", "message": "Registration successful",
+                "success": True, "message": "Registration successful",
                 "info": people_result
                 }), 201
 
@@ -137,7 +137,7 @@ def login():
             if isinstance(dob, (datetime.date, datetime.datetime)):
                 info["date_of_birth"] = dob.strftime("%d/%m/%Y")
 
-            return jsonify({"success": "True", "message": "Login successful", "info": info}), 200
+            return jsonify({"success": True, "message": "Login successful", "info": info}), 200
             
     except Exception as e:
         log_event("auth_error", formatted_phone, str(e))
@@ -206,7 +206,7 @@ def send_verification_code():
                             (formatted_phone, code)
                         )
                         conn.commit()
-                        return jsonify({"success": "True", "message": t("verification_sms_sent", lang, target=formatted_phone)}), 200
+                        return jsonify({"success": True, "message": t("verification_sms_sent", lang, target=formatted_phone)}), 200
                         # If SMS fails, fall back to email below
 
             # SMS limit reached or SMS failed => try EMAIL
@@ -218,7 +218,7 @@ def send_verification_code():
                             (formatted_phone, code)
                         )
                         conn.commit()
-                        return jsonify({"success": "True", "message": t("verification_email_sent", lang, target=email)}), 200
+                        return jsonify({"success": True, "message": t("verification_email_sent", lang, target=email)}), 200
                         # else fall through to failure
                 else:
                     log_event("rate_limit_blocked", phone, "Both send limit exceeded")
@@ -260,7 +260,7 @@ def reset_password():
         if validate_code:
             return validate_code
         elif not new_password:
-            return jsonify({"success": "True", "message": "code successfully matched"}), 200
+            return jsonify({"success": True, "message": "code successfully matched"}), 200
 
     # Fetch the user
     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
@@ -289,7 +289,7 @@ def reset_password():
             (hashed_password, fullname, formatted_phone)
         )
         conn.commit()
-        return jsonify({"success": "True", "message": "Password Reset Successful"}), 201
+        return jsonify({"success": True, "message": "Password Reset Successful"}), 201
 
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"])
 def manage_account(page_type):
@@ -377,10 +377,10 @@ def manage_account(page_type):
         # success response
         if page_type == "remove":
             log_event("deletion_scheduled", formatted_phone, f"User {fullname} scheduled for deletion")
-            return jsonify({"success": "True", "message": "Account deletion initiated. Check your messages."}), 200
+            return jsonify({"success": True, "message": "Account deletion initiated. Check your messages."}), 200
 
         log_event("account_deactivated", formatted_phone, f"User {fullname} deactivated")
-        return jsonify({"success": "True", "message": "Account deactivated successfully."}), 200
+        return jsonify({"success": True, "message": "Account deactivated successfully."}), 200
 
     except Exception as e:
         log_event("manage_account_error", phone, str(e))
@@ -557,7 +557,7 @@ def get_account_status():
             conn.close()
                 
             # all checks passed
-        return jsonify({"success": "True", "message": "Account is valid", "id": record["id"]}), 200
+        return jsonify({"success": True, "message": "Account is valid", "id": record["id"]}), 200
 
     except Exception as e:
         log_event("account_check_error", phone, str(e))

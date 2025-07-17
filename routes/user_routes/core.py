@@ -199,7 +199,12 @@ def add_person():
             cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
             row = cursor.fetchone()
             img_path = row["image_path"] if row else None
-            return jsonify({"success": f"{acc_type} profile added successfully", "id": person_id, "info": img_path}), 201
+            return jsonify({
+                "success": True, 
+                "message": f"{acc_type} profile added successfully", 
+                "id": person_id, 
+                "info": img_path
+                }), 201
             
     except pymysql.err.IntegrityError:
         return jsonify({"message": "User already exists with this ID"}), 409

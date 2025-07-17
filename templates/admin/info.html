@@ -30,9 +30,12 @@
     </div>
   </div>
 
-  <p class="text-muted">
-    Showing last <span id="entry-count">{{ logs|length }}</span> entries.
-  </p>
+  <div class="d-flex align-items-center mb-2">
+    <p class="text-muted mb-0 me-3">
+      Showing last <span id="entry-count">{{ logs|length }}</span> entries.
+    </p>
+    <button id="pause-refresh" class="btn btn-outline-primary btn-sm ms-auto">Pause Auto-Refresh</button>
+  </div>
 
   <div class="table-responsive" style="max-height:70vh; overflow:auto;">
     <table id="log-table" class="table table-sm table-striped">
@@ -43,7 +46,8 @@
         </tr>
       </thead>
       <tbody>
-        {% for e in logs %}
+        {# Show newest logs at the top #}
+        {% for e in logs|reverse %}
         <tr>
           <td>{{ e.time }}</td>
           <td>{{ e.ip }}</td>
@@ -70,16 +74,14 @@
   </div>
 </div>
 
-<button id="scroll-bottom" class="btn btn-primary scroll-bottom">
-  ↓ Latest
+<button id="scroll-top" class="btn btn-primary scroll-top">
+  ↑ Newest
 </button>
 
-<!-- embed initial data for JS to pick up -->
 <script id="init-data" type="application/json">
 {{ logs | tojson }}
 </script>
 
-<!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <style>
@@ -92,7 +94,7 @@
   .json-block.expanded {
     max-height: none;
   }
-  .scroll-bottom {
+  .scroll-top {
     position: fixed;
     bottom: 1rem;
     right: 1rem;
@@ -104,6 +106,7 @@
 (function() {
   const raw = document.getElementById('init-data').textContent;
   let currentData = JSON.parse(raw);
+  currentData.reverse(); // Newest at top
 
   const filterText = document.getElementById('filter-text');
   const filterFrom = document.getElementById('filter-from');
@@ -111,7 +114,12 @@
   const clearBtn   = document.getElementById('clear-filters');
   const tableBody  = document.querySelector('#log-table tbody');
   const entryCount = document.getElementById('entry-count');
-  const scrollBtn  = document.getElementById('scroll-bottom');
+  const scrollBtn  = document.getElementById('scroll-top');
+  const pauseBtn   = document.getElementById('pause-refresh');
+
+  let autoRefresh = true;
+  let pollInterval = 5000;
+  let pollTimer = null;
 
   function renderRows(data) {
     tableBody.innerHTML = '';
@@ -168,11 +176,22 @@
   }
 
   async function poll() {
+    if (!autoRefresh) return;
     try {
       const res = await fetch('{{ url_for("admin_routes.info_data_admin") }}');
       if (!res.ok) throw new Error(res.statusText);
-      currentData = await res.json();
-      applyFilters();
+      let newData = await res.json();
+      newData.reverse(); // Newest at top
+      // Only prepend new logs
+      if (newData.length > 0 && newData[0].time !== (currentData[0] && currentData[0].time)) {
+        // Find the index where new logs start
+        let firstOldIdx = newData.findIndex(e => e.time === (currentData[0] && currentData[0].time));
+        let toPrepend = firstOldIdx === -1 ? newData : newData.slice(0, firstOldIdx);
+        if (toPrepend.length > 0) {
+          currentData = toPrepend.concat(currentData);
+          applyFilters();
+        }
+      }
     } catch (err) {
       console.error('Fetch error:', err);
     }
@@ -190,12 +209,18 @@
   });
   scrollBtn.addEventListener('click', () => {
     const container = tableBody.parentElement;
-    container.scrollTop = container.scrollHeight;
+    container.scrollTop = 0;
+  });
+  pauseBtn.addEventListener('click', () => {
+    autoRefresh = !autoRefresh;
+    pauseBtn.textContent = autoRefresh ? 'Pause Auto-Refresh' : 'Resume Auto-Refresh';
+    if (autoRefresh) poll();
   });
 
   // initial render & polling
   renderRows(currentData);
-  setInterval(poll, 10000);
+  applyFilters();
+  pollTimer = setInterval(poll, pollInterval);
 })();
 </script>
 {% endblock %}

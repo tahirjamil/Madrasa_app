@@ -123,7 +123,7 @@ def login():
                 SELECT u.id, u.fullname, u.phone, p.acc_type AS userType, p.*
                 FROM users u
                 LEFT JOIN people p ON p.id = u.id
-                WHERE u.id = %s AND u.phone = %s AND u.fullname = %s
+                WHERE u.id = %s AND p.phone = %s AND p.name_en = %s
                 """,
                 (user["id"], formatted_phone, fullname)
             )

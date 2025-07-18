@@ -1,5 +1,5 @@
-import os
 from flask import Blueprint, jsonify, request
+from helpers import is_maintenance_mode
 from translations import t
 
 user_routes = Blueprint("user_routes", __name__)
@@ -14,6 +14,3 @@ def check_maintenance():
 from . import auth  # noqa: F401
 from . import payments  # noqa: F401
 from . import core  # noqa: F401
-
-def is_maintenance_mode():
-    return os.getenv("MAINTENANCE_MODE", "").lower() in ("1", "true", "yes", "on")

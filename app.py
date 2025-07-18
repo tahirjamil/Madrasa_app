@@ -109,17 +109,6 @@ def home():
     return render_template("home.html", current_year=datetime.now().year)
 
 @csrf.exempt
-@app.route("/restart", methods=["POST"])
-@require_secret
-def restart_service():
-    try:
-        print("Restart endpoint hit, trying to restart...")
-        result = os.system("sudo systemctl restart madrasa-app.service")
-        print(f"System call result: {result}")
-        return jsonify({"message": "Service restarted"}), 200
-    except Exception as e:
-        return jsonify({"message": f"Error: {str(e)}"}), 500
-
 # ─── Error & Favicon ────────────────────────────────────────
 @app.errorhandler(404)
 def not_found(e):
@@ -148,10 +137,9 @@ if __name__ == "__main__":
     if dev_mode == True:
         app.run(debug=True, host=host, port=port)
     else:
-        restart_cmd = 'curl -X POST http://(your-domain)/restart -H "RESTART-KEY: (your-restart-key)"'
         # production
         port = 80
         URL = Config.BASE_URL
         print(f"Quick logs available at {URL}/admin/info")
-        print(f"restart though: {restart_cmd}")
+        print(f"Maintenance Mode {os.getenv("MAINTENANCE_MODE")}")
         serve(app, host=host, port=port)

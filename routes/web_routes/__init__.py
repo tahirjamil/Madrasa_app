@@ -1,5 +1,5 @@
-import os
 from flask import Blueprint, render_template
+from helpers import is_maintenance_mode
 
 web_routes = Blueprint('web_routes', __name__)
 
@@ -10,6 +10,3 @@ def check_maintenance():
 
 # Import routes from other modules to register them
 from . import views # noqa: F401
-
-def is_maintenance_mode():
-    return os.getenv("MAINTENANCE_MODE", "").lower() in ("1", "true", "yes", "on")

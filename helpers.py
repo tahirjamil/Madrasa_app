@@ -56,6 +56,10 @@ def require_api_key(f):
         return f(*args, **kwargs)
     return decorated
 
+# Maintenance Mode
+def is_maintenance_mode():
+    return os.getenv("MAINTENANCE_MODE", "").lower() in ("1", "true", "yes", "on")
+
 # Delete Code
 def delete_code():
     conn = connect_to_db()

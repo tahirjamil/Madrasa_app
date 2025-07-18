@@ -133,6 +133,7 @@ csrf.exempt(admin_routes)
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
     host, port = "0.0.0.0", 8000
+    print(f"Maintenance Mode {os.getenv("MAINTENANCE_MODE")}")
 
     if dev_mode == True:
         app.run(debug=True, host=host, port=port)
@@ -141,5 +142,4 @@ if __name__ == "__main__":
         port = 80
         URL = Config.BASE_URL
         print(f"Quick logs available at {URL}/admin/info")
-        print(f"Maintenance Mode {os.getenv("MAINTENANCE_MODE")}")
         serve(app, host=host, port=port)

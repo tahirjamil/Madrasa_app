@@ -25,14 +25,15 @@ def register():
     phone = data.get("phone")
     password = data.get("password")
     user_code = data.get("code")
+    lang = data.get("language") or data.get("Language") or "en"
 
     if not fullname or not phone or not password or not user_code:
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"message": "All fields including code are required"}), 400
+        return jsonify({"message": t("all_fields_including_code_required", lang)}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": "Invalid phone number format"}), 400
+        return jsonify({"message": t("invalid_phone_format", lang)}), 400
 
     validate_code = check_code(user_code, formatted_phone)
     if validate_code:
@@ -69,14 +70,14 @@ def register():
                 conn.commit()
 
             return jsonify({
-                "success": True, "message": "Registration successful",
+                "success": True, "message": t("registration_successful", lang),
                 "info": people_result
                 }), 201
 
         except IntegrityError:
-            return jsonify({"message": "User with this fullname and phone already registered"}), 400
+            return jsonify({"message": t("user_already_registered", lang)}), 400
         except Exception as e:
-            return jsonify({"message": "Internal server error", "error": str(e)}), 500
+            return jsonify({"message": t("internal_server_error", lang), "error": str(e)}), 500
 
 
 @user_routes.route("/login", methods=["POST"])
@@ -91,7 +92,7 @@ def login():
 
     if not fullname or not phone or not password:
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"message": "All fields are required"}), 400
+        return jsonify({"message": t("all_fields_required", lang)}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
@@ -115,29 +116,32 @@ def login():
                 return jsonify({"message": t("incorrect_password", lang)}), 401
             
             if user["deactivated_at"] is not None:
-                return jsonify({"message": "Account is deactivated."}), 403 #TODO: in app
+                return jsonify({"message": t("account_deactivated", lang)}), 403 #TODO: in app
             
             cursor.execute(
                 """
                 SELECT u.id, u.fullname, u.phone, p.acc_type AS userType, p.*
                 FROM users u
                 LEFT JOIN people p ON p.id = u.id
-                WHERE u.id = %s
+                WHERE u.id = %s AND p.phone = %s AND p.name_en = %s
                 """,
-                (user["id"],)
+                (user["id"], formatted_phone, fullname)
             )
             info = cursor.fetchone()
 
             if not info or not info.get("phone"):
                 log_event("auth_additional_info_required", formatted_phone, "Missing profile info")
-                return jsonify({"problem": "needmoreinfo", "message": "Additional info required"}), 400
+                return jsonify({
+                    "error": "incomplete_profile", 
+                    "message": t("additional_info_required", lang)
+                }), 422
             
             info.pop("password", None)
             dob = info.get("date_of_birth")
             if isinstance(dob, (datetime.date, datetime.datetime)):
                 info["date_of_birth"] = dob.strftime("%d/%m/%Y")
 
-            return jsonify({"success": True, "message": "Login successful", "info": info}), 200
+            return jsonify({"success": True, "message": t("login_successful", lang), "info": info}), 200
             
     except Exception as e:
         log_event("auth_error", formatted_phone, str(e))
@@ -161,27 +165,27 @@ def send_verification_code():
     email = data.get("email")
 
     if not phone or not fullname:
-        return jsonify({"message": "Phone number and fullname required"}), 400
+        return jsonify({"message": t("phone_and_fullname_required", lang)}), 400
     
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": "Invalid phone number format"}), 400
+        return jsonify({"message": t("invalid_phone_format", lang)}), 400
 
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             if fullname:
                 ok, msg = validate_fullname(fullname)
                 if not ok:
-                    return jsonify({"message": msg}), 400
+                    return jsonify({"message": t(msg, lang)}), 400
 
             if password:
                 ok, msg = validate_password(password)
                 if not ok:
-                    return jsonify({"message": msg}), 400
+                    return jsonify({"message": t(msg, lang)}), 400
                 
                 cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
                 if cursor.fetchone():
-                    return jsonify({"message": "User already registered"}), 409
+                    return jsonify({"message": t("user_already_registered", lang)}), 409
             
             if not email:
                 email = get_email(phone=formatted_phone, fullname=fullname)
@@ -226,11 +230,11 @@ def send_verification_code():
 
             # If we get here, both sends failed or no email provided
             log_event("verification_failed", phone, f"count={count}")
-            return jsonify({"message": "Failed to send verification code"}), 500
+            return jsonify({"message": t("failed_to_send_verification_code", lang)}), 500
 
     except Exception as e:
         log_event("internal_error", formatted_phone, str(e))
-        return jsonify({"message": f"Internal error: {str(e)}"}), 500
+        return jsonify({"message": t("internal_error", lang, error=str(e))}), 500
     
 
 @user_routes.route("/reset_password", methods=["POST"])
@@ -243,12 +247,12 @@ def reset_password():
     user_code = data.get("code")
     old_password = data.get("old_password")
     new_password = data.get("new_password")
-    lang = data.get("language") or "en"
+    lang = data.get("language") or data.get("Language") or "en"
 
     # Check required fields (except old_password and code, because one of them must be present)
     if not all([phone, fullname]):
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"message": "Phone, Fullname, and New Password are required"}), 400
+        return jsonify({"message": t("phone_fullname_new_password_required", lang)}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
@@ -260,7 +264,7 @@ def reset_password():
         if validate_code:
             return validate_code
         elif not new_password:
-            return jsonify({"success": True, "message": "code successfully matched"}), 200
+            return jsonify({"success": True, "message": t("code_successfully_matched", lang)}), 200
 
     # Fetch the user
     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
@@ -276,7 +280,7 @@ def reset_password():
         # If old_password is given, check it
         if old_password:
             if not check_password_hash(result['password'], old_password):
-                return jsonify({"message": "Incorrect old password"}), 401
+                return jsonify({"message": t("incorrect_old_password", lang)}), 401
             
         hashed_password = generate_password_hash(new_password)
 
@@ -289,15 +293,16 @@ def reset_password():
             (hashed_password, fullname, formatted_phone)
         )
         conn.commit()
-        return jsonify({"success": True, "message": "Password Reset Successful"}), 201
+        return jsonify({"success": True, "message": t("password_reset_successful", lang)}), 201
 
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"])
 def manage_account(page_type):
+    lang = request.get_json().get("language") or "en"
     # clean up any expired accounts
     auto_delete_users()
 
     if page_type not in ("remove", "deactivate"):
-        return jsonify({"message": "Invalid page type"}), 400
+        return jsonify({"message": t("invalid_page_type", lang)}), 400
 
     if request.method == "GET":
         # Render the form
@@ -315,11 +320,11 @@ def manage_account(page_type):
     email    = data.get("email")
 
     if not phone or not fullname or not password:
-        return jsonify({"message": "All fields are required"}), 400
+        return jsonify({"message": t("all_fields_required", lang)}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": "Invalid phone number"}), 400
+        return jsonify({"message": t("invalid_phone_number", lang)}), 400
 
     # lookup user
     conn = connect_to_db()
@@ -334,7 +339,7 @@ def manage_account(page_type):
 
             if not user or not check_password_hash(user["password"], password):
                 log_event("delete_invalid_credentials", formatted_phone, "Invalid credentials")
-                return jsonify({"message": "Invalid login details"}), 401
+                return jsonify({"message": t("invalid_login_details", lang)}), 401
 
             # prepare confirmation message
             deletion_days = 30
@@ -358,7 +363,7 @@ def manage_account(page_type):
                 log_event("notify_sms_failed", formatted_phone, "SMS send failed")
 
             if errors > 1:
-                return jsonify({"message": "Could not send confirmation. Try again later."}), 500
+                return jsonify({"message": t("could_not_send_confirmation", lang)}), 500
 
             # schedule deactivation/deletion
             now = datetime.datetime.utcnow()
@@ -377,14 +382,14 @@ def manage_account(page_type):
         # success response
         if page_type == "remove":
             log_event("deletion_scheduled", formatted_phone, f"User {fullname} scheduled for deletion")
-            return jsonify({"success": True, "message": "Account deletion initiated. Check your messages."}), 200
+            return jsonify({"success": True, "message": t("account_deletion_initiated", lang)}), 200
 
         log_event("account_deactivated", formatted_phone, f"User {fullname} deactivated")
-        return jsonify({"success": True, "message": "Account deactivated successfully."}), 200
+        return jsonify({"success": True, "message": t("account_deactivated_successfully", lang)}), 200
 
     except Exception as e:
         log_event("manage_account_error", phone, str(e))
-        return jsonify({"message": "An error occurred"}), 500
+        return jsonify({"message": t("an_error_occurred", lang)}), 500
 
     finally:
         conn.close()
@@ -430,11 +435,12 @@ def get_account_status():
 
     Maintenace = os.getenv("MAINTENANCE_MODE", False)
     Maintenace_mssg = os.getenv("MAINTENANCE_MASSAGE", "Under maintenance")
+    data = request.get_json()
+    lang = data.get("language") or data.get("Language") or "en"
 
     if Maintenace == True:
-        return jsonify({"action": "maintenance", "message": Maintenace_mssg}), 503
+        return jsonify({"action": "maintenance", "message": t("maintenance_message", lang, msg=Maintenace_mssg)}), 503
     
-    data = request.get_json()
     device_id = data.get("device_id")
     device_brand = data.get("device_brand")
     ip_address = data.get("ip_address")
@@ -488,7 +494,10 @@ def get_account_status():
     for c in checks:
         if checks[c] is None:
             log_event("account_check_missing_field", phone, f"Field {c} is missing")
-            return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
+            return jsonify({"action": "logout", "message": t("session_invalidated", lang)}), 400
+
+    if not phone and not fullname:
+        return jsonify({"message": t("session_invalidated", lang)}), 400
 
     conn = connect_to_db()
     try:
@@ -504,12 +513,12 @@ def get_account_status():
 
         if not record:
             log_event("account_check_not_found", phone or user_id, "No matching user")
-            return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
+            return jsonify({"action": "logout", "message": t("session_invalidated", lang)}), 401
 
         # Check deactivation
         if record.get("deactivated_at"):
             log_event("account_check_deactivated", record["id"], "Account deactivated")
-            return jsonify({"action": "deactivate", "message": DEACTIVATE_MSG}), 401
+            return jsonify({"action": "deactivate", "message": t("session_invalidated", lang)}), 401
 
         # Compare fields
         for col, provided in checks.items():
@@ -531,7 +540,11 @@ def get_account_status():
                 # cast both to strings for comparison
                 if str(provided).strip() != str(db_val).strip():
                     log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided} != {db_val}, so {fullname} logged out")
-                    return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
+                    return jsonify({"action": "logout", "message": t("session_invalidated", lang)}), 401
+                if db_val:
+                    if db_val.date() != provided_date:
+                        log_event("account_check_mismatch", record["id"], f"{col}: {provided_date} != {db_val}")
+                        return jsonify({"message": t("session_invalidated", lang)}), 401
 
         cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id))
         result = cursor.fetchall()
@@ -559,11 +572,11 @@ def get_account_status():
             conn.close()
                 
             # all checks passed
-        return jsonify({"success": True, "message": "Account is valid", "id": record["id"]}), 200
+        return jsonify({"success": True, "message": t("account_is_valid", lang), "id": record["id"]}), 200
 
     except Exception as e:
         log_event("account_check_error", phone, str(e))
-        return jsonify({"message": "Internal error"}), 500
+        return jsonify({"message": t("internal_error", lang)}), 500
 
     finally:
         conn.close()

@@ -11,6 +11,7 @@ from database import connect_to_db
 from logger import log_event
 from config import Config
 from helpers import get_id, insert_person, format_phone_number
+from translations import t
 
 # ========== Config ==========
 IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
@@ -37,9 +38,10 @@ def notices_file(filename):
     filename = secure_filename(filename)
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'notices')
     file_path = os.path.join(upload_folder, filename)
+    lang = request.args.get('language') or request.args.get('Language') or 'en'
 
     if not os.path.isfile(file_path):
-        return jsonify({"message": "File not found"}), 404
+        return jsonify({"message": t("file_not_found", lang)}), 404
     
     return send_from_directory(upload_folder, filename), 200
 
@@ -68,6 +70,7 @@ def add_person():
     BASE_URL = current_app.config['BASE_URL']
     
     data = request.form
+    lang = data.get('language') or data.get('Language') or 'en'
     image = request.files.get('image')
 
     fullname = data.get('name_en')
@@ -85,13 +88,13 @@ def add_person():
 
     if not fullname or not phone or not get_acc_type:
         log_event("add_people_missing", phone, "Missing fields")
-        return jsonify({"message": "fullname, phone and acc_type are required"}), 400
+        return jsonify({"message": t("fullname_phone_acc_type_required", lang)}), 400
 
     person_id = get_id(formatted_phone, fullname)
     acc_type = get_acc_type.lower()
 
     if not person_id:
-        return jsonify({"message": "ID not found"}), 404
+        return jsonify({"message": t("id_not_found", lang)}), 404
 
     fields = {
         "id": person_id,
@@ -137,7 +140,7 @@ def add_person():
         ]
     
         if not all(f(k) for k in required):
-            return jsonify({"message": "All required fields must be provided for Student"}), 400
+            return jsonify({"message": t("all_required_fields_student", lang)}), 400
         fields.update({k: f(k) for k in required})
 
         # optional = ["email"]
@@ -153,7 +156,7 @@ def add_person():
             'phone'
         ]
         if not all(f(k) for k in required):
-            return jsonify({"message": f"All required fields must be provided for {acc_type}"}), 400
+            return jsonify({"message": t("all_required_fields_type", lang, type=acc_type)}), 400
         fields.update({k: f(k) for k in required})
 
         optional = ["degree"]
@@ -169,7 +172,7 @@ def add_person():
             'phone'
         ]
         if not all(f(k) for k in required):
-            return jsonify({"message": f"All required fields must be provided for {acc_type}"}), 400
+            return jsonify({"message": t("all_required_fields_type", lang, type=acc_type)}), 400
         fields.update({k: f(k) for k in required})
 
         # optional = ["email"]
@@ -178,7 +181,7 @@ def add_person():
 
     else:
         if not f("name_en") or not f("phone") or not f("father_or_spouse") or not f("date_of_birth"):
-            return jsonify({"message": "Name, Phone, and Father/Spouse are required for Guest"}), 400
+            return jsonify({"message": t("name_phone_father_required_guest", lang)}), 400
 
         fields["name_en"] = f("name_en")
         fields["phone"] = f("phone")
@@ -201,16 +204,16 @@ def add_person():
             img_path = row["image_path"] if row else None
             return jsonify({
                 "success": True, 
-                "message": f"{acc_type} profile added successfully", 
+                "message": t("profile_added_successfully", lang, type=acc_type), 
                 "id": person_id, 
                 "info": img_path
                 }), 201
             
     except pymysql.err.IntegrityError:
-        return jsonify({"message": "User already exists with this ID"}), 409
+        return jsonify({"message": t("user_exists_with_id", lang)}), 409
     except Exception as e:
         log_event("add_people_failed", phone, str(e))
-        return jsonify({"message": f"Database error: {str(e)}"}), 500
+        return jsonify({"message": t("database_error", lang, error=str(e))}), 500
 
 
 @user_routes.route('/members', methods=['POST'])
@@ -218,6 +221,7 @@ def get_info():
     conn = connect_to_db()
 
     data = request.get_json()
+    lang = data.get('language') or data.get('Language') or 'en'
     lastfetched = data.get('updatedSince')
     # member_id_list = data.get('member_id')
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
@@ -246,7 +250,7 @@ def get_info():
             }), 200
     except Exception as e:
         log_event("get_members_failed", "NULL", str(e))
-        return jsonify({"message": f"Database error: {str(e)}"}), 500
+        return jsonify({"message": t("database_error", lang, error=str(e))}), 500
     finally:
         conn.close()
 
@@ -254,11 +258,13 @@ def get_info():
 @user_routes.route("/routine", methods=["POST"])
 def get_routine():
     conn = connect_to_db()
+    lang = request.get_json().get("language") or "en"
     
     if conn is None:
-        return jsonify({"message": "Database connection failed."}), 500
+        return jsonify({"message": t("database_connection_failed", lang)}), 500
 
     data = request.get_json()
+    lang = data.get('language') or data.get('Language') or 'en'
     lastfetched = data.get("updatedSince")
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
@@ -282,7 +288,7 @@ def get_routine():
             }), 200
     except Exception as e:
         log_event("get_routine_failed", "NULL", str(e))
-        return jsonify({"message": f"Database error: {str(e)}"}), 500
+        return jsonify({"message": t("database_error", lang, error=str(e))}), 500
     finally:
         conn.close()
 

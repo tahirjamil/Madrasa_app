@@ -15,6 +15,7 @@ from config import Config
 from database import create_tables
 
 # API & Web Blueprints
+from helpers import is_maintenance_mode
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
@@ -133,7 +134,10 @@ csrf.exempt(admin_routes)
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
     host, port = "0.0.0.0", 8000
-    print(f"Maintenance Mode {os.getenv("MAINTENANCE_MODE")}")
+    if is_maintenance_mode():
+        print("Maintenance Mode enabled")
+    else:
+        print("Maintenance Mode disabled")
 
     if dev_mode == True:
         app.run(debug=True, host=host, port=port)

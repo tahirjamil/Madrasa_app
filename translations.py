@@ -180,9 +180,9 @@ TRANSLATIONS = {
         "ar": "حدث خطأ"
     },
     "maintenance_message": {
-        "en": "{msg}",
-        "bn": "{msg}",
-        "ar": "{msg}"
+        "en": "The system is under maintenance. Please try again later.",
+        "bn": "সিস্টেম মেন্টেনান্সে আছে। দয়া করে পরে আবার চেষ্টা করুন।",
+        "ar": "النظام تحت الصيانة. الرجاء المحاولة مرة أخرى لاحقًا."
     },
     "session_invalidated": {
         "en": "Session invalidated. Please log in again.",

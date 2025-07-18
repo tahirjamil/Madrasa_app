@@ -430,17 +430,13 @@ def undo_remove():
 @user_routes.route("/account/check", methods=['POST'])
 def get_account_status():
     auto_delete_users()
-    LOGOUT_MSG = "Session invalidated. Please log in again."
-    DEACTIVATE_MSG = "Account deactivated. Please contact support."
 
-    Maintenace = os.getenv("MAINTENANCE_MODE", False)
-    Maintenace_mssg = os.getenv("MAINTENANCE_MASSAGE", "Under maintenance")
     data = request.get_json()
     lang = data.get("language") or data.get("Language") or "en"
 
-    if Maintenace == True:
-        return jsonify({"action": "maintenance", "message": t("maintenance_message", lang, msg=Maintenace_mssg)}), 503
-    
+    LOGOUT_MSG = t("session_invalidated", lang)
+    DEACTIVATE_MSG = t("account_deactivated", lang)
+
     device_id = data.get("device_id")
     device_brand = data.get("device_brand")
     ip_address = data.get("ip_address")
@@ -488,16 +484,16 @@ def get_account_status():
         "is_foundation_member": data.get("is_foundation_member"),
     }
 
-    if not phone and not fullname:
+    if not phone and not fullname and not ip_address and not device_id and not device_brand:
         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
 
     for c in checks:
         if checks[c] is None:
-            log_event("account_check_missing_field", phone, f"Field {c} is missing")
-            return jsonify({"action": "logout", "message": t("session_invalidated", lang)}), 400
+            log_event("account_check_missing_field", ip_address, f"Field {c} is missing")
+            return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
 
     if not phone and not fullname:
-        return jsonify({"message": t("session_invalidated", lang)}), 400
+        return jsonify({"message": LOGOUT_MSG}), 400
 
     conn = connect_to_db()
     try:
@@ -512,13 +508,13 @@ def get_account_status():
             record = cursor.fetchone()
 
         if not record:
-            log_event("account_check_not_found", phone or user_id, "No matching user")
-            return jsonify({"action": "logout", "message": t("session_invalidated", lang)}), 401
+            log_event("account_check_not_found", ip_address or user_id, "No matching user")
+            return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
         # Check deactivation
         if record.get("deactivated_at"):
             log_event("account_check_deactivated", record["id"], "Account deactivated")
-            return jsonify({"action": "deactivate", "message": t("session_invalidated", lang)}), 401
+            return jsonify({"action": "deactivate", "message": DEACTIVATE_MSG}), 401
 
         # Compare fields
         for col, provided in checks.items():
@@ -540,11 +536,11 @@ def get_account_status():
                 # cast both to strings for comparison
                 if str(provided).strip() != str(db_val).strip():
                     log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided} != {db_val}, so {fullname} logged out")
-                    return jsonify({"action": "logout", "message": t("session_invalidated", lang)}), 401
+                    return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
                 if db_val:
                     if db_val.date() != provided_date:
-                        log_event("account_check_mismatch", record["id"], f"{col}: {provided_date} != {db_val}")
-                        return jsonify({"message": t("session_invalidated", lang)}), 401
+                        log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided_date} != {db_val}, so {fullname} logged out")
+                        return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
         cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id))
         result = cursor.fetchall()

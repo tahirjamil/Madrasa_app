@@ -15,8 +15,8 @@ from config import Config
 from database import create_tables
 
 # API & Web Blueprints
-from routes.user_routes import user_routes
 from routes.admin_routes import admin_routes
+from routes.user_routes import user_routes
 from routes.web_routes import web_routes
 
 # ─── App Setup ──────────────────────────────────────────────
@@ -134,9 +134,16 @@ def favicon():
     )
 
 # ─── Register Blueprints ────────────────────────────────────
-app.register_blueprint(user_routes)
 app.register_blueprint(admin_routes, url_prefix='/admin')
-app.register_blueprint(web_routes)
+
+if not os.getenv("MAINTENANCE_MODE", False):
+    app.register_blueprint(user_routes)
+    app.register_blueprint(web_routes)
+else:
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def maintenance(path):
+        return render_template("maintenance.html"), 503
 
 csrf.exempt(user_routes)
 csrf.exempt(admin_routes)

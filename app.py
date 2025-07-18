@@ -135,15 +135,8 @@ def favicon():
 
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')
-
-if not os.getenv("MAINTENANCE_MODE", False):
-    app.register_blueprint(user_routes)
-    app.register_blueprint(web_routes)
-else:
-    @app.route("/", defaults={"path": ""})
-    @app.route("/<path:path>")
-    def maintenance(path):
-        return render_template("maintenance.html"), 503
+app.register_blueprint(web_routes)
+app.register_blueprint(user_routes)
 
 csrf.exempt(user_routes)
 csrf.exempt(admin_routes)

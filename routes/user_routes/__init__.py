@@ -7,10 +7,13 @@ user_routes = Blueprint("user_routes", __name__)
 @user_routes.before_request
 def check_maintenance():
     lang = request.accept_languages.best_match(["en", "bn", "ar"])
-    if not os.getenv("MAINTENANCE_MODE", False):
+    if not is_maintenance_mode():
         return jsonify({"action": "maintenance", "message": t("maintenance_message", lang)}), 503
 
 # Import routes from other modules to register them
 from . import auth  # noqa: F401
 from . import payments  # noqa: F401
 from . import core  # noqa: F401
+
+def is_maintenance_mode():
+    return os.getenv("MAINTENANCE_MODE", "").lower() in ("1", "true", "yes", "on")

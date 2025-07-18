@@ -58,7 +58,7 @@ def require_api_key(f):
 
 # Maintenance Mode
 def is_maintenance_mode():
-    return os.getenv("MAINTENANCE_MODE", "").lower() in ("1", "true", "yes", "on")
+    return os.getenv("MAINTENANCE_MODE", "").lower() in ("1", "true", "yes", "on") or True
 
 # Delete Code
 def delete_code():

@@ -446,6 +446,11 @@ def get_account_status():
     fullname     = (data.get("name_en") or "").strip()
     member_id    = data.get("member_id")
 
+    if not ip_address and not device_id and not device_brand:
+        return jsonify({"action": "block", "message": t("unknown_device", lang)}), 400
+
+    if not phone or not fullname:
+        return jsonify({"success": True, "message": t("no_account_given", lang)}), 200
 
     checks = {
         "member_id":     member_id,
@@ -484,16 +489,10 @@ def get_account_status():
         "is_foundation_member": data.get("is_foundation_member"),
     }
 
-    if not phone and not fullname and not ip_address and not device_id and not device_brand:
-        return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
-
     for c in checks:
         if checks[c] is None:
             log_event("account_check_missing_field", ip_address, f"Field {c} is missing")
             return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
-
-    if not phone and not fullname:
-        return jsonify({"message": LOGOUT_MSG}), 400
 
     conn = connect_to_db()
     try:

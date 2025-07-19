@@ -134,7 +134,7 @@ csrf.exempt(admin_routes)
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
     host, port = "0.0.0.0", 8000
-    if is_maintenance_mode():
+    if is_maintenance_mode() == True:
         print("Maintenance Mode enabled")
     else:
         print("Maintenance Mode disabled")

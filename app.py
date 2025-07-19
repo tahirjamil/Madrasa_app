@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime
 from pathlib import Path
 from functools import wraps
@@ -10,6 +11,7 @@ from flask_cors import CORS
 from flask_wtf import CSRFProtect
 from dotenv import load_dotenv
 from waitress import serve
+import socket
 
 from config import Config
 from database import create_tables
@@ -19,6 +21,17 @@ from helpers import is_maintenance_mode
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
+
+# ─── Setup Logging ──────────────────────────────────────────
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('debug.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # ─── App Setup ──────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,12 +43,20 @@ env = BASE_DIR / ".env"
 dev_mode = False
 if dev_env.is_file():
     dev_mode = True
+    logger.info("Running in development mode")
+else:
+    logger.info("Running in production mode")
 
 load_dotenv(env)
 
 app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
+
+# Log important configuration
+logger.info(f"BASE_URL: {Config.BASE_URL}")
+logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
+logger.info(f"CORS enabled: {bool(CORS)}")
 
 RESTART_KEY = os.getenv("RESTART_KEY", "fallback-key")
 
@@ -54,7 +75,11 @@ def require_secret(f):
 os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
 
 with app.app_context():
-    create_tables()
+    try:
+        create_tables()
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Database initialization error: {str(e)}")
 
 # ─── Request/Response Logging ───────────────────────────────
 request_response_log = []
@@ -64,7 +89,13 @@ setattr(app, 'request_response_log', request_response_log)
 
 @app.before_request
 def log_every_request():
-    # don’t log the client‐side poll
+    # Log request details
+    logger.debug(f"Incoming request: {request.method} {request.path}")
+    logger.debug(f"Headers: {dict(request.headers)}")
+    logger.debug(f"Remote addr: {request.remote_addr}")
+    logger.debug(f"X-Forwarded-For: {request.headers.get('X-Forwarded-For')}")
+
+    # don't log the client‐side poll
     if request.endpoint == "admin_routes.info_data_admin":
         return
 
@@ -89,16 +120,29 @@ def log_every_request():
 
 @app.after_request
 def attach_response_data(response):
+    # Log response details
+    logger.debug(f"Response status: {response.status}")
+    logger.debug(f"Response headers: {dict(response.headers)}")
+    
     entry = getattr(g, "log_entry", None)
     if entry:
-        if response.content_type.startswith("application/json"):
+        if response.content_type and response.content_type.startswith("application/json"):
             try:
                 entry["res_json"] = response.get_json(silent=True)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error parsing JSON response: {str(e)}")
                 entry["res_json"] = None
         else:
             entry["res_json"] = None
     return response
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
+    return jsonify({
+        "error": "Internal server error",
+        "message": str(e)
+    }), 500
 
 # ─── Public Routes ──────────────────────────────────────────
 @app.route("/donate")
@@ -113,6 +157,7 @@ def home():
 # ─── Error & Favicon ────────────────────────────────────────
 @app.errorhandler(404)
 def not_found(e):
+    logger.warning(f"404 error: {request.path}")
     return render_template('404.html'), 404
 
 @app.route('/favicon.ico')
@@ -122,6 +167,29 @@ def favicon():
         'favicon.ico',
         mimetype='image/vnd.microsoft.icon'
     )
+
+# ─── Health Check ───────────────────────────────────────────
+@app.route('/health')
+def health_check():
+    try:
+        # Check database connection
+        with app.app_context():
+            create_tables()  # This will try to connect to the database
+        
+        return jsonify({
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "environment": "development" if dev_mode else "production",
+            "host_ip": socket.gethostbyname(socket.gethostname()),
+            "base_url": Config.BASE_URL
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')
@@ -134,16 +202,28 @@ csrf.exempt(admin_routes)
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":
     host, port = "0.0.0.0", 8000
+    
+    # Log startup configuration
+    logger.info(f"Starting server on {host}:{port}")
+    logger.info(f"Environment: {'Development' if dev_mode else 'Production'}")
+    logger.info(f"Maintenance Mode: {'Enabled' if is_maintenance_mode() else 'Disabled'}")
+    
     if is_maintenance_mode() == True:
-        print("Maintenance Mode enabled")
+        logger.warning("Maintenance Mode enabled")
     else:
-        print("Maintenance Mode disabled")
+        logger.info("Maintenance Mode disabled")
 
-    if dev_mode == True:
-        app.run(debug=True, host=host, port=port)
-    else:
-        # production
-        port = 80
-        URL = Config.BASE_URL
-        print(f"Quick logs available at {URL}/admin/info")
-        serve(app, host=host, port=port)
+    try:
+        if dev_mode == True:
+            logger.info("Starting development server...")
+            app.run(debug=True, host=host, port=port)
+        else:
+            # production
+            port = 80
+            URL = Config.BASE_URL
+            logger.info(f"Starting production server on port {port}")
+            logger.info(f"Quick logs available at {URL}/admin/info")
+            serve(app, host=host, port=port)
+    except Exception as e:
+        logger.critical(f"Server failed to start: {str(e)}", exc_info=True)
+        raise

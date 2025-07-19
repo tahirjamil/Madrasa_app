@@ -204,14 +204,7 @@ if __name__ == "__main__":
     host, port = "0.0.0.0", 8000
     
     # Log startup configuration
-    logger.info(f"Starting server on {host}:{port}")
-    logger.info(f"Environment: {'Development' if dev_mode else 'Production'}")
     logger.info(f"Maintenance Mode: {'Enabled' if is_maintenance_mode() else 'Disabled'}")
-    
-    if is_maintenance_mode() == True:
-        logger.warning("Maintenance Mode enabled")
-    else:
-        logger.info("Maintenance Mode disabled")
 
     try:
         if dev_mode == True:

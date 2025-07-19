@@ -5,7 +5,7 @@ Welcome to **Annur**. These Terms & Conditions ("Terms") govern your use of our 
 **App Details:**
 
 - **Name:** Annur
-- **Developers:** Tahir Jamil and Tareq Jamil
+- **Developers:** Tareq Jamil and Tahir Jamil
 - **Contact:** {{ contact_email }}
 
 ## 1. Age Restrictions

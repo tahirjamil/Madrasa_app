@@ -399,6 +399,10 @@ def undo_remove():
     data = request.get_json()
     phone = format_phone_number(data.get("phone"))
     fullname = data.get("fullname", "").strip()
+    lang = data.get("language") or "en"
+
+    if not phone or not fullname:
+        return jsonify({"message": t("all_fields_required", lang)}), 400
 
     conn = connect_to_db()
     try:
@@ -410,11 +414,11 @@ def undo_remove():
             user = cursor.fetchone()
 
             if not user or not user["deactivated_at"]:
-                return jsonify({"error": "No deactivated account found"}), 404
+                return jsonify({"message": "No deactivated account found"}), 404
 
             deactivated_at = user["deactivated_at"]
-            if (datetime.datetime.now() - deactivated_at).days > 7 and user["scheduled_deletion_at"]:
-                return jsonify({"error": "Undo period expired"}), 403
+            if (datetime.datetime.now() - deactivated_at).days > 14 and user["scheduled_deletion_at"]:
+                return jsonify({"message": "Undo period expired"}), 403
 
             cursor.execute("""
                 UPDATE users
@@ -423,7 +427,10 @@ def undo_remove():
                 WHERE id = %s
             """, (user["id"],))
             conn.commit()
-        return jsonify({"message": "Account reactivated"}), 200
+        return jsonify({"success": True, "message": "Account reactivated"}), 200
+    except Exception as e:
+        log_event("account_reactivation_failed", phone, str(e))
+        return jsonify({"message": t("account_reactivation_failed", lang)}), 500
     finally:
         conn.close()
 

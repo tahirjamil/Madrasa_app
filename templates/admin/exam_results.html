@@ -17,7 +17,7 @@
     {% endif %}
   {% endwith %}
 
-  <!-- Upload Form -->
+  {# <!-- Upload Form -->
   <form action="{{ url_for('admin_routes.exam_results') }}" method="POST"
         enctype="multipart/form-data" class="mb-4 row g-2 align-items-end">
 
@@ -50,7 +50,7 @@
     <div class="col-auto">
       <button type="submit" class="btn btn-success">Add Result</button>
     </div>
-  </form>
+  </form> #} {# TODO: Disabled for view-only mode #}
 
   <!-- Filter controls -->
   <div class="row g-2 mb-3">

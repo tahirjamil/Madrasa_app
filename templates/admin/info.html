@@ -32,8 +32,8 @@
 
   <div class="d-flex align-items-center mb-2">
     <p class="text-muted mb-0 me-3">
-      Showing last <span id="entry-count">{{ logs|length }}</span> entries.
-    </p>
+    Showing last <span id="entry-count">{{ logs|length }}</span> entries.
+  </p>
     <button id="pause-refresh" class="btn btn-outline-primary btn-sm ms-auto">Pause Auto-Refresh</button>
   </div>
 
@@ -189,7 +189,7 @@
         let toPrepend = firstOldIdx === -1 ? newData : newData.slice(0, firstOldIdx);
         if (toPrepend.length > 0) {
           currentData = toPrepend.concat(currentData);
-          applyFilters();
+      applyFilters();
         }
       }
     } catch (err) {

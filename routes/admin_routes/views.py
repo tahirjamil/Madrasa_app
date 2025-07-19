@@ -217,53 +217,53 @@ def info_admin():
 
 # ------------------ Exam Results ------------------------
 
-# TODO: Disabled for view-only mode
-# @admin_routes.route('/exam_results', methods=['GET', 'POST'])
-# def exam_results():
-#     # auth
-#     if not session.get('admin_logged_in'):
-#         return redirect(url_for('admin_routes.login'))
+@admin_routes.route('/exam_results', methods=['GET'])
+def exam_results():
+    # auth
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
 
-#     if request.method == 'POST':
-#         username    = request.form.get('username')
-#         password    = request.form.get('password')
-#         exam_date   = request.form.get('exam_date')
-#         exam_type   = request.form.get('exam_type')
-#         exam_class  = request.form.get('exam_class')
-#         file        = request.files.get('file')
+    # TODO: Disabled for view-only mode
+    # if request.method == 'POST':
+    #     username    = request.form.get('username')
+    #     password    = request.form.get('password')
+    #     exam_date   = request.form.get('exam_date')
+    #     exam_type   = request.form.get('exam_type')
+    #     exam_class  = request.form.get('exam_class')
+    #     file        = request.files.get('file')
 
-#         ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-#         ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+    #     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+    #     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
 
-#         if username != ADMIN_USER or password != ADMIN_PASS:
-#             flash("Unauthorized", "danger")
-#             return redirect(url_for('admin_routes.exam_results'))
+    #     if username != ADMIN_USER or password != ADMIN_PASS:
+    #         flash("Unauthorized", "danger")
+    #         return redirect(url_for('admin_routes.exam_results'))
 
-#         if file and file.filename and allowed_exam_file(file.filename):
-#             filename = secure_filename(file.filename)
-#             filepath = os.path.join(EXAM_DIR, filename)
-#             file.save(filepath)
+    #     if file and file.filename and allowed_exam_file(file.filename):
+    #         filename = secure_filename(file.filename)
+    #         filepath = os.path.join(EXAM_DIR, filename)
+    #         file.save(filepath)
 
-#             results = load_results()
-#             results.append({
-#                 "filename":    filename,
-#                 "exam_date":   exam_date,
-#                 "exam_type":   exam_type,
-#                 "exam_class":  exam_class,
-#                 "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-#             })
-#             save_results(results)
+    #         results = load_results()
+    #         results.append({
+    #             "filename":    filename,
+    #             "exam_date":   exam_date,
+    #             "exam_type":   exam_type,
+    #             "exam_class":  exam_class,
+    #             "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #         })
+    #         save_results(results)
 
-#             flash("Exam result uploaded.", "success")
-#             log_event("exam_uploaded", username, filename)
-#         else:
-#             flash("Invalid file format.", "warning")
+    #         flash("Exam result uploaded.", "success")
+    #         log_event("exam_uploaded", username, filename)
+    #     else:
+    #         flash("Invalid file format.", "warning")
 
-#         return redirect(url_for('admin_routes.exam_results'))
+    #     return redirect(url_for('admin_routes.exam_results'))
 
-#     # GET: show all together
-#     results = load_results()
-#     return render_template("admin/exam_results.html", results=results)
+    # GET: show all together
+    results = load_results()
+    return render_template("admin/exam_results.html", results=results)
 
 
 # TODO: Disabled for view-only mode
@@ -420,64 +420,65 @@ def members():
 
 # ------------------- Notices -----------------------
 
-# TODO: Disabled for view-only mode
-# @admin_routes.route('/notice', methods=['GET', 'POST'])
-# def notice_page():
-#     if not session.get('admin_logged_in'):
-#         return redirect(url_for('admin_routes.login'))
-#     if request.method == 'POST':
-#         username = request.form.get('username')
-#         password = request.form.get('password')
-#         target_date = request.form.get('target_date')
-#         file = request.files.get('file')
+@admin_routes.route('/notice', methods=['GET'])
+def notice_page():
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+    
+    # TODO: Disabled for view-only mode
+    # if request.method == 'POST':
+    #     username = request.form.get('username')
+    #     password = request.form.get('password')
+    #     target_date = request.form.get('target_date')
+    #     file = request.files.get('file')
 
-#         ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-#         ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
+    #     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+    #     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
 
-#         if username != ADMIN_USER or password != ADMIN_PASS:
-#             flash("Unauthorized", "danger")
-#             return redirect(url_for('admin_routes.notice_page'))
+    #     if username != ADMIN_USER or password != ADMIN_PASS:
+    #         flash("Unauthorized", "danger")
+    #         return redirect(url_for('admin_routes.notice_page'))
 
-#         if file and file.filename and allowed_notice_file(file.filename):
-#             filename = secure_filename(file.filename)
-#             filepath = os.path.join(NOTICES_DIR, filename)
-#             file.save(filepath)
+    #     if file and file.filename and allowed_notice_file(file.filename):
+    #         filename = secure_filename(file.filename)
+    #         filepath = os.path.join(NOTICES_DIR, filename)
+    #         file.save(filepath)
 
-#             notices = load_notices()
-#             notices.append({
-#                 "filename": filename,
-#                 "target_date": target_date,
-#                 "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-#             })
-#             save_notices(notices)
+    #         notices = load_notices()
+    #         notices.append({
+    #             "filename": filename,
+    #             "target_date": target_date,
+    #             "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #         })
+    #         save_notices(notices)
 
-#             flash("Notice uploaded.", "success")
-#             log_event("notice_uploaded", username, filename)
-#         else:
-#             flash("Invalid file format.", "warning")
+    #         flash("Notice uploaded.", "success")
+    #         log_event("notice_uploaded", username, filename)
+    #     else:
+    #         flash("Invalid file format.", "warning")
 
-#         return redirect(url_for('admin_routes.notice_page'))
+    #     return redirect(url_for('admin_routes.notice_page'))
 
-#     notices = load_notices()
-#     today = date.today()
-#     upcoming, ongoing, past = [], [], []
+    notices = load_notices()
+    today = date.today()
+    upcoming, ongoing, past = [], [], []
 
-#     for n in notices:
-#         try:
-#             n_date = datetime.strptime(n['target_date'], '%Y-%m-%d').date()
-#             if n_date > today:
-#                 upcoming.append(n)
-#             elif n_date == today:
-#                 ongoing.append(n)
-#             else:
-#                 past.append(n)
-#         except Exception:
-#             past.append(n)
+    for n in notices:
+        try:
+            n_date = datetime.strptime(n['target_date'], '%Y-%m-%d').date()
+            if n_date > today:
+                upcoming.append(n)
+            elif n_date == today:
+                ongoing.append(n)
+            else:
+                past.append(n)
+        except Exception:
+            past.append(n)
 
-#     return render_template("admin/notice.html",
-#                            upcoming=upcoming,
-#                            ongoing=ongoing,
-#                            past=past)
+    return render_template("admin/notice.html",
+                           upcoming=upcoming,
+                           ongoing=ongoing,
+                           past=past)
 
 
 # TODO: Disabled for view-only mode
@@ -603,61 +604,61 @@ def routine():
 
 # -------------------- Event / Function ------------------------
 
-# TODO: Disabled for view-only mode
-# @admin_routes.route('/events', methods=['GET', 'POST'])
-# def events():
-#     # ─── require login ────────────────────────────────────────────
-#     if not session.get('admin_logged_in'):
-#         return redirect(url_for('admin_routes.login'))
+@admin_routes.route('/events', methods=['GET'])
+def events():
+    # ─── require login ────────────────────────────────────────────
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
 
-#     conn = connect_to_db()
-#     events = []
-#     try:
-#         with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-#             # ─── handle form submission ────────────────────────────
-#             if request.method == 'POST':
-#                 username     = request.form.get('username', '').strip()
-#                 password     = request.form.get('password', '').strip()
-#                 ADMIN_USER   = os.getenv("ADMIN_USERNAME")
-#                 ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
+    conn = connect_to_db()
+    events = []
+    try:
+        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            # TODO: Disabled for view-only mode
+            # ─── handle form submission ────────────────────────────
+            # if request.method == 'POST':
+            #     username     = request.form.get('username', '').strip()
+            #     password     = request.form.get('password', '').strip()
+            #     ADMIN_USER   = os.getenv("ADMIN_USERNAME")
+            #     ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
 
-#                 if username != ADMIN_USER or password != ADMIN_PASS:
-#                     flash("❌ Invalid admin credentials.", "danger")
-#                 else:
-#                     title        = request.form.get('title', '').strip()
-#                     evt_type     = request.form.get('type')
-#                     date_str     = request.form.get('date')       # YYYY-MM-DD
-#                     time_str     = request.form.get('time')       # HH:MM
-#                     function_url = request.form.get('function_url') or None
+            #     if username != ADMIN_USER or password != ADMIN_PASS:
+            #         flash("❌ Invalid admin credentials.", "danger")
+            #     else:
+            #         title        = request.form.get('title', '').strip()
+            #         evt_type     = request.form.get('type')
+            #         date_str     = request.form.get('date')       # YYYY-MM-DD
+            #         time_str     = request.form.get('time')       # HH:MM
+            #         function_url = request.form.get('function_url') or None
 
-#                     # Combine into a full timestamp string
-#                     # MySQL will parse "YYYY-MM-DD HH:MM"
-#                     datetime_str = f"{date_str} {time_str}"
+            #         # Combine into a full timestamp string
+            #         # MySQL will parse "YYYY-MM-DD HH:MM"
+            #         datetime_str = f"{date_str} {time_str}"
 
-#                     cursor.execute("""
-#                         INSERT INTO events
-#                           (type, title, time, date, function_url)
-#                         VALUES (%s, %s, %s, %s, %s)
-#                     """, (evt_type, title, datetime_str, date_str, function_url))
-#                     conn.commit()
-#                     flash("✅ Event added successfully.", "success")
+            #         cursor.execute("""
+            #             INSERT INTO events
+            #               (type, title, time, date, function_url)
+            #             VALUES (%s, %s, %s, %s, %s)
+            #         """, (evt_type, title, datetime_str, date_str, function_url))
+            #         conn.commit()
+            #         flash("✅ Event added successfully.", "success")
 
-#             # ─── fetch all events ────────────────────────────────────
-#             cursor.execute("""
-#                 SELECT event_id, type, title, date, time, function_url
-#                   FROM events
-#                  ORDER BY date  DESC,
-#                           time  DESC
-#             """)
-#             events = cursor.fetchall()
+            # ─── fetch all events ────────────────────────────────────
+            cursor.execute("""
+                SELECT event_id, type, title, date, time, function_url
+                  FROM events
+                 ORDER BY date  DESC,
+                          time  DESC
+            """)
+            events = cursor.fetchall()
 
-#     except Exception as e:
-#         flash(f"⚠️ Database error: {e}", "danger")
+    except Exception as e:
+        flash(f"⚠️ Database error: {e}", "danger")
 
-#     finally:
-#         conn.close()
+    finally:
+        conn.close()
 
-#     return render_template("admin/events.html", events=events)
+    return render_template("admin/events.html", events=events)
 
 
 
@@ -671,59 +672,59 @@ if not os.path.exists(PIC_INDEX_PATH):
         json.dump([], f)
 
 
-# TODO: Disabled for view-only mode
-# @admin_routes.route('/madrasa_pictures', methods=['GET', 'POST'])
-# def madrasa_pictures():
-#     # 1) Require admin
-#     if not session.get('admin_logged_in'):
-#         return redirect(url_for('admin_routes.login'))
+@admin_routes.route('/madrasa_pictures', methods=['GET'])
+def madrasa_pictures():
+    # 1) Require admin
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
 
-#     # 2) Handle upload
-#     if request.method == 'POST':
-#         username     = request.form.get('username', '')
-#         password     = request.form.get('password', '')
-#         class_name   = request.form.get('class_name', '').strip()
-#         floor_number = request.form.get('floor_number', '').strip()
-#         serial       = request.form.get('serial', '').strip()
-#         file         = request.files.get('file')
+    # TODO: Disabled for view-only mode
+    # 2) Handle upload
+    # if request.method == 'POST':
+    #     username     = request.form.get('username', '')
+    #     password     = request.form.get('password', '')
+    #     class_name   = request.form.get('class_name', '').strip()
+    #     floor_number = request.form.get('floor_number', '').strip()
+    #     serial       = request.form.get('serial', '').strip()
+    #     file         = request.files.get('file')
 
-#         ADMIN_USER = os.getenv('ADMIN_USERNAME')
-#         ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
+    #     ADMIN_USER = os.getenv('ADMIN_USERNAME')
+    #     ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
 
-#         if username != ADMIN_USER or password != ADMIN_PASS:
-#             flash('Invalid admin credentials', 'danger')
-#             return redirect(url_for('admin_routes.madrasa_pictures'))
+    #     if username != ADMIN_USER or password != ADMIN_PASS:
+    #         flash('Invalid admin credentials', 'danger')
+    #         return redirect(url_for('admin_routes.madrasa_pictures'))
 
-#         if not file or not file.filename:
-#             flash('No file selected', 'danger')
-#             return redirect(url_for('admin_routes.madrasa_pictures'))
+    #     if not file or not file.filename:
+    #         flash('No file selected', 'danger')
+    #         return redirect(url_for('admin_routes.madrasa_pictures'))
 
-#         filename = secure_filename(file.filename)
-#         save_path = os.path.join(MADRASA_IMG_DIR, filename)
-#         file.save(save_path)
+    #     filename = secure_filename(file.filename)
+    #     save_path = os.path.join(MADRASA_IMG_DIR, filename)
+    #     file.save(save_path)
 
-#         # 3) Update index.json
-#         with open(PIC_INDEX_PATH, 'r+') as idx:
-#             data = json.load(idx)
-#             data.append({
-#                 'filename'    : filename,
-#                 'class_name'  : class_name,
-#                 'floor_number': floor_number,
-#                 'serial'      : serial,
-#                 'uploaded_at' : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-#             })
-#             idx.seek(0)
-#             json.dump(data, idx, indent=2)
-#             idx.truncate()
+    #     # 3) Update index.json
+    #     with open(PIC_INDEX_PATH, 'r+') as idx:
+    #         data = json.load(idx)
+    #         data.append({
+    #             'filename'    : filename,
+    #             'class_name'  : class_name,
+    #             'floor_number': floor_number,
+    #             'serial'      : serial,
+    #             'uploaded_at' : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #         })
+    #         idx.seek(0)
+    #         json.dump(data, idx, indent=2)
+    #         idx.truncate()
 
-#         flash('Picture uploaded!', 'success')
-#         return redirect(url_for('admin_routes.madrasa_pictures'))
+    #     flash('Picture uploaded!', 'success')
+    #     return redirect(url_for('admin_routes.madrasa_pictures'))
 
-#     # 4) On GET: load current list
-#     with open(PIC_INDEX_PATH) as idx:
-#         pictures = json.load(idx)
+    # 4) On GET: load current list
+    with open(PIC_INDEX_PATH) as idx:
+        pictures = json.load(idx)
 
-#     return render_template('admin/madrasa_pictures.html', pictures=pictures)
+    return render_template('admin/madrasa_pictures.html', pictures=pictures)
 
 
 # TODO: Disabled for view-only mode
@@ -763,7 +764,7 @@ if not os.path.exists(PIC_INDEX_PATH):
 
 # ---------------------- Exam -----------------------------
 
-@admin_routes.route('/admin/events/exams', methods=['GET', 'POST'])
+@admin_routes.route('/admin/events/exams', methods=['GET'])
 def exams():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -778,91 +779,93 @@ def exams():
     conn.close()
     return render_template('admin/exams.html', exams=exams)
 
-@admin_routes.route('/admin/add_exam', methods=['POST'])
-def add_exam():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/admin/add_exam', methods=['POST'])
+# def add_exam():
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    # ✅ Re-check admin credentials
-    username = request.form.get('username')
-    password = request.form.get('password')
+#     # ✅ Re-check admin credentials
+#     username = request.form.get('username')
+#     password = request.form.get('password')
 
-    if username != current_app.config['ADMIN_USERNAME'] or password != current_app.config['ADMIN_PASSWORD']:
-        return "Invalid admin credentials", 403
+#     if username != current_app.config['ADMIN_USERNAME'] or password != current_app.config['ADMIN_PASSWORD']:
+#         return "Invalid admin credentials", 403
 
-    # ✅ Get form fields
-    cls = request.form.get('class')
-    gender = request.form.get('gender')
-    weekday = request.form.get('weekday')
-    date = request.form.get('date')
+#     # ✅ Get form fields
+#     cls = request.form.get('class')
+#     gender = request.form.get('gender')
+#     weekday = request.form.get('weekday')
+#     date = request.form.get('date')
 
-    # ✅ Combine date + time
-    def combine(date_str, time_str):
-        return f"{date_str} {time_str}:00" if date_str and time_str else None
+#     # ✅ Combine date + time
+#     def combine(date_str, time_str):
+#         return f"{date_str} {time_str}:00" if date_str and time_str else None
 
-    start_time = combine(date, request.form.get('start_time'))
-    end_time = combine(date, request.form.get('end_time'))
-    sec_start_time = combine(date, request.form.get('sec_start_time'))
-    sec_end_time = combine(date, request.form.get('sec_end_time'))
+#     start_time = combine(date, request.form.get('start_time'))
+#     end_time = combine(date, request.form.get('end_time'))
+#     sec_start_time = combine(date, request.form.get('sec_start_time'))
+#     sec_end_time = combine(date, request.form.get('sec_end_time'))
 
-    # ✅ Book fields
-    book_mode = request.form.get('book_mode')
+#     # ✅ Book fields
+#     book_mode = request.form.get('book_mode')
 
-    conn = connect_to_db()
-    cursor = conn.cursor()
+#     conn = connect_to_db()
+#     cursor = conn.cursor()
 
-    if book_mode == 'id':
-        book_id = request.form.get('book_id')
-        cursor.execute("SELECT book_en, book_bn, book_ar FROM book WHERE book_id = %s", (book_id,))
-        book = cursor.fetchone()
-        if not book:
-            conn.close()
-            return "Book ID not found", 400
-        book_en, book_bn, book_ar = book
-    else:
-        book_en = request.form.get('book_en')
-        book_bn = request.form.get('book_bn')
-        book_ar = request.form.get('book_ar')
+#     if book_mode == 'id':
+#         book_id = request.form.get('book_id')
+#         cursor.execute("SELECT book_en, book_bn, book_ar FROM book WHERE book_id = %s", (book_id,))
+#         book = cursor.fetchone()
+#         if not book:
+#             conn.close()
+#             return "Book ID not found", 400
+#         book_en, book_bn, book_ar = book
+#     else:
+#         book_en = request.form.get('book_en')
+#         book_bn = request.form.get('book_bn')
+#         book_ar = request.form.get('book_ar')
 
-    # ✅ Insert exam
-    cursor.execute("""
-        INSERT INTO exam (
-            class, gender, weekday, date,
-            start_time, end_time, sec_start_time, sec_end_time,
-            book_en, book_bn, book_ar
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        cls, gender, weekday, date,
-        start_time, end_time, sec_start_time, sec_end_time,
-        book_en, book_bn, book_ar
-    ))
+#     # ✅ Insert exam
+#     cursor.execute("""
+#         INSERT INTO exam (
+#             class, gender, weekday, date,
+#             start_time, end_time, sec_start_time, sec_end_time,
+#             book_en, book_bn, book_ar
+#         )
+#         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+#     """, (
+#         cls, gender, weekday, date,
+#         start_time, end_time, sec_start_time, sec_end_time,
+#         book_en, book_bn, book_ar
+#     ))
 
-    conn.commit()
-    conn.close()
+#     conn.commit()
+#     conn.close()
 
-    return redirect(url_for('admin_routes.exams'))
+#     return redirect(url_for('admin_routes.exams'))
 
-@admin_routes.route('/members/delete_pending/<int:verify_people_id>', methods=['POST'])
-def delete_pending_member(verify_people_id):
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/members/delete_pending/<int:verify_people_id>', methods=['POST'])
+# def delete_pending_member(verify_people_id):
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
-            conn.commit()
-            flash("Pending verification deleted.", "info")
-            log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
-    except Exception as e:
-        conn.rollback()
-        flash(f"Error deleting pending verification: {e}", "danger")
-        log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
-    finally:
-        conn.close()
+#     conn = connect_to_db()
+#     try:
+#         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+#             cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
+#             conn.commit()
+#             flash("Pending verification deleted.", "info")
+#             log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
+#     except Exception as e:
+#         conn.rollback()
+#         flash(f"Error deleting pending verification: {e}", "danger")
+#         log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
+#     finally:
+#         conn.close()
 
-    return redirect(url_for('admin_routes.members'))
+#     return redirect(url_for('admin_routes.members'))
 
 # TODO: Disabled for view-only mode
 # @admin_routes.route('/payment/<modify>', methods=['GET', 'POST'])

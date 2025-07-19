@@ -485,7 +485,7 @@ def get_account_status():
     }
 
     if not phone or not fullname:
-        return jsonify({"success": True, "message": t("no_account_given", lang)}), 200
+        return jsonify({"success": True, "action": "deactivate", "message": t("no_account_given", lang)}), 200
 
     # if not ip_address and not device_id and not device_brand:
     #     return jsonify({"action": "block", "message": t("unknown_device", lang)}), 400

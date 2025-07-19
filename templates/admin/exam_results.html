@@ -95,7 +95,7 @@
           <td class="cell-class">{{ r.exam_class }}</td>
           <td>{{ r.uploaded_at }}</td>
           <td>
-            <form method="POST"
+            {# <form method="POST"
                   action="{{ url_for('admin_routes.delete_exam_result', filename=r.filename) }}"
                   class="delete-form d-inline">
 
@@ -104,7 +104,7 @@
               <input type="password" name="password" placeholder="Password"
                      required class="form-control form-control-sm d-inline-block w-auto mb-1">
               <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-            </form>
+            </form> #} {# TODO: Disabled for view-only mode #}
           </td>
         </tr>
         {% else %}

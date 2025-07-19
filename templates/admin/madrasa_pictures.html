@@ -7,7 +7,7 @@
   <!-- Header + Add-Picture toggle button -->
   <div class="d-flex justify-content-between align-items-center my-4">
     <h2 class="mb-0">📸 Madrasa Gallery</h2>
-    <button
+    {# <button
       class="btn btn-sm btn-primary"
       type="button"
       data-bs-toggle="collapse"
@@ -15,10 +15,10 @@
       aria-expanded="false"
       aria-controls="uploadForm">
       + Add Picture
-    </button>
+    </button> #} {# TODO: Disabled for view-only mode #}
   </div>
 
-  <!-- Collapsible Upload Form -->
+  {# <!-- Collapsible Upload Form -->
   <div class="collapse mb-4" id="uploadForm">
     <div class="card card-body">
       <form
@@ -57,6 +57,7 @@
       </form>
     </div>
   </div>
+  #} {# TODO: Disabled for view-only mode #}
 
   <!-- Flash messages -->
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -85,7 +86,7 @@
             <p class="mb-1"><strong>Class:</strong> {{ pic.class_name }}</p>
             <p class="mb-1"><strong>Floor:</strong> {{ pic.floor_number }}</p>
             <p class="mb-1"><strong>Serial:</strong> {{ pic.serial }}</p>
-            <form
+            {# <form
               method="POST"
               action="{{ url_for('admin_routes.delete_picture', filename=pic.filename) }}">
               <input type="hidden" name="username" value="admin">
@@ -98,7 +99,7 @@
               <button type="submit" class="btn btn-sm btn-danger w-100">
                 Delete
               </button>
-            </form>
+            </form> #} {# TODO: Disabled for view-only mode #}
           </div>
         </div>
       </div>

@@ -438,9 +438,6 @@ def undo_remove():
 def get_account_status():
     auto_delete_users()
 
-    if 'test' == 'test':
-        return jsonify({"action": "block", "message": "test"}), 400
-
     data = request.get_json()
     lang = data.get("language") or data.get("Language") or "en"
 
@@ -460,7 +457,7 @@ def get_account_status():
         return jsonify({"action": "block", "message": t("unknown_device", lang)}), 400
 
     if not phone or not fullname:
-        return jsonify({"success": True, "message": t("no_account_given", lang)}), 200
+        return jsonify({"success": True, "action": "logout", "message": t("no_account_given", lang)}), 200
 
     checks = {
         "member_id":     member_id,

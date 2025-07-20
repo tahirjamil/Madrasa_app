@@ -7,7 +7,7 @@ import pymysql
 from database import connect_to_db
 from logger import log_event
 from helpers import (validate_fullname, validate_password, auto_delete_users,
-send_sms, format_phone_number,
+send_sms, format_phone_number, is_device_unsafe,
 generate_code, check_code, send_email, get_email)
 from translations import t
 import datetime, os
@@ -27,6 +27,13 @@ def register():
     user_code = data.get("code")
     lang = data.get("language") or data.get("Language") or "en"
 
+    # Device Verify
+    device_id = data.get("device_id")
+    ip_address = data.get("ip_address")
+
+    if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or email or fullname):
+        return jsonify({"message": t("unknown_device", lang)}), 400
+
     if not fullname or not phone or not password or not user_code:
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
         return jsonify({"message": t("all_fields_including_code_required", lang)}), 400
@@ -43,8 +50,8 @@ def register():
     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
         try:
             cursor.execute(
-                "INSERT INTO users (fullname, phone, password, email) VALUES (%s, %s, %s, %s)",
-                (fullname, formatted_phone, hashed_password, email)
+                "INSERT INTO users (fullname, phone, password, email, ip_address) VALUES (%s, %s, %s, %s, %s)",
+                (fullname, formatted_phone, hashed_password, email, ip_address)
             )
             conn.commit()
 
@@ -89,6 +96,13 @@ def login():
     phone = data.get("phone")
     password = data.get("password")
     lang = data.get("language") or "en"
+
+    # Device Verify
+    device_id = data.get("device_id")
+    ip_address = data.get("ip_address")
+
+    if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or fullname):
+        return jsonify({"message": t("unknown_device", lang)}), 400
 
     if not fullname or not phone or not password:
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
@@ -164,6 +178,13 @@ def send_verification_code():
     signature = data.get("app_signature")
     email = data.get("email")
 
+    # Device Verify
+    device_id = data.get("device_id")
+    ip_address = data.get("ip_address")
+
+    if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or email or fullname):
+        return jsonify({"message": t("unknown_device", lang)}), 400
+
     if not phone or not fullname:
         return jsonify({"message": t("phone_and_fullname_required", lang)}), 400
     
@@ -201,14 +222,13 @@ def send_verification_code():
 
             # Send verification code
             code = generate_code()
+            sql = "INSERT INTO verifications (phone, code, ip_address) VALUES (%s, %s, %s)"
+            params = (formatted_phone, code, ip_address)
             
             if count < SMS_LIMIT_PER_HOUR:
                     # Send SMS
                     if send_sms(phone=formatted_phone, signature=signature, code=code,):
-                        cursor.execute(
-                            "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
-                            (formatted_phone, code)
-                        )
+                        cursor.execute(sql, params)
                         conn.commit()
                         return jsonify({"success": True, "message": t("verification_sms_sent", lang, target=formatted_phone)}), 200
                         # If SMS fails, fall back to email below
@@ -217,10 +237,7 @@ def send_verification_code():
             if email:
                 if count < EMAIL_LIMIT_PER_HOUR:
                     if send_email(to_email=email, code=code):
-                        cursor.execute(
-                            "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
-                            (formatted_phone, code)
-                        )
+                        cursor.execute(sql, params)
                         conn.commit()
                         return jsonify({"success": True, "message": t("verification_email_sent", lang, target=email)}), 200
                         # else fall through to failure
@@ -249,6 +266,13 @@ def reset_password():
     new_password = data.get("new_password")
     lang = data.get("language") or data.get("Language") or "en"
 
+    # Device Verify
+    device_id = data.get("device_id")
+    ip_address = data.get("ip_address")
+
+    if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or fullname):
+        return jsonify({"message": t("unknown_device", lang)}), 400
+    
     # Check required fields (except old_password and code, because one of them must be present)
     if not all([phone, fullname]):
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
@@ -289,8 +313,8 @@ def reset_password():
 
         # Update the password
         cursor.execute(
-            "UPDATE users SET password = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
-            (hashed_password, fullname, formatted_phone)
+            "UPDATE users SET password = %s AND ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+            (hashed_password, ip_address, fullname, formatted_phone)
         )
         conn.commit()
         return jsonify({"success": True, "message": t("password_reset_successful", lang)}), 201

@@ -57,7 +57,7 @@ def require_api_key(f):
         return f(*args, **kwargs)
     return decorated
 
-# Api key verify
+# API Key Verify
 def is_valid_api_key(api_key):
     default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
 
@@ -75,6 +75,66 @@ def is_maintenance_mode():
     if verify == True or verify.lower() in ("true", "yes", "on"):
         check = True
     return check
+
+# Blocker
+def blocker(info):
+    conn = connect_to_db()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) AS blocked FROM blocker WHERE need_check = 1")
+            result = cursor.fetchone()
+            need_check = result["blocked"]
+
+            if need_check > 3:
+                return True
+            else:
+                return None
+    except pymysql.IntegrityError as e:
+        log_event("check_blocker_failed", info, f"failed to check blocker : {e}")
+        return None
+    finally:
+        conn.close()
+
+# Device Verification
+def is_device_unsafe(ip_address, device_id, info=None):
+    dev_email = os.getenv("DEV_EMAIL")
+    madrasa_email = os.getenv("EMAIL_ADDRESS")
+    dev_phone = os.getenv("DEV_PHONE")
+    madrasa_phone = os.getenv("MADRASA_PHONE")
+
+    if not ip_address or device_id:
+        log_event("security_breach", ip_address or device_id or info, "need to take action")
+
+        for email in [dev_email, madrasa_email]:
+            send_email(subject="Security Breach", body=f"""An Unknown device tried to access the app
+                     \nip_address: {ip_address}
+                     device_id: {device_id}
+                     info: {info}
+                     \n@An-Nur.app""", to_email=email)
+            
+        for phone in [dev_phone, madrasa_phone]:
+            send_sms(phone=phone, msg=f"""Security Breach
+                     \nAn Unknown device tried to access the app
+                     \nip_address: {ip_address}
+                     device_id: {device_id}
+                     info: {info}
+                     \n@An-Nur.app""")
+        
+        conn = connect_to_db()
+        basic_info = ip_address or device_id or "Basic Info Breached"
+        additional_info = info or "NULL"
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("INSERT INTO blocker (basic_info, additional_info) VALUES (%s, %s, %s)", (basic_info, additional_info))
+                conn.commit()
+                return True
+        except pymysql.IntegrityError as e:
+            log_event("update_blocker_failed", info, f"failed to update blocker : {e}")
+            return True
+        finally:
+            conn.close()
+    else:
+        return None
 
 # Delete Code
 def delete_code():

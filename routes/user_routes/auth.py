@@ -457,7 +457,7 @@ def get_account_status():
         return jsonify({"action": "block", "message": t("unknown_device", lang)}), 400
 
     if not phone or not fullname:
-        return jsonify({"success": True, "action": "block", "message": t("no_account_given", lang)}), 200
+        return jsonify({"success": True, "action": "maintenance", "message": t("no_account_given", lang)}), 200
 
     checks = {
         "member_id":     member_id,

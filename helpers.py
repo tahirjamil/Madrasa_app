@@ -57,6 +57,17 @@ def require_api_key(f):
         return f(*args, **kwargs)
     return decorated
 
+# Api key verify
+def is_valid_api_key(api_key):
+    default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
+
+    if not default_api:
+        return True
+    if api_key != default_api:
+        return None
+    else:
+        return True
+
 # Maintenance Mode
 def is_maintenance_mode():
     check = None

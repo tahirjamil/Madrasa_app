@@ -431,6 +431,9 @@ def undo_remove():
 def get_account_status():
     auto_delete_users()
 
+    if 'test' == 'test':
+        return jsonify({"action": "block", "message": "test"}), 400
+
     data = request.get_json()
     lang = data.get("language") or data.get("Language") or "en"
 

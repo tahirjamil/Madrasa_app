@@ -402,7 +402,7 @@ def undo_remove():
     lang = data.get("language") or "en"
 
     if not phone or not fullname:
-        return jsonify({"message": t("all_fields_required", lang)}), 400
+        return jsonify({"success": True, "message": t("all_fields_required", lang)}), 400
 
     conn = connect_to_db()
     try:
@@ -457,7 +457,7 @@ def get_account_status():
         return jsonify({"action": "block", "message": t("unknown_device", lang)}), 400
 
     if not phone or not fullname:
-        return jsonify({"success": True, "action": "maintenance", "message": t("no_account_given", lang)}), 200
+        return jsonify({"success": True, "action": "deactivate", "message": t("no_account_given", lang)}), 200
 
     checks = {
         "member_id":     member_id,

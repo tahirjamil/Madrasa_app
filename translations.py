@@ -9,14 +9,24 @@ TRANSLATIONS = {
         "bn": "{target} ঠিকানায় ভেরিফিকেশন কোড পাঠানো হয়েছে",
         "ar": "تم إرسال رمز التحقق إلى {target}"
     },
+    "your_code_is": {
+        "en": "Your verification code is: {code}",
+        "bn": "আপনার যাচাইকরণ কোডটি হলো: {code}",
+        "ar": "رمز التحقق الخاص بك هو: {code}"
+    },
+    "verification_email_subject": {
+        "en": "Your Verification Code",
+        "bn": "আপনার যাচাইকরণ কোড",
+        "ar": "رمز التحقق الخاص بك"
+    },
     "limit_reached": {
         "en": "Limit reached. Try again later.",
-        "bn": "সীমা অতিক্রম হয়েছে। অনুগ্রহ করে পরে চেষ্টা করুন।",
+        "bn": "সীমা অতিক্রম হয়েছে। পরে আবার চেষ্টা করুন।",
         "ar": "تم الوصول إلى الحد. حاول مرة أخرى لاحقًا."
     },
     "invalid_phone_format": {
         "en": "Invalid phone number format",
-        "bn": "নম্বরের ফরম্যাট সঠিক নয়",
+        "bn": "ফোন নম্বরের ফরম্যাট সঠিক নয়",
         "ar": "تنسيق رقم الهاتف غير صالح"
     },
     "user_not_found": {
@@ -43,39 +53,39 @@ TRANSLATIONS = {
         "en": (
             "Your account has been successfully put for deletion.\n"
             "It will take {days} days to fully delete your account.\n"
-            "If it wasn’t you, please contact us for account recovery.\n\n@annur.app"
+            "If it wasn’t you, please contact us for account recovery.\n\n@An-Nur.app"
         ),
         "bn": (
             "আপনার অ্যাকাউন্ট ডিলিশনের জন্য সংরক্ষণ করা হয়েছে।\n"
             "আপনার অ্যাকাউন্ট সম্পূর্ণ মুছে ফেলার জন্য এটি {days} দিন সময় নিবে।\n"
-            "যদি এটি আপনি না হন, তাহলে দয়া করে অ্যাকাউন্ট উদ্ধার করতে আমাদের সাথে যোগাযোগ করুন।\n\n@annur.app"
+            "যদি এটি আপনি না হন, তাহলে দয়া করে অ্যাকাউন্ট উদ্ধার করতে আমাদের সাথে যোগাযোগ করুন।\n\n@An-Nur.app"
         ),
         "ar": (
             "تم وضع حسابك ليتم حذفه بنجاح.\n"
             "سيستغرق حذف حسابك بالكامل {days} يومًا.\n"
-            "إذا لم تكن أنت، فيرجى الاتصال بنا لاستعادة الحساب.\n\n@annur.app"
+            "إذا لم تكن أنت، فيرجى الاتصال بنا لاستعادة الحساب.\n\n@An-Nur.app"
         )
     },
     "subject_deletion_confirmation": {
         "en": "Account Deletion Confirmation",
-        "bn": "নিশ্চিতকরণ: অ্যাকাউন্ট মুছে ফেলা",
+        "bn": "অ্যাকাউন্ট মুছে ফেলার নিশ্চিতকরণ",
         "ar": "تأكيد حذف الحساب"
     },
     "account_deactivation_confirmation_msg": {
         "en": (
             "Your account has been successfully deactivated.\n"
             "You can reactivate it within our app.\n"
-            "If it wasn’t you, please contact us immediately.\n\n@annur.app"
+            "If it wasn’t you, please contact us immediately.\n\n@An-Nur.app"
         ),
         "bn": (
             "আপনার অ্যাকাউন্ট সফলভাবে নিষ্ক্রিয় করা হয়েছে।\n"
             "আপনি আমাদের অ্যাপে এটি পুনরায় চালু করতে পারবেন।\n"
-            "যদি এটি আপনি না হন, দয়া করে অবিলম্বে আমাদের সাথে যোগাযোগ করুন।\n\n@annur.app"
+            "যদি এটি আপনি না হন, দয়া করে অবিলম্বে আমাদের সাথে যোগাযোগ করুন।\n\n@An-Nur.app"
         ),
         "ar": (
             "تم تعطيل حسابك بنجاح.\n"
             "يمكنك إعادة تنشيطه ضمن تطبيقنا.\n"
-            "إذا لم تكن أنت، يرجى الاتصال بنا فورًا.\n\n@annur.app"
+            "إذا لم تكن أنت، يرجى الاتصال بنا فورًا.\n\n@An-Nur.app"
         )
     },
     "subject_deactivation_confirmation": {
@@ -310,6 +320,36 @@ TRANSLATIONS = {
         "en": "Payment recorded",
         "bn": "পেমেন্ট রেকর্ড করা হয়েছে",
         "ar": "تم تسجيل الدفع"
+    },
+    "unknown_device": {
+        "en": "Unknown device. Access denied for security reasons.",
+        "bn": "অজানা ডিভাইস। সুরক্ষার কারণে অ্যাক্সেস প্রত্যাখান করা হয়েছে।",
+        "ar": "جهاز غير معروف. تم رفض الدخول بسبب أسباب الأمن."
+    },
+    "no_account_given": {
+        "en": "No account information provided.",
+        "bn": "কোনো অ্যাকাউন্ট তথ্য দেওয়া হয়নি।",
+        "ar": "لم يتم تقديم معلومات الحساب."
+    },
+    "undo_period_expired": {
+        "en": "Undo period expired.",
+        "bn": "আনডু করার সময়সীমা শেষ হয়েছে।",
+        "ar": "انتهت فترة التراجع."
+    },
+    "no_deactivated_account_found": {
+        "en": "No deactivated account found.",
+        "bn": "কোনো নিষ্ক্রিয় অ্যাকাউন্ট পাওয়া যায়নি।",
+        "ar": "لم يتم العثور على حساب معطل."
+    },
+    "account_reactivated": {
+        "en": "Account reactivated.",
+        "bn": "অ্যাকাউন্ট পুনরায় সক্রিয় করা হয়েছে।",
+        "ar": "تم إعادة تنشيط الحساب."
+    },
+    "account_reactivation_failed": {
+        "en": "Account reactivation failed.",
+        "bn": "অ্যাকাউন্ট পুনরায় সক্রিয় করা ব্যর্থ হয়েছে।",
+        "ar": "فشل إعادة تنشيط الحساب."
     }
 }
 

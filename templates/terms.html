@@ -3,79 +3,131 @@
 
 {% block content %}
 <div class="container my-5">
-  <h1>Terms &amp; Conditions for Annur</h1>
-  <p><strong>Effective Date:</strong> {{ effective_date }}</p>
-  <p>
-    <strong>App Name:</strong> Annur<br>
-    <strong>Developers:</strong> Tahir Jamil and Tareq Jamil<br>
-    <strong>Contact Email:</strong> <a href="mailto:annurcomplex@gmail.com">annurcomplex@gmail.com</a>
-  </p>
+    <h1 class="mb-4">Terms &amp; Conditions</h1>
+    <p><strong>Effective Date:</strong> {{ effective_date }}</p>
 
-  <h2>1. Acceptance of Terms</h2>
-  <p>
-    By downloading, installing, or using <strong>Annur</strong>, you agree to these Terms &amp; Conditions and our
-    <a href="{{ url_for('web_routes.privacy') }}">Privacy Policy</a>. If you do not agree, please do not use the app.
-  </p>
+    <!-- Introduction Section -->
+    <div class="mb-4 introduction-section">
+        {{ introduction_html | safe }}
+    </div>
 
-  <h2>2. License to Use</h2>
-  <p>
-    We grant you a limited, non‑exclusive, non‑transferable, revocable license to use the app for personal or internal educational purposes.
-  </p>
-
-  <h2>3. User Accounts</h2>
-  <ol>
-    <li>You must register with accurate information.</li>
-    <li>You are responsible for safeguarding your login credentials.</li>
-    <li>You agree not to share your account or let others use it.</li>
-  </ol>
-
-  <h2>4. Your Obligations</h2>
-  <ol>
-    <li>Use the app in compliance with all applicable laws.</li>
-    <li>Do not reverse engineer, decompile, or attempt to extract source code.</li>
-    <li>Do not upload harmful content or misuse any feature.</li>
-  </ol>
-
-  <h2>5. Intellectual Property</h2>
-  <p>
-    All code, design, graphics, and content in Annur are the property of Tahir Jamil and Tareq Jamil and are protected by copyright and trademark law.
-  </p>
-
-  <h2>6. Data and Privacy</h2>
-  <p>
-    Your use of data in Annur is subject to our
-    <a href="{{ url_for('web_routes.privacy') }}">Privacy Policy</a>. You authorize us to collect and process data as described there.
-  </p>
-
-  <h2>7. Termination</h2>
-  <p>
-    We may suspend or terminate your access at any time, with or without cause, including if you violate these terms.
-  </p>
-
-  <h2>8. Disclaimers</h2>
-  <p>
-    Annur is provided “as is” without warranties of any kind. We do not guarantee uninterrupted access or error‑free operation.
-  </p>
-
-  <h2>9. Limitation of Liability</h2>
-  <p>
-    To the fullest extent permitted by law, we are not liable for any indirect, incidental, special, or consequential damages arising out of your use of the app.
-  </p>
-
-  <h2>10. Governing Law</h2>
-  <p>
-    These terms are governed by the laws of Bangladesh, and any dispute will be resolved in its courts.
-  </p>
-
-  <h2>11. Changes to Terms</h2>
-  <p>
-    We may update these Terms &amp; Conditions. You’ll be notified in‑app or via email. Continued use after changes constitutes acceptance.
-  </p>
-
-  <h2>12. Contact Us</h2>
-  <p>
-    If you have any questions about these Terms, contact:
-    <a href="mailto:annurcomplex@gmail.com">annurcomplex@gmail.com</a>
-  </p>
+    <!-- Collapsible Sections -->
+    <div class="accordion accordion-flush" id="termsAccordion">
+        {% for section in sections %}
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="heading{{ section.id }}">
+                <button class="accordion-button collapsed" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#collapse{{ section.id }}"
+                    aria-expanded="false"
+                    aria-controls="collapse{{ section.id }}">
+                    {{ section.title }}
+                </button>
+            </h2>
+            <div id="collapse{{ section.id }}" class="accordion-collapse collapse"
+                aria-labelledby="heading{{ section.id }}" data-bs-parent="#termsAccordion">
+                <div class="accordion-body">
+                    {{ section.content_html | safe }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>
+
+<style>
+.accordion-button:not(.collapsed) {
+    color: #0c63e4;
+    background-color: #e7f1ff;
+}
+
+.accordion-button:not(.collapsed)::after {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%230c63e4'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+    transform: rotate(-180deg);
+}
+
+.accordion-button::after {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-left: auto;
+    content: "";
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23212529'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-size: 1.25rem;
+    transition: transform .2s ease-in-out;
+}
+
+.accordion-button:focus {
+    box-shadow: none;
+    border-color: rgba(0,0,0,.125);
+}
+
+.accordion-item {
+    border: 1px solid rgba(0,0,0,.125);
+    margin-bottom: 0.5rem;
+    border-radius: 0.25rem !important;
+}
+
+.accordion-button {
+    border-radius: 0.25rem !important;
+    padding: 1rem;
+}
+
+.accordion-body {
+    padding: 1.25rem;
+}
+
+/* List Styling */
+.accordion-body ul,
+.accordion-body ol,
+.introduction-section ul,
+.introduction-section ol {
+    padding-left: 2rem;
+    margin-bottom: 1rem;
+    list-style-position: outside;
+}
+
+.accordion-body ul,
+.introduction-section ul {
+    list-style-type: disc;
+}
+
+.accordion-body ol,
+.introduction-section ol {
+    list-style-type: decimal;
+}
+
+.accordion-body li,
+.introduction-section li {
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+}
+
+.accordion-body ul ul,
+.accordion-body ol ol,
+.accordion-body ul ol,
+.accordion-body ol ul,
+.introduction-section ul ul,
+.introduction-section ol ol,
+.introduction-section ul ol,
+.introduction-section ol ul {
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Spacing for paragraphs */
+.accordion-body p,
+.introduction-section p {
+    margin-bottom: 1rem;
+    line-height: 1.6;
+}
+
+/* Heading Styles */
+.accordion-body h3,
+.introduction-section h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+</style>
 {% endblock %}

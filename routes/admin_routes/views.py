@@ -217,78 +217,80 @@ def info_admin():
 
 # ------------------ Exam Results ------------------------
 
-@admin_routes.route('/exam_results', methods=['GET', 'POST'])
+@admin_routes.route('/exam_results', methods=['GET'])
 def exam_results():
     # auth
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    if request.method == 'POST':
-        username    = request.form.get('username')
-        password    = request.form.get('password')
-        exam_date   = request.form.get('exam_date')
-        exam_type   = request.form.get('exam_type')
-        exam_class  = request.form.get('exam_class')
-        file        = request.files.get('file')
+    # TODO: Disabled for view-only mode
+    # if request.method == 'POST':
+    #     username    = request.form.get('username')
+    #     password    = request.form.get('password')
+    #     exam_date   = request.form.get('exam_date')
+    #     exam_type   = request.form.get('exam_type')
+    #     exam_class  = request.form.get('exam_class')
+    #     file        = request.files.get('file')
 
-        ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+    #     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+    #     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
 
-        if username != ADMIN_USER or password != ADMIN_PASS:
-            flash("Unauthorized", "danger")
-            return redirect(url_for('admin_routes.exam_results'))
+    #     if username != ADMIN_USER or password != ADMIN_PASS:
+    #         flash("Unauthorized", "danger")
+    #         return redirect(url_for('admin_routes.exam_results'))
 
-        if file and file.filename and allowed_exam_file(file.filename):
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(EXAM_DIR, filename)
-            file.save(filepath)
+    #     if file and file.filename and allowed_exam_file(file.filename):
+    #         filename = secure_filename(file.filename)
+    #         filepath = os.path.join(EXAM_DIR, filename)
+    #         file.save(filepath)
 
-            results = load_results()
-            results.append({
-                "filename":    filename,
-                "exam_date":   exam_date,
-                "exam_type":   exam_type,
-                "exam_class":  exam_class,
-                "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            })
-            save_results(results)
+    #         results = load_results()
+    #         results.append({
+    #             "filename":    filename,
+    #             "exam_date":   exam_date,
+    #             "exam_type":   exam_type,
+    #             "exam_class":  exam_class,
+    #             "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #         })
+    #         save_results(results)
 
-            flash("Exam result uploaded.", "success")
-            log_event("exam_uploaded", username, filename)
-        else:
-            flash("Invalid file format.", "warning")
+    #         flash("Exam result uploaded.", "success")
+    #         log_event("exam_uploaded", username, filename)
+    #     else:
+    #         flash("Invalid file format.", "warning")
 
-        return redirect(url_for('admin_routes.exam_results'))
+    #     return redirect(url_for('admin_routes.exam_results'))
 
     # GET: show all together
     results = load_results()
     return render_template("admin/exam_results.html", results=results)
 
 
-@admin_routes.route('/exam_results/delete/<filename>', methods=['POST'])
-def delete_exam_result(filename):
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/exam_results/delete/<filename>', methods=['POST'])
+# def delete_exam_result(filename):
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    username = request.form.get('username')
-    password = request.form.get('password')
-    ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-    ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
-    if username != ADMIN_USER or password != ADMIN_PASS:
-        flash("Unauthorized", "danger")
-        return redirect(url_for('admin_routes.exam_results'))
+#     username = request.form.get('username')
+#     password = request.form.get('password')
+#     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+#     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+#     if username != ADMIN_USER or password != ADMIN_PASS:
+#         flash("Unauthorized", "danger")
+#         return redirect(url_for('admin_routes.exam_results'))
 
-    filepath = os.path.join(EXAM_DIR, filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
+#     filepath = os.path.join(EXAM_DIR, filename)
+#     if os.path.exists(filepath):
+#         os.remove(filepath)
 
-    results = load_results()
-    results = [r for r in results if r['filename'] != filename]
-    save_results(results)
+#     results = load_results()
+#     results = [r for r in results if r['filename'] != filename]
+#     save_results(results)
 
-    flash(f"Deleted {filename}.", "info")
-    log_event("exam_deleted", username, filename)
-    return redirect(url_for('admin_routes.exam_results'))
+#     flash(f"Deleted {filename}.", "info")
+#     log_event("exam_deleted", username, filename)
+#     return redirect(url_for('admin_routes.exam_results'))
 
 
 # ------------------- Members --------------------------
@@ -349,110 +351,113 @@ def members():
                            sort=sort_key)
 
 
-@admin_routes.route('/member/<modify>', methods=['GET','POST'])
-def manage_member(modify):
-    pages = ['add','edit']
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/member/<modify>', methods=['GET','POST'])
+# def manage_member(modify):
+#     pages = ['add','edit']
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    if not modify in pages:
-        return redirect(url_for('admin_routes.members'))
+#     if not modify in pages:
+#         return redirect(url_for('admin_routes.members'))
 
-    genders = ['Male','Female']
-    blood_groups = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
-    types = ['admins','students','teachers','staffs','donors','badri_members','others']
+#     genders = ['Male','Female']
+#     blood_groups = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
+#     types = ['admins','students','teachers','staffs','donors','badri_members','others']
 
-    member = None
-    if modify == 'edit':
-        user_id = request.args.get('user_id')
-        if user_id:
-            conn = connect_to_db()
-            try:
-                with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                    cursor.execute("SELECT * FROM people WHERE user_id = %s", (user_id,))
-                    member = cursor.fetchone()
-            finally:
-                conn.close()
+#     member = None
+#     if modify == 'edit':
+#         user_id = request.args.get('user_id')
+#         if user_id:
+#             conn = connect_to_db()
+#             try:
+#                 with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+#                     cursor.execute("SELECT * FROM people WHERE user_id = %s", (user_id,))
+#                     member = cursor.fetchone()
+#             finally:
+#                 conn.close()
 
-    if request.method == 'POST':
-        fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",
-                  "date_of_birth","national_id","blood_group","degree","gender",
-                  "title1","source","address_en","address_bn","address_ar",
-                  "permanent_address","father_or_spouse","father_en",
-                  "father_bn","father_ar","mother_en","mother_bn","mother_ar",
-                  "acc_type"]
-        data = {f: request.form.get(f) for f in fields if request.form.get(f)}
+#     if request.method == 'POST':
+#         fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",
+#                   "date_of_birth","national_id","blood_group","degree","gender",
+#                   "title1","source","address_en","address_bn","address_ar",
+#                   "permanent_address","father_or_spouse","father_en",
+#                   "father_bn","father_ar","mother_en","mother_bn","mother_ar",
+#                   "acc_type"]
+#         data = {f: request.form.get(f) for f in fields if request.form.get(f)}
 
-        # Handle image upload
-        image = request.files.get('image')
-        if image and image.filename:
-            filename = secure_filename(image.filename)
-            upload_path = os.path.join(current_app.config['IMG_UPLOAD_FOLDER'], filename)
-            image.save(upload_path)
-            data['image_path'] = upload_path  # or just filename if you store relative path
+#         # Handle image upload
+#         image = request.files.get('image')
+#         if image and image.filename:
+#             filename = secure_filename(image.filename)
+#             upload_path = os.path.join(current_app.config['IMG_UPLOAD_FOLDER'], filename)
+#             image.save(upload_path)
+#             data['image_path'] = upload_path  # or just filename if you store relative path
 
-        conn = connect_to_db()
-        try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                cols = ','.join(data.keys())
-                vals = ','.join(['%s']*len(data))
-                cursor.execute(
-                  f"INSERT INTO people ({cols}) VALUES ({vals})",
-                  tuple(data.values())
-                )
-                conn.commit()
-            flash("Member added successfully","success")
-            return redirect(url_for('admin_routes.members'))
-        finally:
-            conn.close()
+#         conn = connect_to_db()
+#         try:
+#             with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+#                 cols = ','.join(data.keys())
+#                 vals = ','.join(['%s']*len(data))
+#                 cursor.execute(
+#                   f"INSERT INTO people ({cols}) VALUES ({vals})",
+#                   tuple(data.values())
+#                 )
+#                 conn.commit()
+#             flash("Member added successfully","success")
+#             return redirect(url_for('admin_routes.members'))
+#         finally:
+#             conn.close()
 
-    return render_template('admin/manage_member.html',
-                           genders=genders,
-                           types=types,
-                           blood_groups=blood_groups,
-                           member=member)
+#     return render_template('admin/manage_member.html',
+#                            genders=genders,
+#                            types=types,
+#                            blood_groups=blood_groups,
+#                            member=member)
 
 
 
 
 # ------------------- Notices -----------------------
 
-@admin_routes.route('/notice', methods=['GET', 'POST'])
+@admin_routes.route('/notice', methods=['GET'])
 def notice_page():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        target_date = request.form.get('target_date')
-        file = request.files.get('file')
+    
+    # TODO: Disabled for view-only mode
+    # if request.method == 'POST':
+    #     username = request.form.get('username')
+    #     password = request.form.get('password')
+    #     target_date = request.form.get('target_date')
+    #     file = request.files.get('file')
 
-        ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-        ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
+    #     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+    #     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
 
-        if username != ADMIN_USER or password != ADMIN_PASS:
-            flash("Unauthorized", "danger")
-            return redirect(url_for('admin_routes.notice_page'))
+    #     if username != ADMIN_USER or password != ADMIN_PASS:
+    #         flash("Unauthorized", "danger")
+    #         return redirect(url_for('admin_routes.notice_page'))
 
-        if file and file.filename and allowed_notice_file(file.filename):
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(NOTICES_DIR, filename)
-            file.save(filepath)
+    #     if file and file.filename and allowed_notice_file(file.filename):
+    #         filename = secure_filename(file.filename)
+    #         filepath = os.path.join(NOTICES_DIR, filename)
+    #         file.save(filepath)
 
-            notices = load_notices()
-            notices.append({
-                "filename": filename,
-                "target_date": target_date,
-                "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            })
-            save_notices(notices)
+    #         notices = load_notices()
+    #         notices.append({
+    #             "filename": filename,
+    #             "target_date": target_date,
+    #             "uploaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #         })
+    #         save_notices(notices)
 
-            flash("Notice uploaded.", "success")
-            log_event("notice_uploaded", username, filename)
-        else:
-            flash("Invalid file format.", "warning")
+    #         flash("Notice uploaded.", "success")
+    #         log_event("notice_uploaded", username, filename)
+    #     else:
+    #         flash("Invalid file format.", "warning")
 
-        return redirect(url_for('admin_routes.notice_page'))
+    #     return redirect(url_for('admin_routes.notice_page'))
 
     notices = load_notices()
     today = date.today()
@@ -476,29 +481,30 @@ def notice_page():
                            past=past)
 
 
-@admin_routes.route('/notice/delete/<filename>', methods=['POST'])
-def delete_notice(filename):
-    username = request.form.get('username')
-    password = request.form.get('password')
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/notice/delete/<filename>', methods=['POST'])
+# def delete_notice(filename):
+#     username = request.form.get('username')
+#     password = request.form.get('password')
 
-    ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-    ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
+#     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+#     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
 
-    if username != ADMIN_USER or password != ADMIN_PASS:
-        flash("Unauthorized", "danger")
-        return redirect(url_for('admin_routes.notice_page'))
+#     if username != ADMIN_USER or password != ADMIN_PASS:
+#         flash("Unauthorized", "danger")
+#         return redirect(url_for('admin_routes.notice_page'))
 
-    filepath = os.path.join(NOTICES_DIR, filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
+#     filepath = os.path.join(NOTICES_DIR, filename)
+#     if os.path.exists(filepath):
+#         os.remove(filepath)
 
-    notices = load_notices()
-    notices = [n for n in notices if n['filename'] != filename]
-    save_notices(notices)
+#     notices = load_notices()
+#     notices = [n for n in notices if n['filename'] != filename]
+#     save_notices(notices)
 
-    flash(f"Notice '{filename}' deleted.", "info")
-    log_event("notice_deleted", username, filename)
-    return redirect(url_for('admin_routes.notice_page'))
+#     flash(f"Notice '{filename}' deleted.", "info")
+#     log_event("notice_deleted", username, filename)
+#     return redirect(url_for('admin_routes.notice_page'))
 
 
 # ------------------ Routine ----------------------
@@ -546,58 +552,59 @@ def routine():
         sort=sort
     )
 
-@admin_routes.route('/routine/add', methods=['GET', 'POST'])
-def add_routine():
-    conn = connect_to_db()
-    # 1) require login
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/routine/add', methods=['GET', 'POST'])
+# def add_routine():
+#     conn = connect_to_db()
+#     # 1) require login
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    if request.method == 'POST':
-        # 2) grab form values
-        data = request.form.to_dict()
-        # TODO: validate & possibly look up IDs from people/book tables
-        # e.g. if data['name_mode']=='id': lookup the three name fields...
-        # then insert into routine table:
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO routine
-                      (gender, class_group, class_level, weekday,
-                       subject_en, subject_bn, subject_ar,
-                       name_en,    name_bn,    name_ar,
-                       serial)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, [
-                    data['gender'],
-                    data['class_group'],
-                    data['class_level'],
-                    data['weekday'],
-                    data.get('subject_en'),
-                    data.get('subject_bn'),
-                    data.get('subject_ar'),
-                    data.get('name_en'),
-                    data.get('name_bn'),
-                    data.get('name_ar'),
-                    data['serial']
-                ])
-                conn.commit()
-            flash("Routine added successfully.", "success")
-            return redirect(url_for('admin_routes.routine'))
-        except Exception as e:
-            flash(f"Error adding routine: {e}", "danger")
-        finally:
-            conn.close()
+#     if request.method == 'POST':
+#         # 2) grab form values
+#         data = request.form.to_dict()
+#         # TODO: validate & possibly look up IDs from people/book tables
+#         # e.g. if data['name_mode']=='id': lookup the three name fields...
+#         # then insert into routine table:
+#         try:
+#             with conn.cursor() as cursor:
+#                 cursor.execute("""
+#                     INSERT INTO routine
+#                       (gender, class_group, class_level, weekday,
+#                        subject_en, subject_bn, subject_ar,
+#                        name_en,    name_bn,    name_ar,
+#                        serial)
+#                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+#                 """, [
+#                     data['gender'],
+#                     data['class_group'],
+#                     data['class_level'],
+#                     data['weekday'],
+#                     data.get('subject_en'),
+#                     data.get('subject_bn'),
+#                     data.get('subject_ar'),
+#                     data.get('name_en'),
+#                     data.get('name_bn'),
+#                     data.get('name_ar'),
+#                     data['serial']
+#                 ])
+#                 conn.commit()
+#             flash("Routine added successfully.", "success")
+#             return redirect(url_for('admin_routes.routine'))
+#         except Exception as e:
+#             flash(f"Error adding routine: {e}", "danger")
+#         finally:
+#             conn.close()
 
-    # GET → show form
-    return render_template('admin/add_routine.html')
+#     # GET → show form
+#     return render_template('admin/add_routine.html')
 
 
 
 
 # -------------------- Event / Function ------------------------
 
-@admin_routes.route('/events', methods=['GET', 'POST'])
+@admin_routes.route('/events', methods=['GET'])
 def events():
     # ─── require login ────────────────────────────────────────────
     if not session.get('admin_logged_in'):
@@ -607,33 +614,34 @@ def events():
     events = []
     try:
         with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+            # TODO: Disabled for view-only mode
             # ─── handle form submission ────────────────────────────
-            if request.method == 'POST':
-                username     = request.form.get('username', '').strip()
-                password     = request.form.get('password', '').strip()
-                ADMIN_USER   = os.getenv("ADMIN_USERNAME")
-                ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
+            # if request.method == 'POST':
+            #     username     = request.form.get('username', '').strip()
+            #     password     = request.form.get('password', '').strip()
+            #     ADMIN_USER   = os.getenv("ADMIN_USERNAME")
+            #     ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
 
-                if username != ADMIN_USER or password != ADMIN_PASS:
-                    flash("❌ Invalid admin credentials.", "danger")
-                else:
-                    title        = request.form.get('title', '').strip()
-                    evt_type     = request.form.get('type')
-                    date_str     = request.form.get('date')       # YYYY-MM-DD
-                    time_str     = request.form.get('time')       # HH:MM
-                    function_url = request.form.get('function_url') or None
+            #     if username != ADMIN_USER or password != ADMIN_PASS:
+            #         flash("❌ Invalid admin credentials.", "danger")
+            #     else:
+            #         title        = request.form.get('title', '').strip()
+            #         evt_type     = request.form.get('type')
+            #         date_str     = request.form.get('date')       # YYYY-MM-DD
+            #         time_str     = request.form.get('time')       # HH:MM
+            #         function_url = request.form.get('function_url') or None
 
-                    # Combine into a full timestamp string
-                    # MySQL will parse "YYYY-MM-DD HH:MM"
-                    datetime_str = f"{date_str} {time_str}"
+            #         # Combine into a full timestamp string
+            #         # MySQL will parse "YYYY-MM-DD HH:MM"
+            #         datetime_str = f"{date_str} {time_str}"
 
-                    cursor.execute("""
-                        INSERT INTO events
-                          (type, title, time, date, function_url)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (evt_type, title, datetime_str, date_str, function_url))
-                    conn.commit()
-                    flash("✅ Event added successfully.", "success")
+            #         cursor.execute("""
+            #             INSERT INTO events
+            #               (type, title, time, date, function_url)
+            #             VALUES (%s, %s, %s, %s, %s)
+            #         """, (evt_type, title, datetime_str, date_str, function_url))
+            #         conn.commit()
+            #         flash("✅ Event added successfully.", "success")
 
             # ─── fetch all events ────────────────────────────────────
             cursor.execute("""
@@ -664,52 +672,53 @@ if not os.path.exists(PIC_INDEX_PATH):
         json.dump([], f)
 
 
-@admin_routes.route('/madrasa_pictures', methods=['GET', 'POST'])
+@admin_routes.route('/madrasa_pictures', methods=['GET'])
 def madrasa_pictures():
     # 1) Require admin
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
+    # TODO: Disabled for view-only mode
     # 2) Handle upload
-    if request.method == 'POST':
-        username     = request.form.get('username', '')
-        password     = request.form.get('password', '')
-        class_name   = request.form.get('class_name', '').strip()
-        floor_number = request.form.get('floor_number', '').strip()
-        serial       = request.form.get('serial', '').strip()
-        file         = request.files.get('file')
+    # if request.method == 'POST':
+    #     username     = request.form.get('username', '')
+    #     password     = request.form.get('password', '')
+    #     class_name   = request.form.get('class_name', '').strip()
+    #     floor_number = request.form.get('floor_number', '').strip()
+    #     serial       = request.form.get('serial', '').strip()
+    #     file         = request.files.get('file')
 
-        ADMIN_USER = os.getenv('ADMIN_USERNAME')
-        ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
+    #     ADMIN_USER = os.getenv('ADMIN_USERNAME')
+    #     ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
 
-        if username != ADMIN_USER or password != ADMIN_PASS:
-            flash('Invalid admin credentials', 'danger')
-            return redirect(url_for('admin_routes.madrasa_pictures'))
+    #     if username != ADMIN_USER or password != ADMIN_PASS:
+    #         flash('Invalid admin credentials', 'danger')
+    #         return redirect(url_for('admin_routes.madrasa_pictures'))
 
-        if not file or not file.filename:
-            flash('No file selected', 'danger')
-            return redirect(url_for('admin_routes.madrasa_pictures'))
+    #     if not file or not file.filename:
+    #         flash('No file selected', 'danger')
+    #         return redirect(url_for('admin_routes.madrasa_pictures'))
 
-        filename = secure_filename(file.filename)
-        save_path = os.path.join(MADRASA_IMG_DIR, filename)
-        file.save(save_path)
+    #     filename = secure_filename(file.filename)
+    #     save_path = os.path.join(MADRASA_IMG_DIR, filename)
+    #     file.save(save_path)
 
-        # 3) Update index.json
-        with open(PIC_INDEX_PATH, 'r+') as idx:
-            data = json.load(idx)
-            data.append({
-                'filename'    : filename,
-                'class_name'  : class_name,
-                'floor_number': floor_number,
-                'serial'      : serial,
-                'uploaded_at' : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            })
-            idx.seek(0)
-            json.dump(data, idx, indent=2)
-            idx.truncate()
+    #     # 3) Update index.json
+    #     with open(PIC_INDEX_PATH, 'r+') as idx:
+    #         data = json.load(idx)
+    #         data.append({
+    #             'filename'    : filename,
+    #             'class_name'  : class_name,
+    #             'floor_number': floor_number,
+    #             'serial'      : serial,
+    #             'uploaded_at' : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #         })
+    #         idx.seek(0)
+    #         json.dump(data, idx, indent=2)
+    #         idx.truncate()
 
-        flash('Picture uploaded!', 'success')
-        return redirect(url_for('admin_routes.madrasa_pictures'))
+    #     flash('Picture uploaded!', 'success')
+    #     return redirect(url_for('admin_routes.madrasa_pictures'))
 
     # 4) On GET: load current list
     with open(PIC_INDEX_PATH) as idx:
@@ -718,43 +727,44 @@ def madrasa_pictures():
     return render_template('admin/madrasa_pictures.html', pictures=pictures)
 
 
-@admin_routes.route('/madrasa_pictures/delete/<filename>', methods=['POST'])
-def delete_picture(filename):
-    # 1) Require admin
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/madrasa_pictures/delete/<filename>', methods=['POST'])
+# def delete_picture(filename):
+#     # 1) Require admin
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    username = request.form.get('username', '')
-    password = request.form.get('password', '')
+#     username = request.form.get('username', '')
+#     password = request.form.get('password', '')
 
-    ADMIN_USER = os.getenv('ADMIN_USERNAME')
-    ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
+#     ADMIN_USER = os.getenv('ADMIN_USERNAME')
+#     ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
 
-    if username != ADMIN_USER or password != ADMIN_PASS:
-        flash('Invalid admin credentials', 'danger')
-        return redirect(url_for('admin_routes.madrasa_pictures'))
+#     if username != ADMIN_USER or password != ADMIN_PASS:
+#         flash('Invalid admin credentials', 'danger')
+#         return redirect(url_for('admin_routes.madrasa_pictures'))
 
-    # 2) Remove file
-    pic_path = os.path.join(MADRASA_IMG_DIR, filename)
-    if os.path.exists(pic_path):
-        os.remove(pic_path)
+#     # 2) Remove file
+#     pic_path = os.path.join(MADRASA_IMG_DIR, filename)
+#     if os.path.exists(pic_path):
+#         os.remove(pic_path)
 
-    # 3) Update index.json to drop that entry
-    with open(PIC_INDEX_PATH, 'r+') as idx:
-        data = json.load(idx)
-        data = [p for p in data if p['filename'] != filename]
-        idx.seek(0)
-        json.dump(data, idx, indent=2)
-        idx.truncate()
+#     # 3) Update index.json to drop that entry
+#     with open(PIC_INDEX_PATH, 'r+') as idx:
+#         data = json.load(idx)
+#         data = [p for p in data if p['filename'] != filename]
+#         idx.seek(0)
+#         json.dump(data, idx, indent=2)
+#         idx.truncate()
 
-    flash('Picture deleted.', 'success')
-    return redirect(url_for('admin_routes.madrasa_pictures'))
+#     flash('Picture deleted.', 'success')
+#     return redirect(url_for('admin_routes.madrasa_pictures'))
 
 
 
 # ---------------------- Exam -----------------------------
 
-@admin_routes.route('/admin/events/exams', methods=['GET', 'POST'])
+@admin_routes.route('/admin/events/exams', methods=['GET'])
 def exams():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -769,140 +779,143 @@ def exams():
     conn.close()
     return render_template('admin/exams.html', exams=exams)
 
-@admin_routes.route('/admin/add_exam', methods=['POST'])
-def add_exam():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/admin/add_exam', methods=['POST'])
+# def add_exam():
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    # ✅ Re-check admin credentials
-    username = request.form.get('username')
-    password = request.form.get('password')
+#     # ✅ Re-check admin credentials
+#     username = request.form.get('username')
+#     password = request.form.get('password')
 
-    if username != current_app.config['ADMIN_USERNAME'] or password != current_app.config['ADMIN_PASSWORD']:
-        return "Invalid admin credentials", 403
+#     if username != current_app.config['ADMIN_USERNAME'] or password != current_app.config['ADMIN_PASSWORD']:
+#         return "Invalid admin credentials", 403
 
-    # ✅ Get form fields
-    cls = request.form.get('class')
-    gender = request.form.get('gender')
-    weekday = request.form.get('weekday')
-    date = request.form.get('date')
+#     # ✅ Get form fields
+#     cls = request.form.get('class')
+#     gender = request.form.get('gender')
+#     weekday = request.form.get('weekday')
+#     date = request.form.get('date')
 
-    # ✅ Combine date + time
-    def combine(date_str, time_str):
-        return f"{date_str} {time_str}:00" if date_str and time_str else None
+#     # ✅ Combine date + time
+#     def combine(date_str, time_str):
+#         return f"{date_str} {time_str}:00" if date_str and time_str else None
 
-    start_time = combine(date, request.form.get('start_time'))
-    end_time = combine(date, request.form.get('end_time'))
-    sec_start_time = combine(date, request.form.get('sec_start_time'))
-    sec_end_time = combine(date, request.form.get('sec_end_time'))
+#     start_time = combine(date, request.form.get('start_time'))
+#     end_time = combine(date, request.form.get('end_time'))
+#     sec_start_time = combine(date, request.form.get('sec_start_time'))
+#     sec_end_time = combine(date, request.form.get('sec_end_time'))
 
-    # ✅ Book fields
-    book_mode = request.form.get('book_mode')
+#     # ✅ Book fields
+#     book_mode = request.form.get('book_mode')
 
-    conn = connect_to_db()
-    cursor = conn.cursor()
+#     conn = connect_to_db()
+#     cursor = conn.cursor()
 
-    if book_mode == 'id':
-        book_id = request.form.get('book_id')
-        cursor.execute("SELECT book_en, book_bn, book_ar FROM book WHERE book_id = %s", (book_id,))
-        book = cursor.fetchone()
-        if not book:
-            conn.close()
-            return "Book ID not found", 400
-        book_en, book_bn, book_ar = book
-    else:
-        book_en = request.form.get('book_en')
-        book_bn = request.form.get('book_bn')
-        book_ar = request.form.get('book_ar')
+#     if book_mode == 'id':
+#         book_id = request.form.get('book_id')
+#         cursor.execute("SELECT book_en, book_bn, book_ar FROM book WHERE book_id = %s", (book_id,))
+#         book = cursor.fetchone()
+#         if not book:
+#             conn.close()
+#             return "Book ID not found", 400
+#         book_en, book_bn, book_ar = book
+#     else:
+#         book_en = request.form.get('book_en')
+#         book_bn = request.form.get('book_bn')
+#         book_ar = request.form.get('book_ar')
 
-    # ✅ Insert exam
-    cursor.execute("""
-        INSERT INTO exam (
-            class, gender, weekday, date,
-            start_time, end_time, sec_start_time, sec_end_time,
-            book_en, book_bn, book_ar
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        cls, gender, weekday, date,
-        start_time, end_time, sec_start_time, sec_end_time,
-        book_en, book_bn, book_ar
-    ))
+#     # ✅ Insert exam
+#     cursor.execute("""
+#         INSERT INTO exam (
+#             class, gender, weekday, date,
+#             start_time, end_time, sec_start_time, sec_end_time,
+#             book_en, book_bn, book_ar
+#         )
+#         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+#     """, (
+#         cls, gender, weekday, date,
+#         start_time, end_time, sec_start_time, sec_end_time,
+#         book_en, book_bn, book_ar
+#     ))
 
-    conn.commit()
-    conn.close()
+#     conn.commit()
+#     conn.close()
 
-    return redirect(url_for('admin_routes.exams'))
+#     return redirect(url_for('admin_routes.exams'))
 
-@admin_routes.route('/members/delete_pending/<int:verify_people_id>', methods=['POST'])
-def delete_pending_member(verify_people_id):
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/members/delete_pending/<int:verify_people_id>', methods=['POST'])
+# def delete_pending_member(verify_people_id):
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
-            conn.commit()
-            flash("Pending verification deleted.", "info")
-            log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
-    except Exception as e:
-        conn.rollback()
-        flash(f"Error deleting pending verification: {e}", "danger")
-        log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
-    finally:
-        conn.close()
+#     conn = connect_to_db()
+#     try:
+#         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+#             cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
+#             conn.commit()
+#             flash("Pending verification deleted.", "info")
+#             log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
+#     except Exception as e:
+#         conn.rollback()
+#         flash(f"Error deleting pending verification: {e}", "danger")
+#         log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
+#     finally:
+#         conn.close()
 
-    return redirect(url_for('admin_routes.members'))
+#     return redirect(url_for('admin_routes.members'))
 
-@admin_routes.route('/payment/<modify>', methods=['GET', 'POST'])
-def modify_payment(modify):
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
-    pages = ["edit", "add"]
-    if modify not in pages:
-        return redirect(url_for('admin_routes.admin_dashboard'))
+# TODO: Disabled for view-only mode
+# @admin_routes.route('/payment/<modify>', methods=['GET', 'POST'])
+# def modify_payment(modify):
+#     if not session.get('admin_logged_in'):
+#         return redirect(url_for('admin_routes.login'))
+#     pages = ["edit", "add"]
+#     if modify not in pages:
+#         return redirect(url_for('admin_routes.admin_dashboard'))
 
-    mode = modify
-    user_id = request.args.get('user_id')
-    payment = None
-    if user_id:
-        conn = connect_to_db()
-        try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                cursor.execute("SELECT * FROM payment WHERE id = %s", (user_id,))
-                payment = cursor.fetchone()
-        finally:
-            conn.close()
+#     mode = modify
+#     user_id = request.args.get('user_id')
+#     payment = None
+#     if user_id:
+#         conn = connect_to_db()
+#         try:
+#             with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+#                 cursor.execute("SELECT * FROM payment WHERE id = %s", (user_id,))
+#                 payment = cursor.fetchone()
+#         finally:
+#             conn.close()
 
-    if request.method == 'POST':
-        id_val = request.form.get('id')
-        food = 1 if request.form.get('food') else 0
-        special_food = 1 if request.form.get('special_food') else 0
-        reduce_fee = request.form.get('reduce_fee') or 0
-        due_months = request.form.get('due_months') or 0
-        conn = connect_to_db()
-        try:
-            with conn.cursor() as cursor:
-                if mode == 'edit':
-                    cursor.execute(
-                        "UPDATE payment SET food=%s, special_food=%s, reduce_fee=%s, due_months=%s WHERE id=%s",
-                        (food, special_food, reduce_fee, due_months, id_val)
-                    )
-                    conn.commit()
-                    flash("Payment info updated.", "success")
-                else:  # add
-                    cursor.execute(
-                        "INSERT INTO payment (id, food, special_food, reduce_fee, due_months) VALUES (%s, %s, %s, %s, %s)",
-                        (id_val, food, special_food, reduce_fee, due_months)
-                    )
-                    conn.commit()
-                    flash("Payment info added.", "success")
-            return redirect(url_for('admin_routes.admin_dashboard'))
-        finally:
-            conn.close()
+#     if request.method == 'POST':
+#         id_val = request.form.get('id')
+#         food = 1 if request.form.get('food') else 0
+#         special_food = 1 if request.form.get('special_food') else 0
+#         reduce_fee = request.form.get('reduce_fee') or 0
+#         due_months = request.form.get('due_months') or 0
+#         conn = connect_to_db()
+#         try:
+#             with conn.cursor() as cursor:
+#                 if mode == 'edit':
+#                     cursor.execute(
+#                         "UPDATE payment SET food=%s, special_food=%s, reduce_fee=%s, due_months=%s WHERE id=%s",
+#                         (food, special_food, reduce_fee, due_months, id_val)
+#                     )
+#                     conn.commit()
+#                     flash("Payment info updated.", "success")
+#                 else:  # add
+#                     cursor.execute(
+#                         "INSERT INTO payment (id, food, special_food, reduce_fee, due_months) VALUES (%s, %s, %s, %s, %s)",
+#                         (id_val, food, special_food, reduce_fee, due_months)
+#                     )
+#                     conn.commit()
+#                     flash("Payment info added.", "success")
+#             return redirect(url_for('admin_routes.admin_dashboard'))
+#         finally:
+#             conn.close()
 
-    return render_template('admin/payment_form.html', payment=payment, mode=mode)
+#     return render_template('admin/payment_form.html', payment=payment, mode=mode)
 
 @admin_routes.route('/interactions', methods=['GET'])
 def interactions():

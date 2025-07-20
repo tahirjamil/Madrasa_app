@@ -21,16 +21,15 @@
   <h2 class="mb-0">📅 Events</h2>
   <div class="d-flex gap-2">
     <a href="{{ url_for('admin_routes.exams') }}" class="btn btn-sm btn-secondary">
-      📚 Exams
+      �� Exams
     </a>
-    <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#addEventForm">
+    {# <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#addEventForm">
       + Add Event
-    </button>
+    </button> #} {# TODO: Disabled for view-only mode #}
   </div>
   </div>
 
-
-  <!-- Add Event Form (collapsed by default) -->
+  {# <!-- Add Event Form (collapsed by default) -->
   <div class="collapse mb-4" id="addEventForm">
     <div class="card card-body">
       <form method="POST" action="{{ url_for('admin_routes.events') }}">
@@ -73,6 +72,7 @@
       </form>
     </div>
   </div>
+  #} {# TODO: Disabled for view-only mode #}
 
   <!-- Events Table -->
   <div class="table-responsive">

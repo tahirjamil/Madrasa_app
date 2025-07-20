@@ -2,6 +2,8 @@ from . import web_routes
 from flask import render_template, request, redirect, url_for, flash, current_app
 from helpers import send_email
 import os
+import markdown
+import re
 
 @web_routes.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -40,14 +42,93 @@ def contact():
 
 @web_routes.route('/privacy')
 def privacy():
+    # Load contact info from environment variables
+    contact_email = os.getenv('EMAIL_ADDRESS'   )
+    contact_phone = os.getenv('MADRASA_PHONE')
+    effective_date = os.getenv('PRIVACY_POLICY_EFFECTIVE_DATE')
+
+    if not contact_email or not contact_phone or not effective_date:
+        raise ValueError("Missing required environment variables")
+
+    with open('content/privacy_policy.md', 'r', encoding='utf-8') as f:
+        policy_md = f.read()
+
+    # Replace placeholders with actual contact info
+    policy_md = policy_md.replace('{{ contact_email }}', contact_email)
+    policy_md = policy_md.replace('{{ phone }}', contact_phone)
+
+    # Split content into sections based on '## ' headings
+    sections_md = re.split(r'\n## ', policy_md.strip())
+
+    # The first element is the introduction
+    introduction_md = sections_md.pop(0) if sections_md else ""
+    introduction_html = markdown.markdown(introduction_md, extensions=['extra'])
+
+    # The rest are the collapsible sections
+    parsed_sections = []
+    for section_md in sections_md:
+        if not section_md.strip():
+            continue
+        
+        lines = section_md.strip().split('\n', 1)
+        title = lines[0].strip()
+        content_md = lines[1] if len(lines) > 1 else ''
+        
+        parsed_sections.append({
+            'title': title,
+            'content_html': markdown.markdown(content_md, extensions=['extra']),
+            'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
+        })
+
     return render_template(
         'privacy.html',
-        effective_date='July 9, 2025',
-        contact_email=os.getenv('EMAIL_ADDRESS', ""))
+        introduction_html=introduction_html,
+        sections=parsed_sections,
+        effective_date=effective_date
+    )
 
 @web_routes.route('/terms')
 def terms():
+    # Load contact info from environment variables
+    contact_email = os.getenv('EMAIL_ADDRESS')
+    contact_phone = os.getenv('MADRASA_PHONE')
+    effective_date = os.getenv('TERMS_EFFECTIVE_DATE')
+
+    if not contact_email or not contact_phone or not effective_date:
+        raise ValueError("Missing required environment variables")
+
+    with open('content/terms.md', 'r', encoding='utf-8') as f:
+        terms_md = f.read()
+
+    # Replace placeholders with actual contact info
+    terms_md = terms_md.replace('{{ contact_email }}', contact_email)
+
+    # Split content into sections based on '## ' headings
+    sections_md = re.split(r'\n## ', terms_md.strip())
+
+    # The first element is the introduction
+    introduction_md = sections_md.pop(0) if sections_md else ""
+    introduction_html = markdown.markdown(introduction_md, extensions=['extra'])
+
+    # The rest are the collapsible sections
+    parsed_sections = []
+    for section_md in sections_md:
+        if not section_md.strip():
+            continue
+        
+        lines = section_md.strip().split('\n', 1)
+        title = lines[0].strip()
+        content_md = lines[1] if len(lines) > 1 else ''
+        
+        parsed_sections.append({
+            'title': title,
+            'content_html': markdown.markdown(content_md, extensions=['extra']),
+            'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
+        })
+
     return render_template(
         'terms.html',
-        effective_date='July 9, 2025'
-        )
+        introduction_html=introduction_html,
+        sections=parsed_sections,
+        effective_date=effective_date
+    )

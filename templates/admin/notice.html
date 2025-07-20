@@ -17,8 +17,7 @@
     {% endif %}
   {% endwith %}
 
-  <!-- Upload Form -->
-  <form id="upload-form"
+  {# <form id="upload-form"
         action="{{ url_for('admin_routes.notice_page') }}"
         method="POST"
         enctype="multipart/form-data"
@@ -46,7 +45,7 @@
     <div class="col-md-2 d-grid">
       <button type="submit" class="btn btn-success mt-4">Add Notice</button>
     </div>
-  </form>
+  </form> #} {# TODO: Disabled for view-only mode #}
 
   <!-- Search Box -->
   <div class="mb-4">
@@ -89,7 +88,7 @@
                   <small>Target: {{ n.target_date }}</small><br>
                   <small>Uploaded: {{ n.uploaded_at }}</small>
                 </div>
-                <form method="POST"
+                {# <form method="POST"
                       action="{{ url_for('admin_routes.delete_notice', filename=n.filename) }}"
                       class="delete-form d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -98,7 +97,7 @@
                          placeholder="Password"
                          required class="form-control form-control-sm w-auto d-inline-block mb-1">
                   <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                </form>
+                </form> #} {# TODO: Disabled for view-only mode #}
               </li>
               {% endfor %}
             {% else %}

@@ -16,6 +16,7 @@ from config import Config
 import smtplib
 from email.mime.text import MIMEText
 import re
+from translations import t
 
 
 # ─── Compute Upload Folder ───────────
@@ -82,26 +83,26 @@ def delete_code():
         conn.close()
 
 # SMS Sender
-def send_sms(phone, signature=None, code=None, msg=None):
+def send_sms(phone, signature=None, code=None, msg=None, lang="en"):
     delete_code()
     TEXTBELT_URL = "https://textbelt.com/text"
 
+    # Use translation if no custom message is provided
+    if not msg:
+        msg = t("verification_sms_sent", lang, target=phone)
+        if code:
+            msg += f"\n{t('your_code_is', lang, code=code)}"
+        msg += "\n\n@An-Nur.app"
+
     response = requests.post(TEXTBELT_URL, {
                 'phone': phone,
-                'message': f"{msg}\n\n@annur.app",
+                'message': msg,
                 'key': os.getenv("TEXTBELT_KEY")
             })
 
     try:
-        if not msg:
-            response = requests.post(TEXTBELT_URL, {
-                'phone': phone,
-                'message': f"Your verification code is: {code}\n\n@annur.app #{signature}",
-                'key': os.getenv("TEXTBELT_KEY")
-            })
         result = response.json()
         return result.get("success", False)
-    
     except Exception as e:
         print("SMS Error:", e)
         log_event("sms_error", phone, str(e))
@@ -109,17 +110,21 @@ def send_sms(phone, signature=None, code=None, msg=None):
 
 
 # Email Sender
-def send_email(to_email, code=None, subject=None, body=None):
+def send_email(to_email, code=None, subject=None, body=None, lang="en"):
     delete_code()
-    
     EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
     EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
     EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "fallback-email")
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "fallback-pass")
 
-    if not subject or not body:
-        subject = "Your Verification Code"
-        body = f"Your verification code is: {code}\n\n@annur.app"
+    # Use translation if no custom subject/body is provided
+    if not subject:
+        subject = t("verification_email_subject", lang)
+    if not body:
+        body = t("verification_email_sent", lang, target=to_email)
+        if code:
+            body += f"\n{t('your_code_is', lang, code=code)}"
+        body += "\n\n@An-Nur.app"
 
     try:
         msg = MIMEText(body)

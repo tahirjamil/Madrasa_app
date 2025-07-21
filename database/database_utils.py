@@ -29,6 +29,7 @@ def create_tables():
             phone       VARCHAR(20)            NOT NULL,
             password    TEXT                   NOT NULL,
             email       TEXT,
+            ip_address  VARCHAR(20),
             deactivated_at  DATETIME            NULL,
             scheduled_deletion_at  DATETIME     NULL,
             UNIQUE KEY unique_user (fullname, phone)
@@ -70,7 +71,8 @@ def create_tables():
             verification_id   INT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
             created_at  TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
             phone       VARCHAR(20) NOT NULL,
-            code        INT
+            code        INT,
+            ip_address  VARCHAR(20),
         )
         """)
 
@@ -200,7 +202,7 @@ def create_tables():
         # ─── event(s) ──────────────────────────────────────────────────────────
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS events (
-            event_id     INT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            event_id     INT       AUTO_INCREMENT PRIMARY KEY,
             created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                             ON UPDATE CURRENT_TIMESTAMP,
             type         ENUM('event', 'function') NOT NULL,
@@ -209,8 +211,8 @@ def create_tables():
             date         DATE      NOT NULL,
             function_url TEXT
         )
-        # ─── event(s) ──────────────────────────────────────────────────────────
         """)
+        # ─── interaction(s) ──────────────────────────────────────────────────────────
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS interactions (
             device_id      TEXT NOT NULL,
@@ -218,6 +220,15 @@ def create_tables():
             ip_address     TEXT NOT NULL,
             id             INT  NOT NULL,
             open_times     INT  NOT NULL DEFAULT 1
+        )
+        """)
+        # ─── Block(s) ──────────────────────────────────────────────────────────
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS Blocker (
+            block_id            INT             AUTO_INCREMENT PRIMARY KEY,
+            basic_info          VARCHAR(50)     NOT NULL,
+            additional_info    TEXT,
+            need_check          BOOLEAN         NOT NULL   DEFAULT 1,
         )
         """)
 

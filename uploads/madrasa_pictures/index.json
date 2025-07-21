@@ -1,0 +1,124 @@
+{
+  "garden": [
+    { "filename": "garden_1.jpg", "content": "Garden" },
+    { "filename": "garden_2.jpg", "content": "Garden" },
+    { "filename": "garden_3.jpg", "content": "Garden" },
+    { "filename": "garden_4.jpg", "content": "Garden" },
+    { "filename": "garden_5.jpg", "content": "Garden" }
+  ],
+  "library": [
+    { "filename": "library_1.jpg", "content": "Library" },
+    { "filename": "library1.webp", "content": "Library" },
+    { "filename": "library2.webp", "content": "Library" },
+    { "filename": "library4.webp", "content": "Library" },
+    { "filename": "library5.webp", "content": "Library" },
+    { "filename": "library6.webp", "content": "Library" },
+    { "filename": "library7.webp", "content": "Library" },
+    { "filename": "library8.webp", "content": "Library" },
+    { "filename": "library9.webp", "content": "Library" },
+    { "filename": "library10.webp", "content": "Library" }
+  ],
+  "office": [
+    { "filename": "office_1.jpg", "content": "Office" },
+    { "filename": "office_2.jpg", "content": "Office" },
+    { "filename": "office_3.jpg", "content": "Office" },
+    { "filename": "office_4.jpg", "content": "Office" },
+    { "filename": "office_5.jpg", "content": "Office" }
+  ],
+  "roof_and_kitchen": [
+    { "filename": "roof_and_kitchen_1.jpg", "content": "Roof and Kitchen" },
+    { "filename": "roof_and_kitchen_2.jpg", "content": "Roof and Kitchen" },
+    { "filename": "roof_and_kitchen_3.jpg", "content": "Roof and Kitchen" },
+    { "filename": "roof_and_kitchen_4.jpg", "content": "Roof and Kitchen" },
+    { "filename": "roof_and_kitchen_5.jpg", "content": "Roof and Kitchen" }
+  ],
+  "mosque": [
+    { "filename": "mosque_1.jpg", "content": "Mosque" },
+    { "filename": "mosque_2.jpg", "content": "Mosque" },
+    { "filename": "mosque_3.jpg", "content": "Mosque" },
+    { "filename": "mosque_4.jpg", "content": "Mosque" },
+    { "filename": "mosque_5.jpg", "content": "Mosque" }
+  ],
+  "studio": [
+    { "filename": "studio_1.jpg", "content": "Studio" },
+    { "filename": "studio_2.jpg", "content": "Studio" },
+    { "filename": "studio_3.jpg", "content": "Studio" },
+    { "filename": "studio_4.jpg", "content": "Studio" },
+    { "filename": "studio_5.jpg", "content": "Studio" }
+  ],
+  "other": [
+    { "filename": "other_1.jpg", "content": "Other" },
+    { "filename": "other_2.jpg", "content": "Other" },
+    { "filename": "other_3.jpg", "content": "Other" },
+    { "filename": "other_4.jpg", "content": "Other" },
+    { "filename": "other_5.jpg", "content": "Other" }
+  ],
+  "classes": {
+    "male": {
+      "daora": [
+        { "filename": "daora_1.jpg", "content": "Daora" },
+        { "filename": "daora1.webp", "content": "Daora" },
+        { "filename": "daora3.webp", "content": "Daora" },
+        { "filename": "daora4.webp", "content": "Daora" },
+        { "filename": "daora5.webp", "content": "Daora" },
+        { "filename": "daora6.webp", "content": "Daora" },
+        { "filename": "daora9.webp", "content": "Daora" }
+      ],
+      "meshkat": [
+        { "filename": "meshkat_1.jpg", "content": "Meshkat" }
+      ],
+      "hifz": [
+        { "filename": "hifz_1.jpg", "content": "Hifz" },
+        { "filename": "hifz1.webp", "content": "Hifz" },
+        { "filename": "hifz2.webp", "content": "Hifz" },
+        { "filename": "hifz4.webp", "content": "Hifz" },
+        { "filename": "hifz5.webp", "content": "Hifz" },
+        { "filename": "hifz6.webp", "content": "Hifz" },
+        { "filename": "hifz7.webp", "content": "Hifz" },
+        { "filename": "hifz8.webp", "content": "Hifz" },
+        { "filename": "hifz9.webp", "content": "Hifz" }
+      ],
+      "ifta": [
+        { "filename": "ifta_1.jpg", "content": "Ifta" },
+        { "filename": "ifta1.webp", "content": "Ifta" },
+        { "filename": "ifta2.webp", "content": "Ifta" },
+        { "filename": "ifta4.webp", "content": "Ifta" },
+        { "filename": "ifta6.webp", "content": "Ifta" }
+      ],
+      "madani_nesab": [
+        { "filename": "madani_nesab_1.jpg", "content": "Madani Nesab" },
+        { "filename": "madani2.webp", "content": "Madani Nesab" },
+        { "filename": "madani3.webp", "content": "Madani Nesab" }
+      ],
+      "ulumul_hadith": [
+        { "filename": "ulumul_hadith_1.jpg", "content": "Ulumul Hadith" },
+        { "filename": "ulumul_hadis1.webp", "content": "Ulumul Hadith" },
+        { "filename": "ulumul_hadis2.webp", "content": "Ulumul Hadith" },
+        { "filename": "ulumul_hadis4.webp", "content": "Ulumul Hadith" }
+      ],
+      "other": [
+        { "filename": "other_1.jpg", "content": "Other" }
+      ]
+    },
+    "female": {
+      "moktob": [
+        { "filename": "moktob_1.jpg", "content": "Moktob" }
+      ],
+      "hifz": [
+        { "filename": "hifz_1.jpg", "content": "Hifz" }
+      ],
+      "ifta": [
+        { "filename": "ifta_1.jpg", "content": "Ifta" }
+      ],
+      "madani_nesab": [
+        { "filename": "madani_nesab_1.jpg", "content": "Madani Nesab" }
+      ],
+      "ulumul_hadith": [
+        { "filename": "ulumul_hadith_1.jpg", "content": "Ulumul Hadith" }
+      ],
+      "other": [
+        { "filename": "other_1.jpg", "content": "Other" }
+      ]
+    }
+  }
+}

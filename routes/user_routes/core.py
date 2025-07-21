@@ -56,6 +56,35 @@ def exam_results_file(filename):
     
     return send_from_directory(upload_folder, filename), 200
 
+@user_routes.route('/uploads/madrasa_pictures/<gender>/<folder>/<path:filename>')
+def madrasa_pictures_file(gender, folder, filename):
+    folders = ['garden', 'library', 'office', 'roof_and_kitchen', 'mosque', 'studio', 'other']
+    genders = ['male', 'female', 'both']
+    filename = secure_filename(filename)
+    if folder not in folders or gender not in genders:
+        return jsonify({"message": "Invalid folder name"}), 404
+    
+    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', gender, folder, filename)
+    if os.path.isfile(file_path):
+        return send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', gender, folder), filename), 200
+    else:
+        return jsonify({"message": "File not found"}), 404
+    
+
+@user_routes.route('/uploads/madrasa_pictures/classes/<folder>/<path:filename>')
+def madrasa_pictures_classes_file(folder, filename):
+    folders = ['hifz', 'moktob', 'meshkat', 'daora', 'ulumul_hadith', 'ifta', 'madani_nesab', 'other']
+    filename = secure_filename(filename)
+    if folder not in folders:
+        return jsonify({"message": "Invalid folder name"}), 404
+    
+    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', 'classes', folder, filename)
+    if os.path.isfile(file_path):
+        return send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', 'classes', folder), filename), 200
+    else:
+        return jsonify({"message": "File not found"}), 404
+    
+
 # ========== Routes ==========
 
 @user_routes.route('/add_people', methods=['POST'])

@@ -216,7 +216,7 @@ def send_verification_code():
             # SMS limit reached or SMS failed => try EMAIL
             if email:
                 if count < EMAIL_LIMIT_PER_HOUR:
-                    if send_email(to_email=email, code=code):
+                    if send_email(to_email=email, code=code, lang=lang):
                         cursor.execute(
                             "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
                             (formatted_phone, code)

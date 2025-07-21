@@ -1,4 +1,5 @@
 TRANSLATIONS = {
+    # Used in helpers.py for SMS and email verification
     "verification_sms_sent": {
         "en": "Verification code sent to {target}",
         "bn": "{target} নম্বরে ভেরিফিকেশন কোড পাঠানো হয়েছে",
@@ -10,9 +11,9 @@ TRANSLATIONS = {
         "ar": "تم إرسال رمز التحقق إلى {target}"
     },
     "your_code_is": {
-        "en": "Your verification code is: {code}",
-        "bn": "আপনার যাচাইকরণ কোডটি হলো: {code}",
-        "ar": "رمز التحقق الخاص بك هو: {code}"
+        "en": "Your verification code is: {code}\nPlease do not share it with anyone.",
+        "bn": "আপনার যাচাইকরণ কোডটি হলো: {code}\nকোনো ব্যক্তির সাথে এটি শেয়ার করবেন না।",
+        "ar": "رمز التحقق الخاص بك هو: {code}\nيرجى عدم مشاركته مع أي شخص."
     },
     "verification_email_subject": {
         "en": "Your Verification Code",
@@ -53,7 +54,7 @@ TRANSLATIONS = {
         "en": (
             "Your account has been successfully put for deletion.\n"
             "It will take {days} days to fully delete your account.\n"
-            "If it wasn’t you, please contact us for account recovery.\n\n@An-Nur.app"
+            "If it wasn't you, please contact us for account recovery.\n\n@An-Nur.app"
         ),
         "bn": (
             "আপনার অ্যাকাউন্ট ডিলিশনের জন্য সংরক্ষণ করা হয়েছে।\n"
@@ -75,7 +76,7 @@ TRANSLATIONS = {
         "en": (
             "Your account has been successfully deactivated.\n"
             "You can reactivate it within our app.\n"
-            "If it wasn’t you, please contact us immediately.\n\n@An-Nur.app"
+            "If it wasn't you, please contact us immediately.\n\n@An-Nur.app"
         ),
         "bn": (
             "আপনার অ্যাকাউন্ট সফলভাবে নিষ্ক্রিয় করা হয়েছে।\n"
@@ -250,16 +251,21 @@ TRANSLATIONS = {
         "bn": "ফাইল পাওয়া যায়নি",
         "ar": "الملف غير موجود"
     },
-    "database_connection_failed": {
-        "en": "Database connection failed.",
-        "bn": "ডাটাবেস সংযোগ ব্যর্থ হয়েছে।",
-        "ar": "فشل الاتصال بقاعدة البيانات."
+    "profile_added_successfully": {
+        "en": "{type} profile added successfully",
+        "bn": "{type} প্রোফাইল সফলভাবে যোগ করা হয়েছে",
+        "ar": "تمت إضافة ملف تعريف {type} بنجاح"
     },
-    # payments.py
+    "database_connection_failed": {
+        "en": "Database connection failed",
+        "bn": "ডাটাবেস সংযোগ ব্যর্থ হয়েছে",
+        "ar": "فشل الاتصال بقاعدة البيانات"
+    },
+    # Payments
     "user_not_found_payment": {
-        "en": "User not found",
-        "bn": "ব্যবহারকারী পাওয়া যায়নি",
-        "ar": "المستخدم غير موجود"
+        "en": "User not found for payment",
+        "bn": "পেমেন্টের জন্য ব্যবহারকারী পাওয়া যায়নি",
+        "ar": "لم يتم العثور على المستخدم للدفع"
     },
     "transaction_failed": {
         "en": "Transaction failed",
@@ -267,64 +273,85 @@ TRANSLATIONS = {
         "ar": "فشلت المعاملة"
     },
     "phone_fullname_type_required": {
-        "en": "Phone, fullname and type are required",
-        "bn": "ফোন, পুরো নাম এবং টাইপ প্রয়োজন",
-        "ar": "رقم الهاتف، الاسم الكامل والنوع مطلوبة"
+        "en": "Phone, fullname and payment type required",
+        "bn": "ফোন, পুরো নাম এবং পেমেন্ট টাইপ প্রয়োজন",
+        "ar": "رقم الهاتف والاسم الكامل ونوع الدفع مطلوبة"
     },
     "invalid_updated_since_format": {
         "en": "Invalid updatedSince format",
-        "bn": "updatedSince ফরম্যাট সঠিক নয়",
-        "ar": "تنسيق updatedSince غير صالح"
+        "bn": "আপডেটেড সিন্স ফরম্যাট সঠিক নয়",
+        "ar": "تنسيق محدث منذ غير صالح"
     },
     "internal_server_error_payment": {
-        "en": "Internal server error",
-        "bn": "সার্ভারে ত্রুটি হয়েছে",
-        "ar": "خطأ في الخادم الداخلي"
+        "en": "Internal server error during payment processing",
+        "bn": "পেমেন্ট প্রসেসিং এর সময় সার্ভারে ত্রুটি হয়েছে",
+        "ar": "خطأ في الخادم الداخلي أثناء معالجة الدفع"
     },
     "no_transactions_found": {
         "en": "No transactions found",
-        "bn": "কোনো লেনদেন পাওয়া যায়নি",
+        "bn": "কোন লেনদেন পাওয়া যায়নি",
         "ar": "لم يتم العثور على معاملات"
     },
     "amount_and_type_required": {
-        "en": "amount and type required",
-        "bn": "পরিমাণ এবং টাইপ প্রয়োজন",
-        "ar": "المبلغ والنوع مطلوبان"
+        "en": "Amount and payment type are required",
+        "bn": "পরিমাণ এবং পেমেন্ট টাইপ প্রয়োজন",
+        "ar": "المبلغ ونوع الدفع مطلوبان"
     },
     "payment_gateway_misconfigured": {
-        "en": "Payment gateway misconfigured",
-        "bn": "পেমেন্ট গেটওয়ে ভুলভাবে কনফিগার করা হয়েছে",
-        "ar": "بوابة الدفع غير مهيأة بشكل صحيح"
+        "en": "Payment gateway is not properly configured",
+        "bn": "পেমেন্ট গেটওয়ে সঠিকভাবে কনফিগার করা হয়নি",
+        "ar": "لم يتم تكوين بوابة الدفع بشكل صحيح"
     },
     "gateway_unreachable": {
-        "en": "Gateway unreachable",
-        "bn": "গেটওয়ে অ্যাক্সেসযোগ্য নয়",
-        "ar": "البوابة غير متاحة"
+        "en": "Payment gateway is currently unreachable",
+        "bn": "পেমেন্ট গেটওয়ে বর্তমানে অপ্রাপ্য",
+        "ar": "بوابة الدفع غير متاحة حاليًا"
     },
     "payment_initiation_failed": {
         "en": "Payment initiation failed",
         "bn": "পেমেন্ট শুরু করতে ব্যর্থ হয়েছে",
         "ar": "فشل بدء الدفع"
     },
+    "invalid_return_type": {
+        "en": "Invalid return type",
+        "bn": "রিটার্ন টাইপ সঠিক নয়",
+        "ar": "نوع العودة غير صالح"
+    },
+    "payment_failed": {
+        "en": "Payment failed",
+        "bn": "পেমেন্ট ব্যর্থ হয়েছে",
+        "ar": "فشل الدفع"
+    },
+    "payment_cancelled": {
+        "en": "Payment cancelled",
+        "bn": "পেমেন্ট বাতিল করা হয়েছে",
+        "ar": "تم إلغاء الدفع"
+    },
+    "missing_transaction_identifier": {
+        "en": "Missing transaction identifier",
+        "bn": "লেনদেন শনাক্তকারী অনুপস্থিত",
+        "ar": "معرف المعاملة مفقود"
+    },
     "payment_validation_failed": {
         "en": "Payment validation failed",
-        "bn": "পেমেন্ট যাচাই ব্যর্থ হয়েছে",
-        "ar": "فشل التحقق من الدفع"
+        "bn": "পেমেন্ট যাচাইকরণ ব্যর্থ হয়েছে",
+        "ar": "فشل التحقق من صحة الدفع"
     },
     "payment_validation_error": {
-        "en": "Payment validation error",
-        "bn": "পেমেন্ট যাচাই ত্রুটি",
-        "ar": "خطأ في التحقق من الدفع"
+        "en": "Error during payment validation",
+        "bn": "পেমেন্ট যাচাইকরণের সময় ত্রুটি",
+        "ar": "خطأ أثناء التحقق من صحة الدفع"
     },
     "payment_recorded": {
-        "en": "Payment recorded",
-        "bn": "পেমেন্ট রেকর্ড করা হয়েছে",
-        "ar": "تم تسجيل الدفع"
+        "en": "Payment recorded successfully",
+        "bn": "পেমেন্ট সফলভাবে রেকর্ড করা হয়েছে",
+        "ar": "تم تسجيل الدفع بنجاح"
     },
-    "unknown_device": {
-        "en": "Unknown device. Access denied for security reasons.",
-        "bn": "অজানা ডিভাইস। সুরক্ষার কারণে অ্যাক্সেস প্রত্যাখান করা হয়েছে।",
-        "ar": "جهاز غير معروف. تم رفض الدخول بسبب أسباب الأمن."
+    # Account management
+    "account_deactivated": {
+        "en": "Account is deactivated",
+        "bn": "অ্যাকাউন্ট নিষ্ক্রিয় করা হয়েছে",
+        "ar": "تم تعطيل الحساب"
     },
     "no_account_given": {
         "en": "No account information provided.",

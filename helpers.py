@@ -121,7 +121,7 @@ def send_email(to_email, code=None, subject=None, body=None, lang="en"):
     if not subject:
         subject = t("verification_email_subject", lang)
     if not body:
-        body = t("verification_email_sent", lang, target=to_email)
+        body = ""
         if code:
             body += f"\n{t('your_code_is', lang, code=code)}"
         body += "\n\n@An-Nur.app"

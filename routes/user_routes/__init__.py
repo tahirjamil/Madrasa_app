@@ -20,11 +20,11 @@ def check():
     elif api_key_header:
         api_key = api_key_header
     else:
-        return {'error': 'No API key provided'}, 401
+        return {'action': 'block', 'message': 'No API key provided'}, 401
     
     # Validate API key
     if not is_valid_api_key(api_key):
-        return {'error': 'Invalid API key'}, 401
+        return {'action': 'block', 'message': 'Invalid API key'}, 401
 
 
 # Import routes from other modules to register them

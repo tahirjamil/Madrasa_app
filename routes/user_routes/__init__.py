@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from helpers import is_maintenance_mode, is_valid_api_key
+from helpers import is_maintenance_mode, is_valid_api_key, blocker
 from translations import t
 
 user_routes = Blueprint("user_routes", __name__)
@@ -9,7 +9,10 @@ def check():
     lang = request.accept_languages.best_match(["en", "bn", "ar"])
     if is_maintenance_mode():
         return jsonify({"action": "maintenance", "message": t("maintenance_message", lang)}), 503
-    
+
+    if blocker(request.remote_addr):
+        return jsonify({"action": "maintenance", "message": t("blocker_maintenance", lang)}), 503
+
     # Get API key from headers
     auth_header = request.headers.get('Authorization')
     api_key_header = request.headers.get('X-API-Key')

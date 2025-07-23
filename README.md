@@ -156,3 +156,23 @@ For secure HTTPS, you can use a free SSL certificate from [Let's Encrypt](https:
    ```
 
 For more details, see the [Certbot documentation](https://certbot.eff.org/). 
+
+## Troubleshooting CSRF and Session Issues (Admin Panel)
+
+If you encounter CSRF errors or cannot log in to the admin panel remotely:
+
+- Make sure all admin forms include the CSRF token (already included in this project).
+- Ensure your browser accepts cookies from your domain.
+- Always access the admin panel using the same domain and protocol (http/https) as your Flask app is configured for.
+- If using HTTPS, set `SESSION_COOKIE_SECURE = True` in `config.py`.
+- If using a custom domain, set `SESSION_COOKIE_DOMAIN = ".yourdomain.com"` in `config.py`.
+- If using Nginx, ensure these headers are set in your config:
+  ```
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  ```
+- If you see a CSRF error, a user-friendly error page will be shown with the reason.
+
+See `config.py` and `app.py` for more details. 

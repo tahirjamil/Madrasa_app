@@ -14,9 +14,10 @@ class Config:
 
     # Advanced Info
     API_KEY = os.getenv("API_KEY")
-    SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
+    SESSION_COOKIE_SECURE = False  # Set to True if using HTTPS
     SESSION_COOKIE_SAMESITE = "Lax"
-    SESSION_COOKIE_SECURE = False  # Don't use HTTPS for dev testing
+    SESSION_COOKIE_HTTPONLY = False
+    SESSION_COOKIE_DOMAIN = False
     RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
     RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
 

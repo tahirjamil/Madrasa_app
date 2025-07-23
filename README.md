@@ -75,3 +75,84 @@ Madrasa_app/
 
 ## License
 This project is licensed under the MIT License. 
+
+## Deploying with Nginx and Gunicorn
+
+For production, it is recommended to use Nginx as a reverse proxy in front of Gunicorn. Nginx will serve static files and the favicon directly for best performance, and proxy all other requests to Gunicorn.
+
+### 1. Gunicorn
+Start your Flask app with Gunicorn (example with 4 workers):
+
+```bash
+pip install gunicorn
+python run_server.py  # or manually:
+gunicorn -w 4 -b 0.0.0.0:8000 app:app
+```
+
+### 2. Nginx
+Use the provided `nginx.conf` as a template. Update the following line to the absolute path of your project's static directory:
+
+```
+    alias   /absolute/path/to/your/project/static/;
+```
+
+Place the config in `/etc/nginx/sites-available/yourapp` and symlink it to `/etc/nginx/sites-enabled/`:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/yourapp /etc/nginx/sites-enabled/
+sudo nginx -t  # test config
+sudo systemctl reload nginx
+```
+
+- Nginx will serve `/static/` and `/favicon.ico` directly.
+- All other requests are proxied to Gunicorn at `http://127.0.0.1:8000`.
+
+See `nginx.conf` in this repo for a full example. 
+
+### 3. Enabling HTTPS with Let's Encrypt
+
+For secure HTTPS, you can use a free SSL certificate from [Let's Encrypt](https://letsencrypt.org/) with Certbot.
+
+#### Steps:
+1. **Install Certbot:**
+   ```bash
+   sudo apt update
+   sudo apt install certbot python3-certbot-nginx
+   ```
+2. **Obtain and install a certificate:**
+   Replace `yourdomain.com` with your actual domain name.
+   ```bash
+   sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+   ```
+   Certbot will automatically update your Nginx config and reload Nginx.
+
+3. **Sample SSL server block:**
+   If you want to manually edit your config, add the following to your `nginx.conf`:
+   ```nginx
+   server {
+       listen 443 ssl;
+       server_name yourdomain.com www.yourdomain.com;
+
+       ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+       include /etc/letsencrypt/options-ssl-nginx.conf;
+       ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+       # ... (static, favicon, and proxy config as above) ...
+   }
+
+   # Redirect HTTP to HTTPS
+   server {
+       listen 80;
+       server_name yourdomain.com www.yourdomain.com;
+       return 301 https://$host$request_uri;
+   }
+   ```
+
+4. **Auto-renewal:**
+   Certbot sets up auto-renewal. You can test renewal with:
+   ```bash
+   sudo certbot renew --dry-run
+   ```
+
+For more details, see the [Certbot documentation](https://certbot.eff.org/). 

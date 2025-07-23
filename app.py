@@ -12,6 +12,7 @@ from flask_wtf import CSRFProtect
 from dotenv import load_dotenv
 from waitress import serve
 import socket
+import platform
 
 from config import Config
 from database import create_tables
@@ -206,17 +207,19 @@ if __name__ == "__main__":
     # Log startup configuration
     logger.info(f"Maintenance Mode: {'Enabled' if is_maintenance_mode() else 'Disabled'}")
 
+    current_os = platform.system()
     try:
-        if dev_mode == True:
-            logger.info("Starting development server...")
-            app.run(debug=True, host=host, port=port)
+        if current_os == "Windows":
+            if dev_mode:
+                logger.info("Starting development server (Flask) on Windows...")
+                app.run(debug=True, host=host, port=port)
+            else:
+                logger.info(f"Starting production server (Waitress) on Windows on port {port}")
+                logger.info(f"Quick logs available at {Config.BASE_URL}/admin/info")
+                serve(app, host=host, port=port)
         else:
-            # production
-            port = 80
-            URL = Config.BASE_URL
-            logger.info(f"Starting production server on port {port}")
-            logger.info(f"Quick logs available at {URL}/admin/info")
-            serve(app, host=host, port=port)
+            # On Linux or other OS, do not start a server here. Expect Gunicorn to be used.
+            logger.info("Detected non-Windows OS. Please use Gunicorn to run the server, e.g.: gunicorn -w 4 -b 0.0.0.0:8000 app:app")
     except Exception as e:
         logger.critical(f"Server failed to start: {str(e)}", exc_info=True)
         raise

@@ -89,12 +89,6 @@ def madrasa_pictures_classes_file(folder, filename):
 
 @user_routes.route('/add_people', methods=['POST'])
 def add_person():
-    print(request.content_type)
-    print('Headers:', dict(request.headers))
-    print('Content-Type:', request.content_type)
-    print('Form data:', dict(request.form))
-    print('Files:', request.files)
-
     conn = connect_to_db()
     BASE_URL = current_app.config['BASE_URL']
     
@@ -109,8 +103,6 @@ def add_person():
 
     if not get_acc_type.endswith('s'):
         get_acc_type = (f"{get_acc_type}s")
-
-    print(get_acc_type, fullname, phone)
 
     if not get_acc_type in ['admins','students','teachers', 'staffs','others','badri_members', 'donors']:
         get_acc_type = 'others'

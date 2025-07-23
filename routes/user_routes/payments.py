@@ -291,7 +291,10 @@ def payment_success_ssl(return_type):
     try:
         db = connect_to_db()
         with db.cursor(pymysql.cursors.DictCursor) as cursor:
-            # Fetch the user’s internal ID
+            # Start transaction
+            db.begin()
+            
+            # Fetch the user's internal ID
             cursor.execute(
                 "SELECT id FROM users WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (phone, fullname)
@@ -307,8 +310,11 @@ def payment_success_ssl(return_type):
                 "VALUES (%s, %s, %s, %s, CURDATE())",
                 (user['id'], transaction_type, months or '', amount)
             )
-        db.commit()
+            # Commit transaction
+            db.commit()
     except pymysql.MySQLError as e:
+        if db:
+            db.rollback()
         log_event("payment_insert_fail", phone, str(e))
         return jsonify({"error": t("transaction_failed", lang)}), 500
     finally:

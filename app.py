@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 from waitress import serve
 import socket
 import platform
-from flask_wtf.csrf import CSRFError
 
 from config import Config
 from database import create_tables
@@ -54,6 +53,16 @@ load_dotenv(env)
 app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
+
+# Security headers
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
 # Log important configuration
 logger.info(f"BASE_URL: {Config.BASE_URL}")
@@ -146,11 +155,6 @@ def handle_exception(e):
         "message": str(e)
     }), 500
 
-@app.errorhandler(CSRFError)
-def handle_csrf_error(e):
-    logger.warning(f"CSRF error: {e.description}")
-    return render_template('admin/csrf_error.html', reason=e.description), 400
-
 # ─── Public Routes ──────────────────────────────────────────
 @app.route("/donate")
 def donate():
@@ -198,20 +202,13 @@ def health_check():
             "timestamp": datetime.now().isoformat()
         }), 500
 
-# ─── Remote Restart Endpoint ───────────────────────────────
-@app.route('/restart', methods=['POST'])
-@require_secret
-def restart_server():
-    logger.warning("Remote restart triggered via /restart endpoint!")
-    # Optionally, add more logging or notification here
-    os._exit(0)  # Process manager (systemd, supervisor, Docker) should restart the app
-
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')
 app.register_blueprint(web_routes)
 app.register_blueprint(user_routes)
 
 csrf.exempt(user_routes)
+csrf.exempt(admin_routes)
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":

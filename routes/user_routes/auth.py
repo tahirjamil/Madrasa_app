@@ -211,7 +211,7 @@ def send_verification_code():
             if not email:
                 email = get_email(phone=formatted_phone, fullname=fullname)
 
-            # Rate limit check
+            # Rate limit check - Combined limit for both SMS and email
             cursor.execute("""
                 SELECT COUNT(*) AS recent_count 
                 FROM verifications 
@@ -219,36 +219,34 @@ def send_verification_code():
             """, (formatted_phone,))
             result = cursor.fetchone()
             count = result["recent_count"] if result else 0
+            
+            # Check if rate limit exceeded for all methods
+            if count >= max(SMS_LIMIT_PER_HOUR, EMAIL_LIMIT_PER_HOUR):
+                log_event("rate_limit_blocked", phone, "All verification methods limit exceeded")
+                return jsonify({"message": t("limit_reached", lang)}), 429
 
             # Send verification code
             code = generate_code()
             sql = "INSERT INTO verifications (phone, code, ip_address) VALUES (%s, %s, %s)"
             params = (formatted_phone, code, ip_address)
             
+            verification_sent = False
+            
+            # Try SMS first if under SMS limit
             if count < SMS_LIMIT_PER_HOUR:
-                    # Send SMS
-                    if send_sms(phone=formatted_phone, signature=signature, code=code,):
-                        cursor.execute(sql, params)
-                        conn.commit()
-                        return jsonify({"success": True, "message": t("verification_sms_sent", lang, target=formatted_phone)}), 200
-                        # If SMS fails, fall back to email below
+                if send_sms(phone=formatted_phone, signature=signature, code=code):
+                    cursor.execute(sql, params)
+                    conn.commit()
+                    return jsonify({"success": True, "message": t("verification_sms_sent", lang, target=formatted_phone)}), 200
 
-            # SMS limit reached or SMS failed => try EMAIL
-            if email:
-                if count < EMAIL_LIMIT_PER_HOUR:
-                    if send_email(to_email=email, code=code, lang=lang):
-                        cursor.execute(
-                            "INSERT INTO verifications (phone, code) VALUES (%s, %s)",
-                            (formatted_phone, code)
-                        )
-                        conn.commit()
-                        return jsonify({"success": True, "message": t("verification_email_sent", lang, target=email)}), 200
-                        # else fall through to failure
-                else:
-                    log_event("rate_limit_blocked", phone, "Both send limit exceeded")
-                    return jsonify({"message": t("limit_reached", lang)}), 429
+            # Try email if SMS failed or limit reached, but under email limit
+            if email and count < EMAIL_LIMIT_PER_HOUR:
+                if send_email(to_email=email, code=code, lang=lang):
+                    cursor.execute(sql, params)
+                    conn.commit()
+                    return jsonify({"success": True, "message": t("verification_email_sent", lang, target=email)}), 200
 
-            # If we get here, both sends failed or no email provided
+            # If we get here, both methods failed or no email provided
             log_event("verification_failed", phone, f"count={count}")
             return jsonify({"message": t("failed_to_send_verification_code", lang)}), 500
 
@@ -316,7 +314,7 @@ def reset_password():
 
         # Update the password
         cursor.execute(
-            "UPDATE users SET password = %s AND ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+            "UPDATE users SET password = %s, ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
             (hashed_password, ip_address, fullname, formatted_phone)
         )
         conn.commit()
@@ -567,6 +565,11 @@ def get_account_status():
                         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
             else:
                 # cast both to strings for comparison
+                try:
+                    provided_date = dt.fromisoformat(provided).date()
+                except Exception:
+                    log_event("account_check_bad_date", record["id"], f"Bad date: {provided}")
+                    return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
                 if str(provided).strip() != str(db_val).strip():
                     log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided} != {db_val}, so {fullname} logged out")
                     return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
@@ -575,27 +578,28 @@ def get_account_status():
                         log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided_date} != {db_val}, so {fullname} logged out")
                         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
-        cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id))
+        cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id,))
         result = cursor.fetchall()
-        conn.commit()
 
         try:
             if not result:
                 cursor.execute("""INSERT INTO interactions 
                             (device_id, ip_address, device_brand, id)
                             VALUES
-                            (%s, %s, %s, %s, %s)
+                            (%s, %s, %s, %s)
                             """, (device_id, ip_address, device_brand, user_id))
             else:
-                cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND id = %s", (user_id))
-                open_times = cursor.fetchone()
-                opened = open_times['open_times'] if open_times else 0
+                cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND id = %s", (device_id, device_brand, user_id))
+                open_times_result = cursor.fetchone()
+                opened = open_times_result['open_times'] if open_times_result else 0
                 
                 opened += 1
                 cursor.execute("""UPDATE interactions SET open_times = %s
                             WHERE device_id = %s AND device_brand = %s AND id = %s
                             """, (opened, device_id, device_brand, user_id))
+            conn.commit()
         except pymysql.MySQLError as e:
+            conn.rollback()
             log_event("Saving interactions failed", phone, str(e))
         finally:
             conn.close()

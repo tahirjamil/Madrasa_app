@@ -61,9 +61,12 @@ def require_api_key(f):
 def is_valid_api_key(api_key):
     default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
 
+    print(f"matching {api_key} == {default_api} : {api_key == default_api}") # TODO: remove
+
     if not default_api:
         return True
     if api_key != default_api:
+        print("Invalid API key") # TODO: remove
         return None
     else:
         return True
@@ -83,7 +86,7 @@ def blocker(info):
         with conn.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) AS blocked FROM blocker WHERE need_check = 1")
             result = cursor.fetchone()
-            need_check = result["blocked"]
+            need_check = result["blocked"] if result else 0
 
             if need_check > 3:
                 return True

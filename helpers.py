@@ -61,13 +61,15 @@ def require_api_key(f):
 def is_valid_api_key(api_key):
     default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
 
-    print(f"matching {api_key} == {default_api} : {api_key == default_api}") # TODO: remove
-
     if not default_api:
+        # If no API key is configured, allow access (for development)
         return True
+    
+    if not api_key:
+        return False
+        
     if api_key != default_api:
-        print("Invalid API key") # TODO: remove
-        return None
+        return False
     else:
         return True
 
@@ -105,30 +107,33 @@ def is_device_unsafe(ip_address, device_id, info=None):
     dev_phone = os.getenv("DEV_PHONE")
     madrasa_phone = os.getenv("MADRASA_PHONE")
 
-    if not ip_address or device_id:
+    # Fix: Check if device info is missing (not present), not if it exists
+    if not ip_address or not device_id:
         log_event("security_breach", ip_address or device_id or info, "need to take action")
 
         for email in [dev_email, madrasa_email]:
-            send_email(subject="Security Breach", body=f"""An Unknown device tried to access the app
-                     \nip_address: {ip_address}
-                     device_id: {device_id}
-                     info: {info}
-                     \n@An-Nur.app""", to_email=email)
+            if email:  # Only send if email is configured
+                send_email(subject="Security Breach", body=f"""An Unknown device tried to access the app
+                         \nip_address: {ip_address}
+                         device_id: {device_id}
+                         info: {info}
+                         \n@An-Nur.app""", to_email=email)
             
         for phone in [dev_phone, madrasa_phone]:
-            send_sms(phone=phone, msg=f"""Security Breach
-                     \nAn Unknown device tried to access the app
-                     \nip_address: {ip_address}
-                     device_id: {device_id}
-                     info: {info}
-                     \n@An-Nur.app""")
+            if phone:  # Only send if phone is configured
+                send_sms(phone=phone, msg=f"""Security Breach
+                         \nAn Unknown device tried to access the app
+                         \nip_address: {ip_address}
+                         device_id: {device_id}
+                         info: {info}
+                         \n@An-Nur.app""")
         
         conn = connect_to_db()
         basic_info = ip_address or device_id or "Basic Info Breached"
         additional_info = info or "NULL"
         try:
             with conn.cursor() as cursor:
-                cursor.execute("INSERT INTO blocker (basic_info, additional_info) VALUES (%s, %s, %s)", (basic_info, additional_info))
+                cursor.execute("INSERT INTO blocker (basic_info, additional_info) VALUES (%s, %s)", (basic_info, additional_info))
                 conn.commit()
                 return True
         except pymysql.IntegrityError as e:
@@ -137,7 +142,7 @@ def is_device_unsafe(ip_address, device_id, info=None):
         finally:
             conn.close()
     else:
-        return None
+        return False  # Device is safe
 
 # Delete Code
 def delete_code():
@@ -427,11 +432,11 @@ def auto_delete_users():
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT u.id p.acc_type 
+                SELECT u.id, p.acc_type 
                 FROM users u
                 JOIN people p ON u.id = p.id
-                WHERE scheduled_deletion_at IS NOT NULL
-                AND scheduled_deletion_at < NOW()
+                WHERE u.scheduled_deletion_at IS NOT NULL
+                AND u.scheduled_deletion_at < NOW()
             """)
             users_to_delete = cursor.fetchall()
 
@@ -439,32 +444,35 @@ def auto_delete_users():
                 uid = user["id"]
                 acc_type = user["acc_type"]
 
-                people_sql = """UPDATE people
-                        SET 
-                            date_of_birth = NULL,
-                            birth_certificate = NULL,
-                            national_id = NULL,
-                            source = NULL,
-                            present_address = NULL,
-                            permanent_address = NULL,
-                            father_or_spouse = NULL,
-                            mother_en = NULL,
-                            mother_bn = NULL,
-                            mother_ar = NULL,
-                            guardian_number = NULL,
-                            available = NULL,
-                            is_donor = NULL,
-                            is_badri_member = NULL,
-                            is_foundation_member = NULL"""
-
                 if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
-                    people_sql = "DELETE FROM people WHERE id = %s"
+                    # Delete completely for non-essential accounts
+                    cursor.execute("DELETE FROM people WHERE id = %s", (uid,))
+                else:
+                    # Just anonymize for essential accounts
+                    cursor.execute("""UPDATE people
+                            SET 
+                                date_of_birth = NULL,
+                                birth_certificate = NULL,
+                                national_id = NULL,
+                                source = NULL,
+                                present_address = NULL,
+                                permanent_address = NULL,
+                                father_or_spouse = NULL,
+                                mother_en = NULL,
+                                mother_bn = NULL,
+                                mother_ar = NULL,
+                                guardian_number = NULL,
+                                available = NULL,
+                                is_donor = NULL,
+                                is_badri_member = NULL,
+                                is_foundation_member = NULL
+                            WHERE id = %s
+                            """, (uid,))
 
-                cursor.execute(people_sql, (uid,))
                 cursor.execute("DELETE FROM transactions WHERE id = %s", (uid,))
                 cursor.execute("DELETE FROM verifications WHERE id = %s", (uid,))
                 cursor.execute("DELETE FROM users WHERE id = %s", (uid,))
-                return None
+        
         conn.commit()
     except pymysql.MySQLError as e:
         log_event("auto_delete_error", "Null", str(e))

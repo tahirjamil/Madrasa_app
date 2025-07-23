@@ -46,10 +46,12 @@ Madrasa_app/
    pip install -r requirements.txt
    ```
 4. **Configure environment variables:**
-   - Copy `.env.example` to `.env` and set your MySQL and other secrets.
+   - Create a `.env` file with secure credentials (see Security section below)
+   - **NEVER** use default credentials in production
+   
 5. **Set up the database:**
    - Ensure MySQL is running and accessible.
-   - Update `config.py` with your DB credentials.
+   - Create a dedicated database and user for the application.
    - Run the app once to auto-create tables:
      ```bash
      python app.py
@@ -58,8 +60,58 @@ Madrasa_app/
    ```bash
    python app.py
    # or for production
-   waitress-serve --host=0.0.0.0 --port=80 app:app
+   python run_server.py
    ```
+
+## Security Configuration
+
+### Required Environment Variables (.env file)
+```bash
+# Database (REQUIRED - Do not use defaults in production)
+MYSQL_HOST=localhost
+MYSQL_USER=your_secure_db_user
+MYSQL_PASSWORD=your_secure_db_password
+MYSQL_DB=your_database_name
+
+# Application Security (REQUIRED)
+SECRET_KEY=your_very_long_random_secret_key_here
+CSRF_SECRET_KEY=another_different_random_key_here
+API_KEY=your_secure_api_key
+
+# Admin Credentials (REQUIRED - Change defaults)
+ADMIN_USERNAME=your_admin_username
+ADMIN_PASSWORD=your_very_secure_admin_password
+
+# Application URL
+BASE_URL=https://yourdomain.com
+
+# Email Configuration (Optional)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_ADDRESS=your_email@domain.com
+EMAIL_PASSWORD=your_email_app_password
+
+# SMS Configuration (Optional)
+DEV_PHONE=+8801XXXXXXXXX
+MADRASA_PHONE=+8801XXXXXXXXX
+
+# reCAPTCHA (Optional but recommended)
+RECAPTCHA_SITE_KEY=your_recaptcha_site_key
+RECAPTCHA_SECRET_KEY=your_recaptcha_secret_key
+
+# SSL/Security (for production)
+SESSION_SECURE=true
+```
+
+### Security Features Implemented
+- **CSRF Protection**: All forms protected against Cross-Site Request Forgery
+- **SQL Injection Prevention**: All database queries use parameterized statements
+- **Session Security**: Secure session configuration with timeouts
+- **Rate Limiting**: SMS/Email verification rate limiting
+- **Input Validation**: Comprehensive input sanitization
+- **Security Headers**: XSS protection, content type sniffing prevention
+- **Device Validation**: Unknown device detection and blocking
+- **Password Security**: Proper password hashing with Werkzeug 
 
 ## Usage
 - Access the app at `http://localhost:8000` (or your configured port).

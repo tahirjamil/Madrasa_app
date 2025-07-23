@@ -212,7 +212,6 @@ if __name__ == "__main__":
             app.run(debug=True, host=host, port=port)
         else:
             # production
-            port = 80
             URL = Config.BASE_URL
             logger.info(f"Starting production server on port {port}")
             logger.info(f"Quick logs available at {URL}/admin/info")

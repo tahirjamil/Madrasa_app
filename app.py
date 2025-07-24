@@ -230,8 +230,6 @@ if __name__ == "__main__":
                 serve(app, host=host, port=port)
         else:
             # On Linux or other OS, do not start a server here. Expect Gunicorn to be used.
-            port = 80
-            serve(app, host=host, port=port)
             logger.info("""Detected non-Windows OS. Please use Gunicorn to run the server, e.g.: gunicorn -w 4 -b 0.0.0.0:8000 app:app
                         or use-- python run_server.py""")
     except Exception as e:

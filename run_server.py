@@ -40,6 +40,8 @@ def main():
             print("Gunicorn not found. Please install it with: pip install gunicorn")
     except subprocess.CalledProcessError as e:
         print(f"Server process exited with error: {e}")
+    except KeyboardInterrupt:
+        print("\nServer stopped by user (Ctrl+C).")
     except Exception as e:
         print(f"Unexpected error: {e}")
 

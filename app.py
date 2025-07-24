@@ -224,12 +224,16 @@ if __name__ == "__main__":
                 logger.info("Starting development server (Flask) on Windows...")
                 app.run(debug=True, host=host, port=port)
             else:
+                port = 80
                 logger.info(f"Starting production server (Waitress) on Windows on port {port}")
                 logger.info(f"Quick logs available at {Config.BASE_URL}/admin/info")
                 serve(app, host=host, port=port)
         else:
             # On Linux or other OS, do not start a server here. Expect Gunicorn to be used.
-            logger.info("Detected non-Windows OS. Please use Gunicorn to run the server, e.g.: gunicorn -w 4 -b 0.0.0.0:8000 app:app")
+            port = 80
+            serve(app, host=host, port=port)
+            logger.info("""Detected non-Windows OS. Please use Gunicorn to run the server, e.g.: gunicorn -w 4 -b 0.0.0.0:8000 app:app
+                        or use-- python run_server.py""")
     except Exception as e:
         logger.critical(f"Server failed to start: {str(e)}", exc_info=True)
         raise

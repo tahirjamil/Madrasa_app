@@ -86,7 +86,7 @@ def blocker(info):
     conn = connect_to_db()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) AS blocked FROM blocker WHERE need_check = 1")
+            cursor.execute("SELECT COUNT(*) AS blocked FROM blocklist WHERE need_check = 1")
             result = cursor.fetchone()
             need_check = result["blocked"] if result else 0
 
@@ -95,7 +95,7 @@ def blocker(info):
             else:
                 return None
     except pymysql.IntegrityError as e:
-        log_event("check_blocker_failed", info, f"failed to check blocker : {e}")
+        log_event("check_blocklist_failed", info, f"failed to check blocklist : {e}")
         return None
     finally:
         conn.close()
@@ -133,11 +133,11 @@ def is_device_unsafe(ip_address, device_id, info=None):
         additional_info = info or "NULL"
         try:
             with conn.cursor() as cursor:
-                cursor.execute("INSERT INTO blocker (basic_info, additional_info) VALUES (%s, %s)", (basic_info, additional_info))
+                cursor.execute("INSERT INTO blocklist (basic_info, additional_info) VALUES (%s, %s)", (basic_info, additional_info))
                 conn.commit()
                 return True
         except pymysql.IntegrityError as e:
-            log_event("update_blocker_failed", info, f"failed to update blocker : {e}")
+            log_event("update_blocklist_failed", info, f"failed to update blocklist : {e}")
             return True
         finally:
             conn.close()

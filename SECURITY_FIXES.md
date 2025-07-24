@@ -8,10 +8,10 @@
 **Fix**: Corrected parameter count in INSERT statement
 ```python
 # Before (VULNERABLE)
-cursor.execute("INSERT INTO blocker (basic_info, additional_info) VALUES (%s, %s, %s)", (basic_info, additional_info))
+cursor.execute("INSERT INTO blocklist (basic_info, additional_info) VALUES (%s, %s, %s)", (basic_info, additional_info))
 
 # After (SECURE)
-cursor.execute("INSERT INTO blocker (basic_info, additional_info) VALUES (%s, %s)", (basic_info, additional_info))
+cursor.execute("INSERT INTO blocklist (basic_info, additional_info) VALUES (%s, %s)", (basic_info, additional_info))
 ```
 
 ### 2. SQL Syntax Error (FIXED)

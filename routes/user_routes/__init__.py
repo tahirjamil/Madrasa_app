@@ -11,7 +11,7 @@ def check():
         return jsonify({"action": "maintenance", "message": t("maintenance_message", lang)}), 503
 
     if blocker(request.remote_addr):
-        return jsonify({"action": "maintenance", "message": t("blocker_maintenance", lang)}), 503
+        return jsonify({"action": "maintenance", "message": t("blocklist_maintenance", lang)}), 503
 
     # Get API key from headers
     auth_header = request.headers.get('Authorization')

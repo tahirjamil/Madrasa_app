@@ -20,7 +20,7 @@ def main():
             print("Starting server using app.py (Waitress/Flask dev server)...")
             subprocess.run(WINDOWS_CMD, check=True)
         else:
-            if dev_mode:
+            if not dev_mode:
                 print("Starting server using Gunicorn (debug mode, logs to terminal)...")
                 print("If you don't have Gunicorn installed, run: pip install gunicorn")
                 subprocess.run(LINUX_CMD_DEBUG, check=True)

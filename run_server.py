@@ -3,11 +3,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent
+
+# Use the venv's gunicorn if it exists
+GUNICORN_PATH = str(BASE_DIR / "venv" / "bin" / "gunicorn")
+
 WINDOWS_CMD = [sys.executable, "app.py"]
-LINUX_CMD = ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "app:app"]
+LINUX_CMD = [GUNICORN_PATH, "-w", "4", "-b", "0.0.0.0:8000", "app:app"]
 LINUX_CMD_DEBUG = LINUX_CMD + ["--log-level", "debug"]
 
-BASE_DIR = Path(__file__).resolve().parent
 DEV_MD = BASE_DIR / "dev.md"
 
 def main():

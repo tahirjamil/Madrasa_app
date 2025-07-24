@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent
 GUNICORN_PATH = str(BASE_DIR / "venv" / "bin" / "gunicorn")
 
 WINDOWS_CMD = [sys.executable, "app.py"]
-LINUX_CMD = [GUNICORN_PATH, "-w", "4", "-b", "0.0.0.0:8000", "app:app"]
+LINUX_CMD = [GUNICORN_PATH, "-w", "4", "-b", "0.0.0.0:80", "app:app"]
 LINUX_CMD_DEBUG = LINUX_CMD + ["--log-level", "debug"]
 
 DEV_MD = BASE_DIR / "dev.md"

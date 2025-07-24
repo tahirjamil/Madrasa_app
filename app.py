@@ -25,7 +25,7 @@ from routes.web_routes import web_routes
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('debug.log'),

@@ -12,17 +12,9 @@ class Config:
     BASE_UPLOAD_FOLDER = os.path.join('uploads')
     
     # Warn about default credentials
-    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
     
-    if not ADMIN_USERNAME or ADMIN_USERNAME == "admin":
-        print("WARNING: Using default admin username. Please set ADMIN_USERNAME in .env")
-        ADMIN_USERNAME = "admin"
-    
-    if not ADMIN_PASSWORD or ADMIN_PASSWORD == "admin":
-        print("WARNING: Using default admin password. Please set ADMIN_PASSWORD in .env")
-        ADMIN_PASSWORD = "admin"
-
     # Advanced Info
     API_KEY = os.getenv("API_KEY")
     

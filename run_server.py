@@ -8,11 +8,11 @@ LINUX_CMD = ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "app:app"]
 LINUX_CMD_DEBUG = LINUX_CMD + ["--log-level", "debug"]
 
 BASE_DIR = Path(__file__).resolve().parent
-DEV_ENV = BASE_DIR / "dev.env"
+DEV_MD = BASE_DIR / "dev.md"
 
 def main():
     current_os = platform.system()
-    dev_mode = DEV_ENV.is_file()
+    dev_mode = DEV_MD.is_file()
     print(f"Detected OS: {current_os}")
     print(f"Dev mode: {'ON' if dev_mode else 'OFF'}")
     try:

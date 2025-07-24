@@ -37,16 +37,14 @@ logger = logging.getLogger(__name__)
 # ─── App Setup ──────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 
-dev_env = BASE_DIR / "dev.env"
+dev_md = BASE_DIR / "dev.md"
 env = BASE_DIR / ".env"
 
 # load development
 dev_mode = False
-if dev_env.is_file():
+if dev_md.is_file():
     dev_mode = True
     logger.info("Running in development mode")
-else:
-    logger.info("Running in production mode")
 
 load_dotenv(env)
 
@@ -230,11 +228,11 @@ if __name__ == "__main__":
                 serve(app, host=host, port=port)
         else:
             # On Linux or other OS, do not start a server here. Expect Gunicorn to be used.
+            logger.info("""Detected non-Windows OS. Please use Gunicorn to run the server, e.g.: gunicorn -w 4 -b 0.0.0.0:8000 app:app
+                        or use-- python run_server.py""")
             # TODO use run_server_py
             port = 80
             serve(app, host=host, port=port)
-            logger.info("""Detected non-Windows OS. Please use Gunicorn to run the server, e.g.: gunicorn -w 4 -b 0.0.0.0:8000 app:app
-                        or use-- python run_server.py""")
     except Exception as e:
         logger.critical(f"Server failed to start: {str(e)}", exc_info=True)
         raise

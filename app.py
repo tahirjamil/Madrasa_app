@@ -66,19 +66,8 @@ logger.info(f"BASE_URL: {Config.BASE_URL}")
 logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
 logger.info(f"CORS enabled: {bool(CORS)}")
 
-RESTART_KEY = os.getenv("RESTART_KEY", "fallback-key")
-
 csrf = CSRFProtect()
 csrf.init_app(app)
-
-def require_secret(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if request.headers.get("RESTART-KEY") != RESTART_KEY:
-            return jsonify({"message": "Unauthorized"}), 403
-        return f(*args, **kwargs)
-    return wrapper
-
 # ensure upload folder exists
 os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
 
@@ -176,28 +165,28 @@ def favicon():
         mimetype='image/vnd.microsoft.icon'
     )
 
-# ─── Health Check ───────────────────────────────────────────
-@app.route('/health')
-def health_check():
-    try:
-        # Check database connection
-        with app.app_context():
-            create_tables()  # This will try to connect to the database
+# # ─── Health Check ───────────────────────────────────────────
+# @app.route('/health')
+# def health_check():
+#     try:
+#         # Check database connection
+#         with app.app_context():
+#             create_tables()  # This will try to connect to the database
         
-        return jsonify({
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
-            "environment": "development" if dev_mode else "production",
-            "host_ip": socket.gethostbyname(socket.gethostname()),
-            "base_url": Config.BASE_URL
-        })
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }), 500
+#         return jsonify({
+#             "status": "healthy",
+#             "timestamp": datetime.now().isoformat(),
+#             "environment": "development" if dev_mode else "production",
+#             "host_ip": socket.gethostbyname(socket.gethostname()),
+#             "base_url": Config.BASE_URL
+#         })
+#     except Exception as e:
+#         logger.error(f"Health check failed: {str(e)}")
+#         return jsonify({
+#             "status": "unhealthy",
+#             "error": str(e),
+#             "timestamp": datetime.now().isoformat()
+#         }), 500
 
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')

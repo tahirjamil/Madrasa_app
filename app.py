@@ -10,8 +10,8 @@ from flask import (
 from flask_cors import CORS
 from flask_wtf import CSRFProtect
 from dotenv import load_dotenv
-from waitress import serve
 import socket
+import platform
 
 from config import Config
 from database import create_tables
@@ -24,7 +24,7 @@ from routes.web_routes import web_routes
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('debug.log'),
@@ -36,16 +36,14 @@ logger = logging.getLogger(__name__)
 # ─── App Setup ──────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 
-dev_env = BASE_DIR / "dev.env"
+dev_md = BASE_DIR / "dev.md"
 env = BASE_DIR / ".env"
 
 # load development
 dev_mode = False
-if dev_env.is_file():
+if dev_md.is_file():
     dev_mode = True
     logger.info("Running in development mode")
-else:
-    logger.info("Running in production mode")
 
 load_dotenv(env)
 
@@ -53,24 +51,23 @@ app = Flask(__name__)
 CORS(app)
 app.config.from_object(Config)
 
+# Security headers
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+
 # Log important configuration
 logger.info(f"BASE_URL: {Config.BASE_URL}")
 logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
 logger.info(f"CORS enabled: {bool(CORS)}")
 
-RESTART_KEY = os.getenv("RESTART_KEY", "fallback-key")
-
 csrf = CSRFProtect()
 csrf.init_app(app)
-
-def require_secret(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if request.headers.get("RESTART-KEY") != RESTART_KEY:
-            return jsonify({"message": "Unauthorized"}), 403
-        return f(*args, **kwargs)
-    return wrapper
-
 # ensure upload folder exists
 os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
 
@@ -168,28 +165,28 @@ def favicon():
         mimetype='image/vnd.microsoft.icon'
     )
 
-# ─── Health Check ───────────────────────────────────────────
-@app.route('/health')
-def health_check():
-    try:
-        # Check database connection
-        with app.app_context():
-            create_tables()  # This will try to connect to the database
+# # ─── Health Check ───────────────────────────────────────────
+# @app.route('/health')
+# def health_check():
+#     try:
+#         # Check database connection
+#         with app.app_context():
+#             create_tables()  # This will try to connect to the database
         
-        return jsonify({
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
-            "environment": "development" if dev_mode else "production",
-            "host_ip": socket.gethostbyname(socket.gethostname()),
-            "base_url": Config.BASE_URL
-        })
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }), 500
+#         return jsonify({
+#             "status": "healthy",
+#             "timestamp": datetime.now().isoformat(),
+#             "environment": "development" if dev_mode else "production",
+#             "host_ip": socket.gethostbyname(socket.gethostname()),
+#             "base_url": Config.BASE_URL
+#         })
+#     except Exception as e:
+#         logger.error(f"Health check failed: {str(e)}")
+#         return jsonify({
+#             "status": "unhealthy",
+#             "error": str(e),
+#             "timestamp": datetime.now().isoformat()
+#         }), 500
 
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')
@@ -206,17 +203,15 @@ if __name__ == "__main__":
     # Log startup configuration
     logger.info(f"Maintenance Mode: {'Enabled' if is_maintenance_mode() else 'Disabled'}")
 
+    current_os = platform.system()
     try:
-        if dev_mode == True:
-            logger.info("Starting development server...")
+        if current_os == "Windows":
+            logger.info("Starting development server (Flask) on Windows...")
             app.run(debug=True, host=host, port=port)
         else:
-            # production
-            port = 80
-            URL = Config.BASE_URL
-            logger.info(f"Starting production server on port {port}")
-            logger.info(f"Quick logs available at {URL}/admin/info")
-            serve(app, host=host, port=port)
+            # On Linux or other OS, do not start a server here. Expect Gunicorn to be used.
+            logger.info("""Detected non-Windows OS. Please use Gunicorn to run the server, e.g.: venv/bin/gunicorn -w 4 -b 0.0.0.0:80 app:app
+                        or use-- python run_server.py""")
     except Exception as e:
         logger.critical(f"Server failed to start: {str(e)}", exc_info=True)
         raise

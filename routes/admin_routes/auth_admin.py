@@ -1,5 +1,6 @@
 import os
 import requests
+from datetime import datetime, timedelta
 from flask import render_template, request, redirect, url_for, session
 from . import admin_routes
 from config import Config
@@ -8,7 +9,9 @@ login_attempts = {}
 
 @admin_routes.route('/login', methods=['GET', 'POST'])
 def login():
-    session.permanent = False
+    # Set session to expire after configured time
+    session.permanent = True
+    
     # Clear session on GET
     if request.method == 'GET':
         session.clear()
@@ -28,8 +31,8 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
 
-        ADMIN_USER = os.getenv("ADMIN_USERNAME")
-        ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
+        ADMIN_USER = Config.ADMIN_USERNAME
+        ADMIN_PASS = Config.ADMIN_PASSWORD
 
         session['login_attempts'] += 1
 
@@ -67,6 +70,7 @@ def login():
 
         if username == ADMIN_USER and password == ADMIN_PASS:
             session['admin_logged_in'] = True
+            session['admin_login_time'] = datetime.now().isoformat()
             session.pop('login_attempts', None)  # Reset
             return redirect(url_for('admin_routes.admin_dashboard'))
         else:

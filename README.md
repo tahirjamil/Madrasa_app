@@ -46,10 +46,12 @@ Madrasa_app/
    pip install -r requirements.txt
    ```
 4. **Configure environment variables:**
-   - Copy `.env.example` to `.env` and set your MySQL and other secrets.
+   - Create a `.env` file with secure credentials (see Security section below)
+   - **NEVER** use default credentials in production
+   
 5. **Set up the database:**
    - Ensure MySQL is running and accessible.
-   - Update `config.py` with your DB credentials.
+   - Create a dedicated database and user for the application.
    - Run the app once to auto-create tables:
      ```bash
      python app.py
@@ -58,8 +60,58 @@ Madrasa_app/
    ```bash
    python app.py
    # or for production
-   waitress-serve --host=0.0.0.0 --port=80 app:app
+   python run_server.py
    ```
+
+## Security Configuration
+
+### Required Environment Variables (.env file)
+```bash
+# Database (REQUIRED - Do not use defaults in production)
+MYSQL_HOST=localhost
+MYSQL_USER=your_secure_db_user
+MYSQL_PASSWORD=your_secure_db_password
+MYSQL_DB=your_database_name
+
+# Application Security (REQUIRED)
+SECRET_KEY=your_very_long_random_secret_key_here
+CSRF_SECRET_KEY=another_different_random_key_here
+API_KEY=your_secure_api_key
+
+# Admin Credentials (REQUIRED - Change defaults)
+ADMIN_USERNAME=your_admin_username
+ADMIN_PASSWORD=your_very_secure_admin_password
+
+# Application URL
+BASE_URL=https://yourdomain.com
+
+# Email Configuration (Optional)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_ADDRESS=your_email@domain.com
+EMAIL_PASSWORD=your_email_app_password
+
+# SMS Configuration (Optional)
+DEV_PHONE=+8801XXXXXXXXX
+MADRASA_PHONE=+8801XXXXXXXXX
+
+# reCAPTCHA (Optional but recommended)
+RECAPTCHA_SITE_KEY=your_recaptcha_site_key
+RECAPTCHA_SECRET_KEY=your_recaptcha_secret_key
+
+# SSL/Security (for production)
+SESSION_SECURE=true
+```
+
+### Security Features Implemented
+- **CSRF Protection**: All forms protected against Cross-Site Request Forgery
+- **SQL Injection Prevention**: All database queries use parameterized statements
+- **Session Security**: Secure session configuration with timeouts
+- **Rate Limiting**: SMS/Email verification rate limiting
+- **Input Validation**: Comprehensive input sanitization
+- **Security Headers**: XSS protection, content type sniffing prevention
+- **Device Validation**: Unknown device detection and blocking
+- **Password Security**: Proper password hashing with Werkzeug 
 
 ## Usage
 - Access the app at `http://localhost:8000` (or your configured port).
@@ -75,3 +127,84 @@ Madrasa_app/
 
 ## License
 This project is licensed under the MIT License. 
+
+## Deploying with Nginx and Gunicorn
+
+For production, it is recommended to use Nginx as a reverse proxy in front of Gunicorn. Nginx will serve static files and the favicon directly for best performance, and proxy all other requests to Gunicorn.
+
+### 1. Gunicorn
+Start your Flask app with Gunicorn (example with 4 workers):
+
+```bash
+pip install gunicorn
+python run_server.py  # or manually:
+gunicorn -w 4 -b 0.0.0.0:8000 app:app
+```
+
+### 2. Nginx
+Use the provided `nginx.conf` as a template. Update the following line to the absolute path of your project's static directory:
+
+```
+    alias   /absolute/path/to/your/project/static/;
+```
+
+Place the config in `/etc/nginx/sites-available/yourapp` and symlink it to `/etc/nginx/sites-enabled/`:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/yourapp /etc/nginx/sites-enabled/
+sudo nginx -t  # test config
+sudo systemctl reload nginx
+```
+
+- Nginx will serve `/static/` and `/favicon.ico` directly.
+- All other requests are proxied to Gunicorn at `http://127.0.0.1:8000`.
+
+See `nginx.conf` in this repo for a full example. 
+
+### 3. Enabling HTTPS with Let's Encrypt
+
+For secure HTTPS, you can use a free SSL certificate from [Let's Encrypt](https://letsencrypt.org/) with Certbot.
+
+#### Steps:
+1. **Install Certbot:**
+   ```bash
+   sudo apt update
+   sudo apt install certbot python3-certbot-nginx
+   ```
+2. **Obtain and install a certificate:**
+   Replace `yourdomain.com` with your actual domain name.
+   ```bash
+   sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+   ```
+   Certbot will automatically update your Nginx config and reload Nginx.
+
+3. **Sample SSL server block:**
+   If you want to manually edit your config, add the following to your `nginx.conf`:
+   ```nginx
+   server {
+       listen 443 ssl;
+       server_name yourdomain.com www.yourdomain.com;
+
+       ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+       include /etc/letsencrypt/options-ssl-nginx.conf;
+       ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+       # ... (static, favicon, and proxy config as above) ...
+   }
+
+   # Redirect HTTP to HTTPS
+   server {
+       listen 80;
+       server_name yourdomain.com www.yourdomain.com;
+       return 301 https://$host$request_uri;
+   }
+   ```
+
+4. **Auto-renewal:**
+   Certbot sets up auto-renewal. You can test renewal with:
+   ```bash
+   sudo certbot renew --dry-run
+   ```
+
+For more details, see the [Certbot documentation](https://certbot.eff.org/). 

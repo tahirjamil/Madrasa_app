@@ -72,7 +72,7 @@ def create_tables():
             created_at  TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
             phone       VARCHAR(20) NOT NULL,
             code        INT,
-            ip_address  VARCHAR(20),
+            ip_address  VARCHAR(20)
         )
         """)
 
@@ -224,11 +224,14 @@ def create_tables():
         """)
         # ─── Block(s) ──────────────────────────────────────────────────────────
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS Blocker (
+        CREATE TABLE IF NOT EXISTS blocklist (
             block_id            INT             AUTO_INCREMENT PRIMARY KEY,
             basic_info          VARCHAR(50)     NOT NULL,
             additional_info    TEXT,
             need_check          BOOLEAN         NOT NULL   DEFAULT 1,
+            created_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                            ON UPDATE CURRENT_TIMESTAMP
         )
         """)
 

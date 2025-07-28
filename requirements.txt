@@ -1,4 +1,5 @@
 Flask>=3.0
+Quart>=0.26.0
 flask-cors
 Flask-WTF>=1.2.2
 python-dotenv>=1.1.1

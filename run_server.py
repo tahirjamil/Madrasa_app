@@ -2,17 +2,14 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-import os
 
 BASE_DIR = Path(__file__).resolve().parent
 
 # Use the venv's gunicorn if it exists
 GUNICORN_PATH = str(BASE_DIR / "venv" / "bin" / "gunicorn")
 
-WORKERS = os.getenv("GUNICORN_WORKERS", "5")
-
 WINDOWS_CMD = [sys.executable, "app.py"]
-LINUX_CMD = [GUNICORN_PATH, "-w", WORKERS, "-b", "0.0.0.0:80", "app:app"]
+LINUX_CMD = [GUNICORN_PATH, "-c", "gunicorn.conf.py", "app:app"]
 LINUX_CMD_DEBUG = LINUX_CMD + ["--log-level", "debug"]
 
 DEV_MD = BASE_DIR / "dev.md"

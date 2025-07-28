@@ -1,9 +1,18 @@
 from . import web_routes
-from flask import render_template, request, redirect, url_for, flash, current_app
+from flask import render_template, request, redirect, url_for, flash
 from helpers import send_email
 import os
 import markdown
 import re
+from datetime import datetime
+
+@web_routes.route("/")
+def home():
+    return render_template("home.html", current_year=datetime.now().year)
+
+@web_routes.route("/donate")
+def donate():
+    return render_template("donate.html", current_year=datetime.now().year)
 
 @web_routes.route('/contact', methods=['GET', 'POST'])
 def contact():

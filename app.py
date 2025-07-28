@@ -141,17 +141,8 @@ def handle_exception(e):
         "message": str(e)
     }), 500
 
-# ─── Public Routes ──────────────────────────────────────────
-@app.route("/donate")
-def donate():
-    return render_template("donate.html", current_year=datetime.now().year)
-
-@app.route("/")
-def home():
-    return render_template("home.html", current_year=datetime.now().year)
-
-@csrf.exempt
 # ─── Error & Favicon ────────────────────────────────────────
+@csrf.exempt
 @app.errorhandler(404)
 def not_found(e):
     logger.warning(f"404 error: {request.path}")

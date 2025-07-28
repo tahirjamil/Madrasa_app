@@ -95,23 +95,22 @@
   <!-- Navbar -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container">
-      <a class="navbar-brand" href="{{ url_for('home') }}">
-        <i class="bi bi-book me-2"></i>Annur
+      <a class="navbar-brand" href="{{ url_for('web_routes.home') }}">
+        <img src="{{ url_for('static', filename='icons/others.png') }}" alt="Logo" width="30" height="30" class="d-inline-block align-text-top">
+        An-Nur Madrasa
       </a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" 
-              data-bs-target="#mainNav" aria-controls="mainNav" 
-              aria-expanded="false" aria-label="Toggle navigation">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
-      <div class="collapse navbar-collapse" id="mainNav">
-        <ul class="navbar-nav ms-auto align-items-lg-center">
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav me-auto">
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('home') }}">
+            <a class="nav-link" href="{{ url_for('web_routes.home') }}">
               <i class="bi bi-house me-1"></i>Home
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('donate') }}">
+            <a class="nav-link" href="{{ url_for('web_routes.donate') }}">
               <i class="bi bi-heart me-1"></i>Donate
             </a>
           </li>

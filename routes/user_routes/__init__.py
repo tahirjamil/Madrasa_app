@@ -1,6 +1,6 @@
 from quart import Blueprint, jsonify, request
 from helpers import is_maintenance_mode, is_valid_api_key
-from translations import t
+from quart_babel import gettext as _
 
 user_routes = Blueprint("user_routes", __name__)
 
@@ -8,7 +8,7 @@ user_routes = Blueprint("user_routes", __name__)
 async def check():
     lang = (await request.accept_languages).best_match(["en", "bn", "ar"])
     if await is_maintenance_mode():
-        return jsonify({"action": "maintenance", "message": t("maintenance_message", lang)}), 503
+        return jsonify({"action": "maintenance", "message": _("System is under maintenance. Please try again later.")}), 503
 
     # Get API key from headers
     auth_header = (await request.headers).get('Authorization')

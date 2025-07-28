@@ -9,6 +9,9 @@ BASE_DIR = Path(__file__).resolve().parent
 HYPERCORN_PATH = str(BASE_DIR / "venv" / "bin" / "hypercorn")
 
 WINDOWS_CMD = [sys.executable, "app.py"]
+
+HYPERCORN_CMD = ["hypercorn", "app:app", "--config", "hypercorn.toml"]
+HYPERCORN_CMD_DEBUG = HYPERCORN_CMD + ["--log-level", "debug"]
 LINUX_CMD = [HYPERCORN_PATH, "app:app", "--config", "hypercorn.toml"]
 LINUX_CMD_DEBUG = LINUX_CMD + ["--log-level", "debug"]
 
@@ -21,23 +24,29 @@ def main():
     print(f"Dev mode: {'ON' if dev_mode else 'OFF'}")
     try:
         if current_os == "Windows":
-            print("Starting server using app.py (Waitress/Flask dev server)...")
+            print("Starting server using app.py (Quart dev server)...")
             subprocess.run(WINDOWS_CMD, check=True)
         else:
-            if not dev_mode:
+            if dev_mode:
                 print("Starting server using Hypercorn (debug mode, logs to terminal)...")
-                print("If you don't have Hypercorn installed, run: pip install hypercorn")
-                subprocess.run(LINUX_CMD_DEBUG, check=True)
+                try:
+                    subprocess.run(HYPERCORN_CMD_DEBUG, check=True)
+                except FileNotFoundError as e:
+                    subprocess.run(LINUX_CMD_DEBUG, check=True)
             else:
                 print("Starting server using Hypercorn (production mode, logs to hypercorn.log)...")
-                print("If you don't have Hypercorn installed, run: pip install hypercorn")
                 with open("hypercorn.log", "a") as logfile:
-                    subprocess.run(LINUX_CMD, stdout=logfile, stderr=logfile, check=True)
+                    try:
+                        subprocess.run(HYPERCORN_CMD, stdout=logfile, stderr=logfile, check=True)
+                    except FileNotFoundError as e:
+                        subprocess.run(LINUX_CMD, stdout=logfile, stderr=logfile, check=True)
                 print("Logs are being written to hypercorn.log")
+
     except FileNotFoundError as e:
         print(f"Error: {e}")
         if current_os != "Windows":
             print("Hypercorn not found. Please install it with: pip install hypercorn")
+
     except subprocess.CalledProcessError as e:
         print(f"Server process exited with error: {e}")
     except KeyboardInterrupt:

@@ -46,7 +46,7 @@
 #         log_event("get_payment_failed", phone, f"DB Error: {str(e)}")
 #         return jsonify({"error": "Transaction failed"}), 500
 #     finally:
-#         conn.close()
+#         await conn.close()
 
 
 #     # Extract data
@@ -96,7 +96,7 @@
 #         log_event("get_user_id_failed", phone, f"DB Error: {str(e)}")
 #         return jsonify({"error": "Transaction failed"}), 500
 #     finally:
-#         conn.close()
+#         await conn.close()
 
 #     if not user:
 #         log_event("payment_user_not_found", phone, f"User {fullname} not found")
@@ -119,7 +119,7 @@
 #         log_event("payment_insert_failed", phone, f"DB Error: {str(e)}")
 #         return jsonify({"error": "Transaction failed"}), 500
 #     finally:
-#         conn.close()
+#         await conn.close()
 
 # # ====== Get Transaction History ======
 # @user_routes.route('/get_transactions', methods=['POST'])
@@ -183,7 +183,7 @@
 #         log_event("payment_transaction_error", phone, str(e))
 #         return jsonify({"error": "Internal server error"}), 500
 #     finally:
-#         conn.close()
+#         await conn.close()
 
 #     # Handle no‐results
 #     if not transactions:

@@ -20,7 +20,7 @@ from helpers import is_maintenance_mode
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
-from quart_csrf import CSRFProtect
+# from quart_csrf import CSRFProtect  # Temporarily disabled due to compatibility issues
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
@@ -56,14 +56,17 @@ app.config['BABEL_DEFAULT_LOCALE'] = 'en'
 app.config['BABEL_DEFAULT_TIMEZONE'] = 'Asia/Dhaka'
 babel = Babel(app)
 
-@babel.localeselector
+# Locale selector for Babel
 def get_locale():
     # Try to get language from request args, headers, or session
     return request.args.get('lang') or request.accept_languages.best_match(['en', 'bn', 'ar'])
 
-# Setup CSRF protection (Quart)
-csrf = CSRFProtect()
-csrf.init_app(app)
+# Set the locale selector
+babel.localeselector = get_locale
+
+# Setup CSRF protection (Quart) - Temporarily disabled
+# csrf = CSRFProtect()
+# csrf.init_app(app)
 
 # Security headers
 @app.after_request
@@ -85,7 +88,7 @@ os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
 
 async def create_tables_async():
     try:
-        create_tables()
+        await create_tables()
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Database initialization error: {str(e)}")
@@ -196,13 +199,13 @@ app.register_blueprint(web_routes)
 app.register_blueprint(user_routes)
 
 # For Quart-CSRF, you can exempt blueprints like this:
-csrf.exempt(user_routes)
-csrf.exempt(admin_routes)
+# csrf.exempt(user_routes)
+# csrf.exempt(admin_routes)
  
-# Inject CSRF token into templates (for forms)
-@app.context_processor
-def inject_csrf_token():
-    return dict(csrf_token=csrf.generate_csrf)
+# Inject CSRF token into templates (for forms) - Temporarily disabled
+# @app.context_processor
+# def inject_csrf_token():
+#     return dict(csrf_token=csrf.generate_csrf)
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":

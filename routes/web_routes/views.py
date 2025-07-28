@@ -1,5 +1,5 @@
 from . import web_routes
-from flask import render_template, request, redirect, url_for, flash
+from quart import render_template, request, redirect, url_for, flash
 from helpers import send_email
 import os
 import markdown
@@ -7,15 +7,15 @@ import re
 from datetime import datetime
 
 @web_routes.route("/")
-def home():
-    return render_template("home.html", current_year=datetime.now().year)
+async def home():
+    return await render_template("home.html", current_year=datetime.now().year)
 
 @web_routes.route("/donate")
-def donate():
-    return render_template("donate.html", current_year=datetime.now().year)
+async def donate():
+    return await render_template("donate.html", current_year=datetime.now().year)
 
 @web_routes.route('/contact', methods=['GET', 'POST'])
-def contact():
+async def contact():
     # Read raw comma‑separated strings from env
     raw_phones = os.getenv('MADRASA_PHONE', "")
     raw_emails = os.getenv('EMAIL_ADDRESS', "")
@@ -25,9 +25,10 @@ def contact():
     emails = [e.strip() for e in raw_emails.split(',') if e.strip()]
 
     if request.method == 'POST':
-        fullname       = request.form.get('fullname', '').strip()
-        email_or_phone = request.form.get('email_or_phone', '').strip()
-        description    = request.form.get('description', '').strip()
+        form = await request.form
+        fullname       = form.get('fullname', '').strip()
+        email_or_phone = form.get('email_or_phone', '').strip()
+        description    = form.get('description', '').strip()
 
         if not fullname or not email_or_phone or not description:
             flash('All fields are required.', 'danger')
@@ -47,10 +48,10 @@ def contact():
         return redirect(url_for('web_routes.contact'))
 
     # GET: render with lists
-    return render_template('contact.html', phones=phones, emails=emails)
+    return await render_template('contact.html', phones=phones, emails=emails)
 
 @web_routes.route('/privacy')
-def privacy():
+async def privacy():
     # Load contact info from environment variables
     contact_email = os.getenv('EMAIL_ADDRESS'   )
     contact_phone = os.getenv('MADRASA_PHONE')
@@ -89,7 +90,7 @@ def privacy():
             'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
         })
 
-    return render_template(
+    return await render_template(
         'privacy.html',
         introduction_html=introduction_html,
         sections=parsed_sections,
@@ -97,7 +98,7 @@ def privacy():
     )
 
 @web_routes.route('/terms')
-def terms():
+async def terms():
     # Load contact info from environment variables
     contact_email = os.getenv('EMAIL_ADDRESS')
     contact_phone = os.getenv('MADRASA_PHONE')
@@ -135,7 +136,7 @@ def terms():
             'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
         })
 
-    return render_template(
+    return await render_template(
         'terms.html',
         introduction_html=introduction_html,
         sections=parsed_sections,

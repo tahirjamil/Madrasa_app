@@ -19,9 +19,7 @@ def get_db_config():
         db=Config.MYSQL_DB,
         autocommit=False,
         charset='utf8mb4',
-        connect_timeout=60,
-        read_timeout=30,
-        write_timeout=30
+        connect_timeout=60
     )
 
 async def connect_to_db():
@@ -33,7 +31,12 @@ async def create_tables():
     conn = None
     try:
         conn = await connect_to_db()
+
+        # Suppress MySQL warnings
         async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("SET sql_notes = 0")
+            await conn.commit()
+
             # ─── users ──────────────────────────────────────────────────────────────
             await cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -259,8 +262,13 @@ async def create_tables():
             )
             """)
 
-        await conn.commit()
+        # Re-enable MySQL warnings
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("SET sql_notes = 1")
+            await conn.commit()
+
         print("All database tables created successfully")
+
     except Exception as e:
         if conn:
             await conn.rollback()
@@ -268,5 +276,4 @@ async def create_tables():
         raise
     finally:
         if conn:
-            conn.close()
-            await conn.wait_closed()
+            await conn.close()

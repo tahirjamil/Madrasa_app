@@ -8,7 +8,7 @@ from logger import log_event
 from helpers import (validate_fullname, validate_password, auto_delete_users,
 send_sms, format_phone_number, is_device_unsafe,
 generate_code, check_code, send_email, get_email)
-from translations import t
+from quart_babel import gettext as _
 import datetime, os
 from datetime import timedelta, datetime as dt
 
@@ -31,15 +31,15 @@ async def register():
     ip_address = data.get("ip_address")
 
     if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or email or fullname):
-        return jsonify({"message": t("unknown_device", lang)}), 400
+        return jsonify({"message": _("Unknown device detected")}), 400
 
     if not fullname or not phone or not password or not user_code:
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"message": t("all_fields_including_code_required", lang)}), 400
+        return jsonify({"message": _("All fields including code are required")}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": t("invalid_phone_format", lang)}), 400
+        return jsonify({"message": _("Invalid phone number format")}), 400
 
     validate_code = check_code(user_code, formatted_phone)
     if validate_code:
@@ -76,16 +76,16 @@ async def register():
                 await conn.commit()
 
             return jsonify({
-                "success": True, "message": t("registration_successful", lang),
+                "success": True, "message": _("Registration successful"),
                 "info": people_result
                 }), 201
 
         except IntegrityError:
-            return jsonify({"message": t("user_already_registered", lang)}), 400
+            return jsonify({"message": _("User with this fullname and phone already registered")}), 400
         except Exception as e:
-            return jsonify({"message": t("internal_server_error", lang), "error": str(e)}), 500
+            return jsonify({"message": _("Internal server error"), "error": str(e)}), 500
         finally:
-            await conn.wait_closed()
+            await conn.close()
 
 
 @user_routes.route("/login", methods=["POST"])
@@ -103,16 +103,16 @@ async def login():
     ip_address = data.get("ip_address")
 
     if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or fullname):
-        return jsonify({"message": t("unknown_device", lang)}), 400
+        return jsonify({"message": _("Unknown device detected")}), 400
 
     if not fullname or not phone or not password:
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"message": t("all_fields_required", lang)}), 400
+        return jsonify({"message": _("All fields are required")}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
         log_event("auth_invalid_phone", phone, "Invalid phone format")
-        return jsonify({"message": t("invalid_phone_format", lang)}), 400
+        return jsonify({"message": _("Invalid phone number format")}), 400
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -124,14 +124,14 @@ async def login():
 
             if not user:
                 log_event("auth_user_not_found", formatted_phone, f"User {fullname} not found")
-                return jsonify({"message": t("user_not_found", lang)}), 404
+                return jsonify({"message": _("User not found")}), 404
             
             if not check_password_hash(user["password"], password):
                 log_event("auth_incorrect_password", formatted_phone, "Incorrect password")
-                return jsonify({"message": t("incorrect_password", lang)}), 401
+                return jsonify({"message": _("Incorrect password")}), 401
             
             if user["deactivated_at"] is not None:
-                return jsonify({"message": t("account_deactivated", lang)}), 403 #TODO: in app
+                return jsonify({"message": _("Account is deactivated")}), 403 #TODO: in app
             
             await cursor.execute(
                 """
@@ -148,7 +148,7 @@ async def login():
                 log_event("auth_additional_info_required", formatted_phone, "Missing profile info")
                 return jsonify({
                     "error": "incomplete_profile", 
-                    "message": t("additional_info_required", lang)
+                    "message": _("Additional info required")
                 }), 422
             
             info.pop("password", None)
@@ -156,14 +156,14 @@ async def login():
             if isinstance(dob, (datetime.date, datetime.datetime)):
                 info["date_of_birth"] = dob.strftime("%d/%m/%Y")
 
-            return jsonify({"success": True, "message": t("login_successful", lang), "info": info}), 200
+            return jsonify({"success": True, "message": _("Login successful"), "info": info}), 200
             
     except Exception as e:
         log_event("auth_error", formatted_phone, str(e))
-        return jsonify({"message": t("internal_server_error", lang)}), 500
+        return jsonify({"message": _("Internal server error")}), 500
 
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 @user_routes.route("/send_code", methods=["POST"])
 async def send_verification_code():
@@ -184,30 +184,30 @@ async def send_verification_code():
     ip_address = data.get("ip_address")
 
     if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or email or fullname):
-        return jsonify({"message": t("unknown_device", lang)}), 400
+        return jsonify({"message": _("Unknown device detected")}), 400
 
     if not phone or not fullname:
-        return jsonify({"message": t("phone_and_fullname_required", lang)}), 400
+        return jsonify({"message": _("Phone number and fullname required")}), 400
     
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": t("invalid_phone_format", lang)}), 400
+        return jsonify({"message": _("Invalid phone number format")}), 400
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             if fullname:
                 ok, msg = validate_fullname(fullname)
                 if not ok:
-                    return jsonify({"message": t(msg, lang)}), 400
+                    return jsonify({"message": _(msg)}), 400
 
             if password:
                 ok, msg = validate_password(password)
                 if not ok:
-                    return jsonify({"message": t(msg, lang)}), 400
+                    return jsonify({"message": _(msg)}), 400
                 
                 await cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
                 if await cursor.fetchone():
-                    return jsonify({"message": t("user_already_registered", lang)}), 409
+                    return jsonify({"message": _("User with this fullname and phone already registered")}), 409
             
             if not email:
                 email = get_email(phone=formatted_phone, fullname=fullname)
@@ -224,7 +224,7 @@ async def send_verification_code():
             # Check if rate limit exceeded for all methods
             if count >= max(SMS_LIMIT_PER_HOUR, EMAIL_LIMIT_PER_HOUR):
                 log_event("rate_limit_blocked", phone, "All verification methods limit exceeded")
-                return jsonify({"message": t("limit_reached", lang)}), 429
+                return jsonify({"message": _("Limit reached. Try again later.")}), 429
 
             # Send verification code
             code = generate_code()
@@ -238,22 +238,22 @@ async def send_verification_code():
                 if send_sms(phone=formatted_phone, signature=signature, code=code):
                     await cursor.execute(sql, params)
                     await conn.commit()
-                    return jsonify({"success": True, "message": t("verification_sms_sent", lang, target=formatted_phone)}), 200
+                    return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": formatted_phone}}), 200
 
             # Try email if SMS failed or limit reached, but under email limit
             if email and count < EMAIL_LIMIT_PER_HOUR:
                 if send_email(to_email=email, code=code, lang=lang):
                     await cursor.execute(sql, params)
                     await conn.commit()
-                    return jsonify({"success": True, "message": t("verification_email_sent", lang, target=email)}), 200
+                    return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": email}}), 200
 
             # If we get here, both methods failed or no email provided
             log_event("verification_failed", phone, f"count={count}")
-            return jsonify({"message": t("failed_to_send_verification_code", lang)}), 500
+            return jsonify({"message": _("Failed to send verification code")}), 500
 
     except Exception as e:
         log_event("internal_error", formatted_phone, str(e))
-        return jsonify({"message": t("internal_error", lang, error=str(e))}), 500
+        return jsonify({"message": _("Internal error: %(error)s") % {"error": str(e)}}), 500
     
 
 @user_routes.route("/reset_password", methods=["POST"])
@@ -273,16 +273,16 @@ async def reset_password():
     ip_address = data.get("ip_address")
 
     if is_device_unsafe(ip_address=ip_address, device_id=device_id, info=phone or fullname):
-        return jsonify({"message": t("unknown_device", lang)}), 400
+        return jsonify({"message": _("Unknown device detected")}), 400
     
     # Check required fields (except old_password and code, because one of them must be present)
     if not all([phone, fullname]):
         log_event("auth_missing_fields", phone, "Phone or fullname missing")
-        return jsonify({"message": t("phone_fullname_new_password_required", lang)}), 400
+        return jsonify({"message": _("Phone, Fullname, and New Password are required")}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": t("invalid_phone_format", lang)}), 400
+        return jsonify({"message": _("Invalid phone number format")}), 400
 
     # If old password is not provided, use code verification instead
     if not old_password:
@@ -290,7 +290,7 @@ async def reset_password():
         if validate_code:
             return validate_code
         elif not new_password:
-            return jsonify({"success": True, "message": t("code_successfully_matched", lang)}), 200
+            return jsonify({"success": True, "message": _("Code successfully matched")}), 200
 
     # Fetch the user
     async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -301,17 +301,17 @@ async def reset_password():
         result = await cursor.fetchone()
 
         if not result:
-            return jsonify({"message": t("user_not_found", lang)}), 404
+            return jsonify({"message": _("User not found")}), 404
 
         # If old_password is given, check it
         if old_password:
             if not check_password_hash(result['password'], old_password):
-                return jsonify({"message": t("incorrect_old_password", lang)}), 401
+                return jsonify({"message": _("Incorrect old password")}), 401
             
         hashed_password = generate_password_hash(new_password)
 
         if check_password_hash(result['password'], new_password):
-            return jsonify({"message": t("password_same_error", lang)}), 400
+            return jsonify({"message": _("New password cannot be the same as the current password.")}), 400
 
         # Update the password
         await cursor.execute(
@@ -319,7 +319,7 @@ async def reset_password():
             (hashed_password, ip_address, fullname, formatted_phone)
         )
         await conn.commit()
-        return jsonify({"success": True, "message": t("password_reset_successful", lang)}), 201
+        return jsonify({"success": True, "message": _("Password Reset Successful")}), 201
 
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"])
 async def manage_account(page_type):
@@ -328,7 +328,7 @@ async def manage_account(page_type):
     auto_delete_users()
 
     if page_type not in ("remove", "deactivate"):
-        return jsonify({"message": t("invalid_page_type", lang)}), 400
+        return jsonify({"message": _("Invalid page type")}), 400
 
     if request.method == "GET":
         # Render the form
@@ -346,11 +346,11 @@ async def manage_account(page_type):
     email    = data.get("email")
 
     if not phone or not fullname or not password:
-        return jsonify({"message": t("all_fields_required", lang)}), 400
+        return jsonify({"message": _("All fields are required")}), 400
 
     formatted_phone = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"message": t("invalid_phone_number", lang)}), 400
+        return jsonify({"message": _("Invalid phone number")}), 400
 
     # lookup user
     conn = await connect_to_db()
@@ -365,15 +365,15 @@ async def manage_account(page_type):
 
             if not user or not check_password_hash(user["password"], password):
                 log_event("delete_invalid_credentials", formatted_phone, "Invalid credentials")
-                return jsonify({"message": t("invalid_login_details", lang)}), 401
+                return jsonify({"message": _("Invalid login details")}), 401
 
             # prepare confirmation message
             deletion_days = 30
-            msg     = t("account_deletion_confirmation_msg", lang, days=deletion_days)
-            subject = t("subject_deletion_confirmation", lang)
+            msg     = _("Your account has been successfully put for deletion.\nIt will take %(days)d days to fully delete your account.\nIf it wasn't you, please contact us for account recovery.\n\n@An-Nur.app") % {"days": deletion_days}
+            subject = _("Account Deletion Confirmation")
             if page_type == "Deactivate":
-                msg     = t("account_deactivation_confirmation_msg", lang)
-                subject = t("subject_deactivation_confirmation", lang)
+                msg     = _("Your account has been successfully deactivated.\nYou can reactivate it within our app.\nIf it wasn't you, please contact us immediately.\n\n@An-Nur.app")
+                subject = _("Account Deactivation Confirmation")
 
             # send notifications
             errors = 0
@@ -389,7 +389,7 @@ async def manage_account(page_type):
                 log_event("notify_sms_failed", formatted_phone, "SMS send failed")
 
             if errors > 1:
-                return jsonify({"message": t("could_not_send_confirmation", lang)}), 500
+                return jsonify({"message": _("Could not send confirmation. Try again later.")}), 500
 
             # schedule deactivation/deletion
             now = datetime.datetime.utcnow()
@@ -408,17 +408,17 @@ async def manage_account(page_type):
         # success response
         if page_type == "remove":
             log_event("deletion_scheduled", formatted_phone, f"User {fullname} scheduled for deletion")
-            return jsonify({"success": True, "message": t("account_deletion_initiated", lang)}), 200
+            return jsonify({"success": True, "message": _("Account deletion initiated. Check your messages.")}), 200
 
         log_event("account_deactivated", formatted_phone, f"User {fullname} deactivated")
-        return jsonify({"success": True, "message": t("account_deactivated_successfully", lang)}), 200
+        return jsonify({"success": True, "message": _("Account deactivated successfully.")}), 200
 
     except Exception as e:
         log_event("manage_account_error", phone, str(e))
-        return jsonify({"message": t("an_error_occurred", lang)}), 500
+        return jsonify({"message": _("An error occurred")}), 500
 
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 @user_routes.route("/account/reactivate", methods=['POST'])
 async def undo_remove():
@@ -428,7 +428,7 @@ async def undo_remove():
     lang = data.get("language") or "en"
 
     if not phone or not fullname:
-        return jsonify({"message": t("all_fields_required", lang)}), 400
+        return jsonify({"message": _("All fields are required")}), 400
 
     conn = await connect_to_db()
     try:
@@ -453,12 +453,12 @@ async def undo_remove():
                 WHERE id = %s
             """, (user["id"],))
             await conn.commit()
-        return jsonify({"success": True, "message": "Account reactivated"}), 200
+        return jsonify({"success": True, "message": _("Account reactivated.")}), 200
     except Exception as e:
         log_event("account_reactivation_failed", phone, str(e))
-        return jsonify({"message": t("account_reactivation_failed", lang)}), 500
+        return jsonify({"message": _("Account reactivation failed.")}), 500
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 @user_routes.route("/account/check", methods=['POST'])
 async def get_account_status():
@@ -467,8 +467,8 @@ async def get_account_status():
     data = await request.get_json()
     lang = data.get("language") or data.get("Language") or "en"
 
-    LOGOUT_MSG = t("session_invalidated", lang)
-    DEACTIVATE_MSG = t("account_deactivated", lang)
+    LOGOUT_MSG = _("Session invalidated. Please log in again.")
+    DEACTIVATE_MSG = _("Account is deactivated")
 
     device_id = data.get("device_id")
     device_brand = data.get("device_brand")
@@ -480,10 +480,10 @@ async def get_account_status():
     member_id    = data.get("member_id")
 
     if not ip_address and not device_id and not device_brand:
-        return jsonify({"action": "block", "message": t("unknown_device", lang)}), 400
+        return jsonify({"action": "block", "message": _("Unknown device detected")}), 400
 
     if not phone or not fullname:
-        return jsonify({"success": True, "message": t("no_account_given", lang)}), 200
+        return jsonify({"success": True, "message": _("No account information provided.")}), 200
 
     checks = {
         "member_id":     member_id,
@@ -603,14 +603,14 @@ async def get_account_status():
             await conn.rollback()
             log_event("Saving interactions failed", phone, str(e))
         finally:
-            await conn.wait_closed()
+            await conn.close()
                 
             # all checks passed
-        return jsonify({"success": True, "message": t("account_is_valid", lang), "id": record["id"]}), 200
+        return jsonify({"success": True, "message": _("Account is valid"), "id": record["id"]}), 200
 
     except Exception as e:
         log_event("account_check_error", phone, str(e))
-        return jsonify({"message": t("internal_error", lang)}), 500
+        return jsonify({"message": _("Internal error")}), 500
 
     finally:
-        await conn.wait_closed()
+        await conn.close()

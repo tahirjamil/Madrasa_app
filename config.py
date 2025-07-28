@@ -60,3 +60,8 @@ class Config:
     if not MYSQL_DB or MYSQL_DB == "default":
         print("WARNING: Using default database name. Please set MYSQL_DB in .env")
         MYSQL_DB = "default"
+    
+    # Power Management
+    POWER_KEY = os.getenv("POWER_KEY")
+    if not POWER_KEY:
+        print("WARNING: POWER_KEY not set. Power management will be disabled.")

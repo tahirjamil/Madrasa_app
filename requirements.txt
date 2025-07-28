@@ -1,16 +1,20 @@
-Quart>=0.26.0
+# Quart and async dependencies
+Quart>=0.20.0
 quart-cors>=0.1.1
 quart-csrf>=0.4.0
-python-dotenv>=1.1.1
-password-validator>=1.0
-phonenumbers>=9.0.8
-requests>=2.32.3
 aiomysql>=0.2.0
-pillow>=11.2.1
-cryptography>=43.0.3
-markdown>=3.5.1
 hypercorn>=0.16.0
-werkzeug>=3.0.0
-quart-bibel
 quart-babel>=0.6.0
 Babel>=2.14.0
+werkzeug>=3.0.0
+
+# Old Flask dependencies (commented out)
+# Flask
+# flask-cors
+# Flask-WTF
+# waitress
+# pymysql
+
+# Other dependencies
+requests
+python-dotenv

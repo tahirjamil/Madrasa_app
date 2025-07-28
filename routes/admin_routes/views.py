@@ -1,16 +1,11 @@
-from flask import render_template, request, flash, session, redirect, url_for, current_app
-import pymysql
-import pymysql.cursors
+from quart import render_template, request, flash, session, redirect, url_for, current_app, jsonify
 from . import admin_routes
 from database import connect_to_db
-import os
 from datetime import datetime, date
 from logger import log_event
-from werkzeug.utils import secure_filename
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
 from config import Config
-import json
-import re
+import json, re, subprocess, sys, os, aiomysql, asyncio
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
@@ -27,12 +22,12 @@ _FORBIDDEN_RE = re.compile(
 # ------------- Root / Dashboard ----------------
 
 @admin_routes.route('/', methods=['GET', 'POST'])
-def admin_dashboard():
+async def admin_dashboard():
     # 1) Ensure admin is logged in
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
+    conn = await connect_to_db()
     databases = []
     tables = {}
     selected_db = request.args.get('db', 'madrasadb')
@@ -52,10 +47,10 @@ def admin_dashboard():
     student_class = request.args.get('student_class', 'all')
 
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             # Load database list
-            cursor.execute("SHOW DATABASES")
-            databases = [row["Database"] for row in cursor.fetchall()]
+            await cursor.execute("SHOW DATABASES")
+            databases = [row["Database"] for row in await cursor.fetchall()]
 
             # Validate selected_db
             if selected_db not in databases:
@@ -63,18 +58,19 @@ def admin_dashboard():
 
             # Load tables & descriptions
             if selected_db:
-                cursor.execute(f"USE `{selected_db}`")
-                cursor.execute("SHOW TABLES")
-                table_list = [row[f'Tables_in_{selected_db}'] for row in cursor.fetchall()]
+                await cursor.execute(f"USE `{selected_db}`")
+                await cursor.execute("SHOW TABLES")
+                table_list = [row[f'Tables_in_{selected_db}'] for row in await cursor.fetchall()]
                 for table in table_list:
-                    cursor.execute(f"DESCRIBE `{table}`")
-                    tables[table] = cursor.fetchall()
+                    await cursor.execute(f"DESCRIBE `{table}`")
+                    tables[table] = await cursor.fetchall()
 
             # Handle SQL form submission
             if request.method == "POST":
-                raw_sql = request.form.get('sql', '').strip()
-                username = request.form.get('username', '')
-                password = request.form.get('password', '')
+                form = await request.form
+                raw_sql = form.get('sql', '').strip()
+                username = form.get('username', '')
+                password = form.get('password', '')
 
                 ADMIN_USER = os.getenv("ADMIN_USERNAME")
                 ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
@@ -88,12 +84,12 @@ def admin_dashboard():
                     log_event("forbidden_query_attempt", username, raw_sql)
                 else:
                     try:
-                        cursor.execute(raw_sql)
+                        await cursor.execute(raw_sql)
                         # If it's a SELECT or similar, fetch results
                         if cursor.description:
-                            query_result = cursor.fetchall()
+                            query_result = await cursor.fetchall()
                         else:
-                            conn.commit()
+                            await conn.commit()
                             query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
                         log_event("query_run", username, raw_sql)
                     except Exception as e:
@@ -104,8 +100,8 @@ def admin_dashboard():
             txn_sql = "SELECT * FROM transactions ORDER BY date DESC"
             if txn_limit_val:
                 txn_sql += f" LIMIT {txn_limit_val}"
-            cursor.execute(txn_sql)
-            transactions = cursor.fetchall()
+            await cursor.execute(txn_sql)
+            transactions = await cursor.fetchall()
 
             # --- Fetch all students payment info ---
             student_sql = '''
@@ -121,15 +117,15 @@ def admin_dashboard():
                 student_sql += " AND people.class = %s"
                 params.append(student_class)
             student_sql += " ORDER BY people.class, users.fullname"
-            cursor.execute(student_sql, params)
-            student_payments = cursor.fetchall()
+            await cursor.execute(student_sql, params)
+            student_payments = await cursor.fetchall()
 
     except Exception as e:
         query_error = str(e)
     finally:
-        conn.close()
+        await conn.close()
 
-    return render_template(
+    return await render_template(
         "admin/dashboard.html",
         databases=databases,
         tables=tables,
@@ -147,34 +143,32 @@ def admin_dashboard():
 
 
 @admin_routes.route('/logs')
-def view_logs():
+async def view_logs():
     # Require admin login
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
+    conn = await connect_to_db()
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(
                 "SELECT log_id, action, phone, message, created_at "
                 "FROM logs "
                 "ORDER BY created_at DESC"
             )
-            logs = cursor.fetchall()
+            logs = await cursor.fetchall()
     finally:
-        conn.close()
+        await conn.close()
 
-    return render_template("admin/logs.html", logs=logs)
-
-from flask import jsonify
+    return await render_template("admin/logs.html", logs=logs)
 
 @admin_routes.route('/logs/data')
-def logs_data():
-    conn = connect_to_db()
-    with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-        cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
-        logs = cursor.fetchall()
-    conn.close()
+async def logs_data():
+    conn = await connect_to_db()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
+        logs = await cursor.fetchall()
+    await conn.close()
     # Convert datetime to string
     for l in logs:
         l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
@@ -183,7 +177,7 @@ def logs_data():
 
 
 @admin_routes.route('/info/data')
-def info_data_admin():
+async def info_data_admin():
     # require admin
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -204,13 +198,13 @@ def info_data_admin():
 
 
 @admin_routes.route('/info')
-def info_admin():
+async def info_admin():
     # require admin
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
     logs = getattr(current_app, 'request_response_log', [])[-100:]
-    return render_template("admin/info.html", logs=logs)
+    return await render_template("admin/info.html", logs=logs)
 
 
 
@@ -218,7 +212,7 @@ def info_admin():
 # ------------------ Exam Results ------------------------
 
 @admin_routes.route('/exam_results', methods=['GET'])
-def exam_results():
+async def exam_results():
     # auth
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -263,7 +257,7 @@ def exam_results():
 
     # GET: show all together
     results = load_results()
-    return render_template("admin/exam_results.html", results=results)
+    return await render_template("admin/exam_results.html", results=results)
 
 
 # TODO: Disabled for view-only mode
@@ -296,20 +290,20 @@ def exam_results():
 # ------------------- Members --------------------------
 
 @admin_routes.route('/members', methods=['GET', 'POST'])
-def members():
+async def members():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             # Fetch all people and pending verifies
-            cursor.execute("SELECT * FROM people")
-            people = list(cursor.fetchall())
-            cursor.execute("SELECT * FROM verify_people")
-            pending = cursor.fetchall()
+            await cursor.execute("SELECT * FROM people")
+            people = list(await cursor.fetchall())
+            await cursor.execute("SELECT * FROM verify_people")
+            pending = await cursor.fetchall()
     finally:
-        conn.close()
+        await conn.close()
 
     # Build list of distinct account types
     types = sorted({m['acc_type'] for m in people if m.get('acc_type')})
@@ -343,7 +337,7 @@ def members():
                 return 0
         members.sort(key=user_id_int, reverse=reverse)
 
-    return render_template("admin/members.html",
+    return await render_template("admin/members.html",
                            types=types,
                            selected_type=selected_type,
                            members=members,
@@ -375,7 +369,7 @@ def members():
 #                     cursor.execute("SELECT * FROM people WHERE user_id = %s", (user_id,))
 #                     member = cursor.fetchone()
 #             finally:
-#                 conn.close()
+#                 await conn.close()
 
 #     if request.method == 'POST':
 #         fields = ["name_en","name_bn","name_ar","member_id","student_id","phone",
@@ -407,7 +401,7 @@ def members():
 #             flash("Member added successfully","success")
 #             return redirect(url_for('admin_routes.members'))
 #         finally:
-#             conn.close()
+#             await conn.close()
 
 #     return render_template('admin/manage_member.html',
 #                            genders=genders,
@@ -421,7 +415,7 @@ def members():
 # ------------------- Notices -----------------------
 
 @admin_routes.route('/notice', methods=['GET'])
-def notice_page():
+async def notice_page():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
     
@@ -475,7 +469,7 @@ def notice_page():
         except Exception:
             past.append(n)
 
-    return render_template("admin/notice.html",
+    return await render_template("admin/notice.html",
                            upcoming=upcoming,
                            ongoing=ongoing,
                            past=past)
@@ -510,24 +504,24 @@ def notice_page():
 # ------------------ Routine ----------------------
 
 @admin_routes.route('/routine', methods=['GET'])
-def routine():
+async def routine():
     # require login
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
     sort = request.args.get('sort', 'default')
 
-    conn = connect_to_db()
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("""
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("""
                 SELECT *
                   FROM routine
                  ORDER BY class_group ASC, serial ASC
             """)
-            rows = cursor.fetchall()
+            rows = await cursor.fetchall()
     finally:
-        conn.close()
+        await conn.close()
 
     # group by class_group
     routines_by_class = {}
@@ -546,7 +540,7 @@ def routine():
             routines_by_class[k].sort(key=lambda r: int(r.get('serial', 0)))
     # else: default (serial from db order)
 
-    return render_template(
+    return await render_template(
         'admin/routine.html',
         routines_by_class=routines_by_class,
         sort=sort
@@ -594,7 +588,7 @@ def routine():
 #         except Exception as e:
 #             flash(f"Error adding routine: {e}", "danger")
 #         finally:
-#             conn.close()
+#             await conn.close()
 
 #     # GET → show form
 #     return render_template('admin/add_routine.html')
@@ -605,15 +599,15 @@ def routine():
 # -------------------- Event / Function ------------------------
 
 @admin_routes.route('/events', methods=['GET'])
-def events():
+async def events():
     # ─── require login ────────────────────────────────────────────
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
+    conn = await connect_to_db()
     events = []
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
+        async with conn.cursor(cursor=aiomysql.DictCursor) as cursor:
             # TODO: Disabled for view-only mode
             # ─── handle form submission ────────────────────────────
             # if request.method == 'POST':
@@ -644,21 +638,21 @@ def events():
             #         flash("✅ Event added successfully.", "success")
 
             # ─── fetch all events ────────────────────────────────────
-            cursor.execute("""
+            await cursor.execute("""
                 SELECT event_id, type, title, date, time, function_url
                   FROM events
                  ORDER BY date  DESC,
                           time  DESC
             """)
-            events = cursor.fetchall()
+            events = await cursor.fetchall()
 
     except Exception as e:
         flash(f"⚠️ Database error: {e}", "danger")
 
     finally:
-        conn.close()
+        await conn.close()
 
-    return render_template("admin/events.html", events=events)
+    return await render_template("admin/events.html", events=events)
 
 
 
@@ -673,7 +667,7 @@ if not os.path.exists(PIC_INDEX_PATH):
 
 
 @admin_routes.route('/madrasa_pictures', methods=['GET'])
-def madrasa_pictures():
+async def madrasa_pictures():
     # 1) Require admin
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -724,7 +718,7 @@ def madrasa_pictures():
     with open(PIC_INDEX_PATH) as idx:
         pictures = json.load(idx)
 
-    return render_template('admin/madrasa_pictures.html', pictures=pictures)
+    return await render_template('admin/madrasa_pictures.html', pictures=pictures)
 
 
 # TODO: Disabled for view-only mode
@@ -765,19 +759,19 @@ def madrasa_pictures():
 # ---------------------- Exam -----------------------------
 
 @admin_routes.route('/admin/events/exams', methods=['GET'])
-def exams():
+async def exams():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = connect_to_db()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
+    conn = await connect_to_db()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
 
-    # Fetch all exams
-    cursor.execute("SELECT * FROM exam ORDER BY date DESC, start_time ASC")
-    exams = cursor.fetchall()
+        # Fetch all exams
+        await cursor.execute("SELECT * FROM exam ORDER BY date DESC, start_time ASC")
+        exams = await cursor.fetchall()
 
-    conn.close()
-    return render_template('admin/exams.html', exams=exams)
+    await conn.close()
+    return await render_template('admin/exams.html', exams=exams)
 
 # TODO: Disabled for view-only mode
 # @admin_routes.route('/admin/add_exam', methods=['POST'])
@@ -818,7 +812,7 @@ def exams():
 #         cursor.execute("SELECT book_en, book_bn, book_ar FROM book WHERE book_id = %s", (book_id,))
 #         book = cursor.fetchone()
 #         if not book:
-#             conn.close()
+#             await conn.close()
 #             return "Book ID not found", 400
 #         book_en, book_bn, book_ar = book
 #     else:
@@ -841,7 +835,7 @@ def exams():
 #     ))
 
 #     conn.commit()
-#     conn.close()
+#     await conn.close()
 
 #     return redirect(url_for('admin_routes.exams'))
 
@@ -863,7 +857,7 @@ def exams():
 #         flash(f"Error deleting pending verification: {e}", "danger")
 #         log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
 #     finally:
-#         conn.close()
+#         await conn.close()
 
 #     return redirect(url_for('admin_routes.members'))
 
@@ -886,7 +880,7 @@ def exams():
 #                 cursor.execute("SELECT * FROM payment WHERE id = %s", (user_id,))
 #                 payment = cursor.fetchone()
 #         finally:
-#             conn.close()
+#             await conn.close()
 
 #     if request.method == 'POST':
 #         id_val = request.form.get('id')
@@ -913,23 +907,23 @@ def exams():
 #                     flash("Payment info added.", "success")
 #             return redirect(url_for('admin_routes.admin_dashboard'))
 #         finally:
-#             conn.close()
+#             await conn.close()
 
 #     return render_template('admin/payment_form.html', payment=payment, mode=mode)
 
 @admin_routes.route('/interactions', methods=['GET'])
-def interactions():
+async def interactions():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
     sort = request.args.get('sort', 'default')
-    conn = connect_to_db()
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("SELECT * FROM interactions")
-            rows = list(cursor.fetchall())
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("SELECT * FROM interactions")
+            rows = list(await cursor.fetchall())
     finally:
-        conn.close()
+        await conn.close()
 
     # Sorting logic
     if sort == 'device_brand':
@@ -940,4 +934,91 @@ def interactions():
         rows.sort(key=lambda r: int(r.get('open_times', 0)), reverse=True)
     # else: default order
 
-    return render_template('admin/interactions.html', interactions=rows, sort=sort)
+    return await render_template('admin/interactions.html', interactions=rows, sort=sort)
+
+@admin_routes.route('/power', methods=['GET', 'POST'])
+async def power_management():
+    # Require admin login
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_routes.login'))
+    
+    # Get power key from environment
+    POWER_KEY = os.getenv("POWER_KEY")
+    if not POWER_KEY:
+        return render_template('admin/power.html', error="Power management is not configured")
+    
+    if request.method == 'POST':
+        form = await request.form
+        action = form.get('action')
+        power_key = form.get('power_key')
+        
+        # Verify power key
+        if power_key != POWER_KEY:
+            flash("Invalid power key", "danger")
+            return render_template('admin/power.html')
+        
+        
+        try:
+            if action == 'git_pull':
+                # Git pull
+                result = subprocess.run(
+                    ['git', 'pull'], 
+                    capture_output=True, 
+                    text=True, 
+                    cwd=os.getcwd(),
+                    timeout=30
+                )
+                if result.returncode == 0:
+                    flash(f"✅ Git pull successful\n{result.stdout}", "success")
+                else:
+                    flash(f"❌ Git pull failed\n{result.stderr}", "danger")
+                log_event("git_pull", "admin", f"Git pull executed: {result.stdout[:100]}...")
+                
+            elif action == 'git_push':
+                # Git push
+                result = subprocess.run(
+                    ['git', 'push'], 
+                    capture_output=True, 
+                    text=True, 
+                    cwd=os.getcwd(),
+                    timeout=30
+                )
+                if result.returncode == 0:
+                    flash(f"✅ Git push successful\n{result.stdout}", "success")
+                else:
+                    flash(f"❌ Git push failed\n{result.stderr}", "danger")
+                log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
+                
+            elif action == 'server_stop':
+                # Server stop
+                flash("🛑 Server stop initiated. The server will stop in 3 seconds...", "warning")
+                log_event("server_stop", "admin", "Server stop initiated")
+                
+                # Schedule server stop after 3 seconds
+                async def delayed_stop():
+                    await asyncio.sleep(3)
+                    os._exit(0)
+                asyncio.create_task(delayed_stop())
+                
+            elif action == 'server_restart':
+                # Server restart
+                flash("🔄 Server restart initiated. The server will restart in 3 seconds...", "warning")
+                log_event("server_restart", "admin", "Server restart initiated")
+                
+                # Schedule server restart after 3 seconds
+                async def delayed_restart():
+                    await asyncio.sleep(3)
+                    os._exit(0)  # Process manager should restart it
+                asyncio.create_task(delayed_restart())
+                
+            else:
+                flash("Invalid action", "danger")
+                
+        except subprocess.TimeoutExpired:
+            flash("❌ Operation timed out (30 seconds)", "danger")
+            log_event("power_timeout", "admin", f"Operation timed out: {action}")
+        except Exception as e:
+            flash(f"❌ Error: {str(e)}", "danger")
+            log_event("power_error", "admin", f"Error in {action}: {str(e)}")
+    
+    return render_template('admin/power.html')

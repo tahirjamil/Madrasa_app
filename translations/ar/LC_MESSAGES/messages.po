@@ -1,17 +1,19 @@
-# Translations template for PROJECT.
+# Arabic translations for PROJECT.
 # Copyright (C) 2025 ORGANIZATION
 # This file is distributed under the same license as the PROJECT project.
 # FIRST AUTHOR <EMAIL@ADDRESS>, 2025.
 #
-#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2025-07-28 23:28+0600\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: 2025-07-28 22:44+0600\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: ar\n"
+"Language-Team: ar <LL@li.org>\n"
+"Plural-Forms: nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : "
+"n%100>=3 && n%100<=10 ? 3 : n%100>=0 && n%100<=2 ? 4 : 5);\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -20,121 +22,121 @@ msgstr ""
 #: helpers.py:165 routes/user_routes/auth.py:241 routes/user_routes/auth.py:248
 #, python-format
 msgid "Verification code sent to %(target)s"
-msgstr ""
+msgstr "تم الوصول إلى الحد. حاول مرة أخرى لاحقًا."
 
 #: helpers.py:167 helpers.py:200
 #, python-format
 msgid "Your code is: %(code)s"
-msgstr ""
+msgstr "رمزك هو: %(code)s"
 
 #: helpers.py:196
 msgid "Verification Email"
-msgstr ""
+msgstr "بريد التحقق"
 
 #: routes/user_routes/__init__.py:11
 msgid "System is under maintenance. Please try again later."
-msgstr ""
+msgstr "بريد التحقق"
 
 #: routes/user_routes/auth.py:34 routes/user_routes/auth.py:106
 #: routes/user_routes/auth.py:187 routes/user_routes/auth.py:276
 #: routes/user_routes/auth.py:483
 msgid "Unknown device detected"
-msgstr ""
+msgstr "تم اكتشاف جهاز غير معروف"
 
 #: routes/user_routes/auth.py:38
 msgid "All fields including code are required"
-msgstr ""
+msgstr "جميع الحقول بما في ذلك الرمز مطلوبة"
 
 #: routes/user_routes/auth.py:42 routes/user_routes/auth.py:115
 #: routes/user_routes/auth.py:194 routes/user_routes/auth.py:285
 msgid "Invalid phone number format"
-msgstr ""
+msgstr "تنسيق رقم الهاتف غير صالح"
 
 #: routes/user_routes/auth.py:79
 msgid "Registration successful"
-msgstr ""
+msgstr "تم التسجيل بنجاح"
 
 #: routes/user_routes/auth.py:84 routes/user_routes/auth.py:210
 msgid "User with this fullname and phone already registered"
-msgstr ""
+msgstr "المستخدم بهذا الاسم الكامل ورقم الهاتف مسجل بالفعل"
 
 #: routes/user_routes/auth.py:86 routes/user_routes/auth.py:163
 msgid "Internal server error"
-msgstr ""
+msgstr "المستخدم بهذا الاسم الكامل ورقم الهاتف مسجل بالفعل"
 
 #: routes/user_routes/auth.py:110 routes/user_routes/auth.py:349
 #: routes/user_routes/auth.py:431
 msgid "All fields are required"
-msgstr ""
+msgstr "خطأ في الخادم الداخلي"
 
 #: routes/user_routes/auth.py:127 routes/user_routes/auth.py:304
 msgid "User not found"
-msgstr ""
+msgstr "جميع الحقول مطلوبة"
 
 #: routes/user_routes/auth.py:131
 msgid "Incorrect password"
-msgstr ""
+msgstr "المستخدم غير موجود"
 
 #: routes/user_routes/auth.py:134 routes/user_routes/auth.py:471
 msgid "Account is deactivated"
-msgstr ""
+msgstr "كلمة المرور غير صحيحة"
 
 #: routes/user_routes/auth.py:151
 msgid "Additional info required"
-msgstr ""
+msgstr "تم تعطيل الحساب"
 
 #: routes/user_routes/auth.py:159
 msgid "Login successful"
-msgstr ""
+msgstr "مطلوب معلومات إضافية"
 
 #: routes/user_routes/auth.py:190
 msgid "Phone number and fullname required"
-msgstr ""
+msgstr "تم تسجيل الدخول بنجاح"
 
 #: routes/user_routes/auth.py:227
 msgid "Limit reached. Try again later."
-msgstr ""
+msgstr "رقم الهاتف والاسم الكامل مطلوبان"
 
 #: routes/user_routes/auth.py:252
 msgid "Failed to send verification code"
-msgstr ""
+msgstr "تم إرسال رمز التحقق إلى %(target)s"
 
 #: routes/user_routes/auth.py:256
 #, python-format
 msgid "Internal error: %(error)s"
-msgstr ""
+msgstr "فشل في إرسال رمز التحقق"
 
 #: routes/user_routes/auth.py:281
 msgid "Phone, Fullname, and New Password are required"
-msgstr ""
+msgstr "خطأ داخلي: %(error)s"
 
 #: routes/user_routes/auth.py:293
 msgid "Code successfully matched"
-msgstr ""
+msgstr "رقم الهاتف والاسم الكامل وكلمة المرور الجديدة مطلوبة"
 
 #: routes/user_routes/auth.py:309
 msgid "Incorrect old password"
-msgstr ""
+msgstr "تمت مطابقة الرمز بنجاح"
 
 #: routes/user_routes/auth.py:314
 msgid "New password cannot be the same as the current password."
-msgstr ""
+msgstr "كلمة المرور القديمة غير صحيحة"
 
 #: routes/user_routes/auth.py:322
 msgid "Password Reset Successful"
-msgstr ""
+msgstr "لا يمكن أن تكون كلمة المرور الجديدة مثل الكلمة الحالية."
 
 #: routes/user_routes/auth.py:331
 msgid "Invalid page type"
-msgstr ""
+msgstr "تم إعادة تعيين كلمة المرور بنجاح"
 
 #: routes/user_routes/auth.py:353 routes/user_routes/payments.py:84
 msgid "Invalid phone number"
-msgstr ""
+msgstr "نوع الصفحة غير صالح"
 
 #: routes/user_routes/auth.py:368
 msgid "Invalid login details"
-msgstr ""
+msgstr "رقم الهاتف غير صالح"
 
 #: routes/user_routes/auth.py:372
 #, python-format
@@ -144,11 +146,11 @@ msgid ""
 "If it wasn't you, please contact us for account recovery.\n"
 "\n"
 "@An-Nur.app"
-msgstr ""
+msgstr "تفاصيل تسجيل الدخول غير صحيحة"
 
 #: routes/user_routes/auth.py:373
 msgid "Account Deletion Confirmation"
-msgstr ""
+msgstr "تم إبطال الجلسة. الرجاء تسجيل الدخول مرة أخرى."
 
 #: routes/user_routes/auth.py:375
 msgid ""
@@ -157,157 +159,157 @@ msgid ""
 "If it wasn't you, please contact us immediately.\n"
 "\n"
 "@An-Nur.app"
-msgstr ""
+msgstr "لم يتم تقديم معلومات الحساب."
 
 #: routes/user_routes/auth.py:376
 msgid "Account Deactivation Confirmation"
-msgstr ""
+msgstr "الحساب صالح"
 
 #: routes/user_routes/auth.py:392
 msgid "Could not send confirmation. Try again later."
-msgstr ""
+msgstr "خطأ داخلي"
 
 #: routes/user_routes/auth.py:411
 msgid "Account deletion initiated. Check your messages."
-msgstr ""
+msgstr "الاسم الكامل، رقم الهاتف ونوع الحساب مطلوبة"
 
 #: routes/user_routes/auth.py:414
 msgid "Account deactivated successfully."
-msgstr ""
+msgstr "لم يتم العثور على المعرف"
 
 #: routes/user_routes/auth.py:418
 msgid "An error occurred"
-msgstr ""
+msgstr "يجب توفير جميع الحقول المطلوبة للطالب"
 
 #: routes/user_routes/auth.py:456
 msgid "Account reactivated."
-msgstr ""
+msgstr "يجب توفير جميع الحقول المطلوبة لـ %(type)s"
 
 #: routes/user_routes/auth.py:459
 msgid "Account reactivation failed."
-msgstr ""
+msgstr "الاسم والهاتف والأب/الزوج مطلوبة للضيف"
 
 #: routes/user_routes/auth.py:470
 msgid "Session invalidated. Please log in again."
-msgstr ""
+msgstr "تم إضافة ملف %(type)s بنجاح"
 
 #: routes/user_routes/auth.py:486
 msgid "No account information provided."
-msgstr ""
+msgstr "المستخدم موجود بالفعل بهذا المعرف"
 
 #: routes/user_routes/auth.py:609
 msgid "Account is valid"
-msgstr ""
+msgstr "خطأ في قاعدة البيانات: %(error)s"
 
 #: routes/user_routes/auth.py:613
 msgid "Internal error"
-msgstr ""
+msgstr "لم يتم العثور على المستخدم للدفع"
 
 #: routes/user_routes/core.py:43
 msgid "File not found"
-msgstr ""
+msgstr "فشلت المعاملة"
 
 #: routes/user_routes/core.py:109
 msgid "fullname, phone and acc_type are required"
-msgstr ""
+msgstr "الهاتف والاسم الكامل ونوع الدفع مطلوبة"
 
 #: routes/user_routes/core.py:115
 msgid "ID not found"
-msgstr ""
+msgstr "رقم الهاتف غير صالح"
 
 #: routes/user_routes/core.py:161
 msgid "All required fields must be provided for Student"
-msgstr ""
+msgstr "تنسيق updatedSince غير صالح"
 
 #: routes/user_routes/core.py:175 routes/user_routes/core.py:191
 #, python-format
 msgid "All required fields must be provided for %(type)s"
-msgstr ""
+msgstr "خطأ داخلي في الخادم أثناء معالجة الدفع"
 
 #: routes/user_routes/core.py:197
 msgid "Name, Phone, and Father/Spouse are required for Guest"
-msgstr ""
+msgstr "لم يتم العثور على معاملات"
 
 #: routes/user_routes/core.py:220
 #, python-format
 msgid "%(type)s profile added successfully"
-msgstr ""
+msgstr "المبلغ ونوع الدفع مطلوبان"
 
 #: routes/user_routes/core.py:226
 msgid "User already exists with this ID"
-msgstr ""
+msgstr "بوابة الدفع غير مُعدة بشكل صحيح"
 
 #: routes/user_routes/core.py:229 routes/user_routes/core.py:267
 #: routes/user_routes/core.py:300
 #, python-format
 msgid "Database error: %(error)s"
-msgstr ""
+msgstr "بوابة الدفع غير متاحة حالياً"
 
 #: routes/user_routes/payments.py:40 routes/user_routes/payments.py:305
 msgid "User not found for payment"
-msgstr ""
+msgstr "فشل في بدء الدفع"
 
 #: routes/user_routes/payments.py:44 routes/user_routes/payments.py:319
 msgid "Transaction failed"
-msgstr ""
+msgstr "نوع الإرجاع غير صالح"
 
 #: routes/user_routes/payments.py:78
 msgid "Phone, fullname and payment type required"
-msgstr ""
+msgstr "فشل الدفع"
 
 #: routes/user_routes/payments.py:111
 msgid "Invalid updatedSince format"
-msgstr ""
+msgstr "تم إلغاء الدفع"
 
 #: routes/user_routes/payments.py:125
 msgid "Internal server error during payment processing"
-msgstr ""
+msgstr "معرف المعاملة مفقود"
 
 #: routes/user_routes/payments.py:131
 msgid "No transactions found"
-msgstr ""
+msgstr "فشل التحقق من الدفع"
 
 #: routes/user_routes/payments.py:164
 msgid "Amount and payment type are required"
-msgstr ""
+msgstr "خطأ أثناء التحقق من الدفع"
 
 #: routes/user_routes/payments.py:171
 msgid "Payment gateway is not properly configured"
-msgstr ""
+msgstr "تم تسجيل الدفع بنجاح"
 
 #: routes/user_routes/payments.py:226
 msgid "Payment gateway is currently unreachable"
-msgstr ""
+msgstr "تم اكتشاف جهاز غير معروف"
 
 #: routes/user_routes/payments.py:237
 msgid "Payment initiation failed"
-msgstr ""
+msgstr "تم إرسال رمز التحقق بنجاح"
 
 #: routes/user_routes/payments.py:247
 msgid "Invalid return type"
-msgstr ""
+msgstr "تم إرسال رمز التحقق إلى %(target)s"
 
 #: routes/user_routes/payments.py:249
 msgid "Payment failed"
-msgstr ""
+msgstr "تم إرسال رمز التحقق بنجاح"
 
 #: routes/user_routes/payments.py:251
 msgid "Payment cancelled"
-msgstr ""
+msgstr "تم إرسال رمز التحقق بنجاح"
 
 #: routes/user_routes/payments.py:264
 msgid "Missing transaction identifier"
-msgstr ""
+msgstr "تم إرسال رمز التحقق بنجاح"
 
 #: routes/user_routes/payments.py:283
 msgid "Payment validation failed"
-msgstr ""
+msgstr "تم إرسال رمز التحقق بنجاح"
 
 #: routes/user_routes/payments.py:286
 msgid "Error during payment validation"
-msgstr ""
+msgstr "تم إرسال رمز التحقق بنجاح"
 
 #: routes/user_routes/payments.py:324
 msgid "Payment recorded successfully"
-msgstr ""
+msgstr "تم إرسال رمز التحقق بنجاح"
 

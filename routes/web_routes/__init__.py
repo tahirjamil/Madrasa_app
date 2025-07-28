@@ -5,7 +5,7 @@ web_routes = Blueprint('web_routes', __name__)
 
 @web_routes.before_request
 async def check():
-    if await is_maintenance_mode():
+    if is_maintenance_mode():
         return await render_template("maintenance.html"), 503
 
 # Import routes from other modules to register them

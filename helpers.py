@@ -16,7 +16,7 @@ from config import Config
 import smtplib
 from email.mime.text import MIMEText
 import re
-from translations import t
+from quart_babel import gettext as _
 import asyncio
 
 # ─── Compute Upload Folder ───────────
@@ -94,7 +94,7 @@ async def blocker(info):
         log_event("check_blocklist_failed", info, f"Error: {e}")
         return None
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 async def is_device_unsafe(ip_address, device_id, info=None):
     dev_email = os.getenv("DEV_EMAIL")
@@ -134,7 +134,7 @@ async def is_device_unsafe(ip_address, device_id, info=None):
             log_event("update_blocklist_failed", info, f"failed to update blocklist : {e}")
             return True
         finally:
-            await conn.wait_closed()
+            await conn.close()
     else:
         return False
 
@@ -152,7 +152,7 @@ async def delete_code():
     except Exception as e:
         log_event("failed to delete verifications", "Null", f"Database Error {str(e)}")
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 def send_sms(phone, signature=None, code=None, msg=None, lang="en"):
     import requests
@@ -162,9 +162,9 @@ def send_sms(phone, signature=None, code=None, msg=None, lang="en"):
 
     # Use translation if no custom message is provided
     if not msg:
-        msg = t("verification_sms_sent", lang, target=phone)
+        msg = _("Verification code sent to %(target)s") % {"target": phone}
         if code:
-            msg += f"\n{t('your_code_is', lang, code=code)}"
+            msg += f"\n{_('Your code is: %(code)s') % {'code': code}}"
         msg += "\n\n@An-Nur.app"
 
     response = requests.post(TEXTBELT_URL, {
@@ -193,11 +193,11 @@ def send_email(to_email, code=None, subject=None, body=None, lang="en"):
 
     # Use translation if no custom subject/body is provided
     if not subject:
-        subject = t("verification_email_subject", lang)
+        subject = _("Verification Email")
     if not body:
         body = ""
         if code:
-            body += f"\n{t('your_code_is', lang, code=code)}"
+            body += f"\n{_('Your code is: %(code)s') % {'code': code}}"
         body += "\n\n@An-Nur.app"
 
     try:
@@ -256,7 +256,7 @@ async def check_code(user_code, phone):
     except Exception as e:
         return jsonify({"message": f"Error: {str(e)}"}), 500
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 async def get_email(fullname, phone):
     conn = await connect_to_db()
@@ -274,7 +274,7 @@ async def get_email(fullname, phone):
         log_event("db_error", phone, str(e))
         return None
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 def format_phone_number(phone):
     if not phone:
@@ -372,7 +372,7 @@ async def get_id(phone, fullname):
             result = await cursor.fetchone()
             return result['id'] if result else None
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 async def insert_person(fields: dict, acc_type, phone):
     conn = await connect_to_db()
@@ -408,7 +408,7 @@ async def insert_person(fields: dict, acc_type, phone):
         log_event("db_insert_error", phone, str(e))
         raise
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 async def auto_delete_users():
     conn = await connect_to_db()
@@ -462,7 +462,7 @@ async def auto_delete_users():
         log_event("auto_delete_error", "Null", str(e))
         return True
     finally:
-        await conn.wait_closed()
+        await conn.close()
 
 
 # ------------------------------------ Admin -------------------------------------------

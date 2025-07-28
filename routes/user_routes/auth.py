@@ -1,9 +1,8 @@
-from flask import request, jsonify, render_template
+from quart import request, jsonify, render_template
 from . import user_routes
-import pymysql.cursors
+import aiomysql
 from werkzeug.security import generate_password_hash, check_password_hash
-from pymysql.err import IntegrityError
-import pymysql
+from aiomysql import IntegrityError
 from database import connect_to_db
 from logger import log_event
 from helpers import (validate_fullname, validate_password, auto_delete_users,
@@ -16,10 +15,10 @@ from datetime import timedelta, datetime as dt
 
 # ========== Routes ==========
 @user_routes.route("/register", methods=["POST"])
-def register():
-    conn = connect_to_db()
+async def register():
+    conn = await connect_to_db()
 
-    data = request.get_json()
+    data = await request.get_json()
     fullname = data.get("fullname", "").strip()
     email = data.get("email")
     phone = data.get("phone")
@@ -47,34 +46,34 @@ def register():
         return validate_code
 
     hashed_password = generate_password_hash(password)
-    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
         try:
-            cursor.execute(
+            await cursor.execute(
                 "INSERT INTO users (fullname, phone, password, email, ip_address) VALUES (%s, %s, %s, %s, %s)",
                 (fullname, formatted_phone, hashed_password, email, ip_address)
             )
-            conn.commit()
+            await conn.commit()
 
-            cursor.execute(
+            await cursor.execute(
                 "SELECT id FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
                 (fullname, formatted_phone)
             )
-            result = cursor.fetchone()
+            result = await cursor.fetchone()
             user_id = result['id'] if result else None
-            conn.commit()
+            await conn.commit()
 
-            cursor.execute(
+            await cursor.execute(
                 "SELECT * FROM people WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
                 (fullname, formatted_phone)
             )
-            people_result = cursor.fetchone()
+            people_result = await cursor.fetchone()
 
             if people_result:
-                cursor.execute(
+                await cursor.execute(
                     "UPDATE people SET id = %s WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
                     (user_id, fullname, formatted_phone)
                 )
-                conn.commit()
+                await conn.commit()
 
             return jsonify({
                 "success": True, "message": t("registration_successful", lang),
@@ -85,13 +84,15 @@ def register():
             return jsonify({"message": t("user_already_registered", lang)}), 400
         except Exception as e:
             return jsonify({"message": t("internal_server_error", lang), "error": str(e)}), 500
+        finally:
+            await conn.wait_closed()
 
 
 @user_routes.route("/login", methods=["POST"])
-def login():
-    conn = connect_to_db()
+async def login():
+    conn = await connect_to_db()
 
-    data = request.get_json()
+    data = await request.get_json()
     fullname = data.get("fullname", "").strip()
     phone = data.get("phone")
     password = data.get("password")
@@ -114,12 +115,12 @@ def login():
         return jsonify({"message": t("invalid_phone_format", lang)}), 400
 
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(
                 "SELECT id, deactivated_at, password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                 (formatted_phone, fullname)
             )
-            user = cursor.fetchone()
+            user = await cursor.fetchone()
 
             if not user:
                 log_event("auth_user_not_found", formatted_phone, f"User {fullname} not found")
@@ -132,7 +133,7 @@ def login():
             if user["deactivated_at"] is not None:
                 return jsonify({"message": t("account_deactivated", lang)}), 403 #TODO: in app
             
-            cursor.execute(
+            await cursor.execute(
                 """
                 SELECT u.id, u.fullname, u.phone, p.acc_type AS userType, p.*
                 FROM users u
@@ -141,7 +142,7 @@ def login():
                 """,
                 (user["id"], formatted_phone, fullname)
             )
-            info = cursor.fetchone()
+            info = await cursor.fetchone()
 
             if not info or not info.get("phone"):
                 log_event("auth_additional_info_required", formatted_phone, "Missing profile info")
@@ -162,15 +163,15 @@ def login():
         return jsonify({"message": t("internal_server_error", lang)}), 500
 
     finally:
-        conn.close()
+        await conn.wait_closed()
 
 @user_routes.route("/send_code", methods=["POST"])
-def send_verification_code():
-    conn = connect_to_db()
+async def send_verification_code():
+    conn = await connect_to_db()
     SMS_LIMIT_PER_HOUR = 5
     EMAIL_LIMIT_PER_HOUR = 15
 
-    data = request.get_json()
+    data = await request.get_json()
     phone = data.get("phone")
     fullname = data.get("fullname").strip()
     password = data.get("password")
@@ -193,7 +194,7 @@ def send_verification_code():
         return jsonify({"message": t("invalid_phone_format", lang)}), 400
 
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             if fullname:
                 ok, msg = validate_fullname(fullname)
                 if not ok:
@@ -204,20 +205,20 @@ def send_verification_code():
                 if not ok:
                     return jsonify({"message": t(msg, lang)}), 400
                 
-                cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
-                if cursor.fetchone():
+                await cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
+                if await cursor.fetchone():
                     return jsonify({"message": t("user_already_registered", lang)}), 409
             
             if not email:
                 email = get_email(phone=formatted_phone, fullname=fullname)
 
             # Rate limit check - Combined limit for both SMS and email
-            cursor.execute("""
+            await cursor.execute("""
                 SELECT COUNT(*) AS recent_count 
                 FROM verifications 
                 WHERE phone = %s AND created_at > NOW() - INTERVAL 1 HOUR
             """, (formatted_phone,))
-            result = cursor.fetchone()
+            result = await cursor.fetchone()
             count = result["recent_count"] if result else 0
             
             # Check if rate limit exceeded for all methods
@@ -235,15 +236,15 @@ def send_verification_code():
             # Try SMS first if under SMS limit
             if count < SMS_LIMIT_PER_HOUR:
                 if send_sms(phone=formatted_phone, signature=signature, code=code):
-                    cursor.execute(sql, params)
-                    conn.commit()
+                    await cursor.execute(sql, params)
+                    await conn.commit()
                     return jsonify({"success": True, "message": t("verification_sms_sent", lang, target=formatted_phone)}), 200
 
             # Try email if SMS failed or limit reached, but under email limit
             if email and count < EMAIL_LIMIT_PER_HOUR:
                 if send_email(to_email=email, code=code, lang=lang):
-                    cursor.execute(sql, params)
-                    conn.commit()
+                    await cursor.execute(sql, params)
+                    await conn.commit()
                     return jsonify({"success": True, "message": t("verification_email_sent", lang, target=email)}), 200
 
             # If we get here, both methods failed or no email provided
@@ -256,10 +257,10 @@ def send_verification_code():
     
 
 @user_routes.route("/reset_password", methods=["POST"])
-def reset_password():
-    conn = connect_to_db()
+async def reset_password():
+    conn = await connect_to_db()
     
-    data = request.get_json()
+    data = await request.get_json()
     phone = data.get("phone")
     fullname = data.get("fullname").strip()
     user_code = data.get("code")
@@ -292,12 +293,12 @@ def reset_password():
             return jsonify({"success": True, "message": t("code_successfully_matched", lang)}), 200
 
     # Fetch the user
-    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-        cursor.execute(
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute(
             "SELECT password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
             (formatted_phone, fullname)
         )
-        result = cursor.fetchone()
+        result = await cursor.fetchone()
 
         if not result:
             return jsonify({"message": t("user_not_found", lang)}), 404
@@ -313,15 +314,15 @@ def reset_password():
             return jsonify({"message": t("password_same_error", lang)}), 400
 
         # Update the password
-        cursor.execute(
+        await cursor.execute(
             "UPDATE users SET password = %s, ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
             (hashed_password, ip_address, fullname, formatted_phone)
         )
-        conn.commit()
+        await conn.commit()
         return jsonify({"success": True, "message": t("password_reset_successful", lang)}), 201
 
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"])
-def manage_account(page_type):
+async def manage_account(page_type):
     lang = request.get_json().get("language") or "en"
     # clean up any expired accounts
     auto_delete_users()
@@ -352,15 +353,15 @@ def manage_account(page_type):
         return jsonify({"message": t("invalid_phone_number", lang)}), 400
 
     # lookup user
-    conn = connect_to_db()
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(
                 "SELECT id, password FROM users "
                 "WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (formatted_phone, fullname)
             )
-            user = cursor.fetchone()
+            user = await cursor.fetchone()
 
             if not user or not check_password_hash(user["password"], password):
                 log_event("delete_invalid_credentials", formatted_phone, "Invalid credentials")
@@ -401,8 +402,8 @@ def manage_account(page_type):
             sql += " WHERE id=%s"
             params.append(user["id"])
 
-            cursor.execute(sql, params)
-            conn.commit()
+            await cursor.execute(sql, params)
+            await conn.commit()
 
         # success response
         if page_type == "remove":
@@ -417,11 +418,11 @@ def manage_account(page_type):
         return jsonify({"message": t("an_error_occurred", lang)}), 500
 
     finally:
-        conn.close()
+        await conn.wait_closed()
 
 @user_routes.route("/account/reactivate", methods=['POST'])
-def undo_remove():
-    data = request.get_json()
+async def undo_remove():
+    data = await request.get_json()
     phone = format_phone_number(data.get("phone"))
     fullname = data.get("fullname", "").strip()
     lang = data.get("language") or "en"
@@ -429,14 +430,14 @@ def undo_remove():
     if not phone or not fullname:
         return jsonify({"message": t("all_fields_required", lang)}), 400
 
-    conn = connect_to_db()
+    conn = await connect_to_db()
     try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
+        async with conn.cursor() as cursor:
+            await cursor.execute("""
                 SELECT id, deactivated_at FROM users
                 WHERE phone = %s AND LOWER(fullname) = LOWER(%s)
             """, (phone, fullname))
-            user = cursor.fetchone()
+            user = await cursor.fetchone()
 
             if not user or not user["deactivated_at"]:
                 return jsonify({"message": "No deactivated account found"}), 404
@@ -445,25 +446,25 @@ def undo_remove():
             if (datetime.datetime.now() - deactivated_at).days > 14 and user["scheduled_deletion_at"]:
                 return jsonify({"message": "Undo period expired"}), 403
 
-            cursor.execute("""
+            await cursor.execute("""
                 UPDATE users
                 SET deactivated_at = NULL,
                     scheduled_deletion_at = NULL
                 WHERE id = %s
             """, (user["id"],))
-            conn.commit()
+            await conn.commit()
         return jsonify({"success": True, "message": "Account reactivated"}), 200
     except Exception as e:
         log_event("account_reactivation_failed", phone, str(e))
         return jsonify({"message": t("account_reactivation_failed", lang)}), 500
     finally:
-        conn.close()
+        await conn.wait_closed()
 
 @user_routes.route("/account/check", methods=['POST'])
-def get_account_status():
+async def get_account_status():
     auto_delete_users()
 
-    data = request.get_json()
+    data = await request.get_json()
     lang = data.get("language") or data.get("Language") or "en"
 
     LOGOUT_MSG = t("session_invalidated", lang)
@@ -526,17 +527,17 @@ def get_account_status():
             log_event("account_check_missing_field", ip_address, f"Field {c} is missing")
             return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
 
-    conn = connect_to_db()
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
 
-            cursor.execute("""
+            await cursor.execute("""
                     SELECT u.deactivated_at, u.email, p.*
                     FROM users u
                     JOIN people p ON p.id = u.id
                     WHERE u.phone = %s and u.fullname = %s
             """, (phone, fullname))
-            record = cursor.fetchone()
+            record = await cursor.fetchone()
 
         if not record:
             log_event("account_check_not_found", ip_address or user_id, "No matching user")
@@ -578,31 +579,31 @@ def get_account_status():
                         log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided_date} != {db_val}, so {fullname} logged out")
                         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
-        cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id,))
-        result = cursor.fetchall()
+        await cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id,))
+        result = await cursor.fetchall()
 
         try:
             if not result:
-                cursor.execute("""INSERT INTO interactions 
+                await cursor.execute("""INSERT INTO interactions 
                             (device_id, ip_address, device_brand, id)
                             VALUES
                             (%s, %s, %s, %s)
                             """, (device_id, ip_address, device_brand, user_id))
             else:
-                cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND id = %s", (device_id, device_brand, user_id))
-                open_times_result = cursor.fetchone()
+                await cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND id = %s", (device_id, device_brand, user_id))
+                open_times_result = await cursor.fetchone()
                 opened = open_times_result['open_times'] if open_times_result else 0
                 
                 opened += 1
-                cursor.execute("""UPDATE interactions SET open_times = %s
+                await cursor.execute("""UPDATE interactions SET open_times = %s
                             WHERE device_id = %s AND device_brand = %s AND id = %s
                             """, (opened, device_id, device_brand, user_id))
-            conn.commit()
-        except pymysql.MySQLError as e:
-            conn.rollback()
+            await conn.commit()
+        except Exception as e:
+            await conn.rollback()
             log_event("Saving interactions failed", phone, str(e))
         finally:
-            conn.close()
+            await conn.wait_closed()
                 
             # all checks passed
         return jsonify({"success": True, "message": t("account_is_valid", lang), "id": record["id"]}), 200
@@ -612,4 +613,4 @@ def get_account_status():
         return jsonify({"message": t("internal_error", lang)}), 500
 
     finally:
-        conn.close()
+        await conn.wait_closed()

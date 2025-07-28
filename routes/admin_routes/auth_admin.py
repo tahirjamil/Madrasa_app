@@ -1,14 +1,14 @@
 import os
 import requests
 from datetime import datetime, timedelta
-from flask import render_template, request, redirect, url_for, session
+from quart import render_template, request, redirect, url_for, session
 from . import admin_routes
 from config import Config
 
 login_attempts = {}
 
 @admin_routes.route('/login', methods=['GET', 'POST'])
-def login():
+async def login():
     # Set session to expire after configured time
     session.permanent = True
     
@@ -28,8 +28,9 @@ def login():
     RECAPTCHA_SECRET_KEY = Config.RECAPTCHA_SECRET_KEY
 
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        form = await request.form
+        username = form.get('username')
+        password = form.get('password')
 
         ADMIN_USER = Config.ADMIN_USERNAME
         ADMIN_PASS = Config.ADMIN_PASSWORD
@@ -41,10 +42,10 @@ def login():
             if session['login_attempts'] >= 4:
                 show_captcha = True
 
-                recaptcha_response = request.form.get('g-recaptcha-response')
+                recaptcha_response = form.get('g-recaptcha-response')
                 if not recaptcha_response:
                     error = "Please complete the reCAPTCHA."
-                    return render_template(
+                    return await render_template(
                         'admin/login.html',
                         error=error,
                         show_captcha=show_captcha,
@@ -61,7 +62,7 @@ def login():
 
                 if not result.get('success'):
                     error = "Invalid reCAPTCHA. Please try again."
-                    return render_template(
+                    return await render_template(
                         'admin/login.html',
                         error=error,
                         show_captcha=show_captcha,
@@ -76,7 +77,7 @@ def login():
         else:
             error = "Invalid credentials"
 
-    return render_template(
+    return await render_template(
         'admin/login.html',
         error=error,
         show_captcha=(RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY and session.get('login_attempts', 0) >= 4),
@@ -84,6 +85,6 @@ def login():
     )
 
 @admin_routes.route('/logout')
-def admin_logout():
+async def admin_logout():
     session.clear()
     return redirect(url_for('admin_routes.login'))

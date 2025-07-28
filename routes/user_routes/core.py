@@ -1,10 +1,10 @@
-from flask import request, jsonify, current_app, send_from_directory
+from quart import request, jsonify, current_app, send_from_directory
 from . import user_routes
-import pymysql
+import aiomysql
+from aiomysql import IntegrityError
 import os
 from datetime import datetime, date, timezone
 from zoneinfo import ZoneInfo
-import pymysql.cursors
 from PIL import Image
 from werkzeug.utils import secure_filename
 from database import connect_to_db
@@ -23,18 +23,17 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @user_routes.route('/uploads/people_img/<filename>')
-def uploaded_file(filename):
+async def uploaded_file(filename):
     filename = secure_filename(filename)  # ✅ sanitize again during fetch
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'people_img')
     file_path = os.path.join(upload_folder, filename)
 
     if not os.path.isfile(file_path):
         return jsonify({"message": "File not found"}), 404
-
-    return send_from_directory(upload_folder, filename), 200
+    return await send_from_directory(upload_folder, filename), 200
 
 @user_routes.route('/uploads/notices/<path:filename>')
-def notices_file(filename):
+async def notices_file(filename):
     filename = secure_filename(filename)
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'notices')
     file_path = os.path.join(upload_folder, filename)
@@ -42,22 +41,21 @@ def notices_file(filename):
 
     if not os.path.isfile(file_path):
         return jsonify({"message": t("file_not_found", lang)}), 404
-    
-    return send_from_directory(upload_folder, filename), 200
+    return await send_from_directory(upload_folder, filename), 200
 
 @user_routes.route('/uploads/exam_results/<path:filename>')
-def exam_results_file(filename):
+async def exam_results_file(filename):
     filename = secure_filename(filename)
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'exam_results')
     file_path = os.path.join(upload_folder, filename)
 
     if not os.path.isfile(file_path):
         return jsonify({"message": "File not found"}), 404
-    
-    return send_from_directory(upload_folder, filename), 200
+        
+    return await send_from_directory(upload_folder, filename), 200
 
 @user_routes.route('/uploads/madrasa_pictures/<gender>/<folder>/<path:filename>')
-def madrasa_pictures_file(gender, folder, filename):
+async def madrasa_pictures_file(gender, folder, filename):
     folders = ['garden', 'library', 'office', 'roof_and_kitchen', 'mosque', 'studio', 'other']
     genders = ['male', 'female', 'both']
     filename = secure_filename(filename)
@@ -66,13 +64,13 @@ def madrasa_pictures_file(gender, folder, filename):
     
     file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', gender, folder, filename)
     if os.path.isfile(file_path):
-        return send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', gender, folder), filename), 200
+        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', gender, folder), filename), 200
     else:
         return jsonify({"message": "File not found"}), 404
     
 
 @user_routes.route('/uploads/madrasa_pictures/classes/<folder>/<path:filename>')
-def madrasa_pictures_classes_file(folder, filename):
+async def madrasa_pictures_classes_file(folder, filename):
     folders = ['hifz', 'moktob', 'meshkat', 'daora', 'ulumul_hadith', 'ifta', 'madani_nesab', 'other']
     filename = secure_filename(filename)
     if folder not in folders:
@@ -80,22 +78,21 @@ def madrasa_pictures_classes_file(folder, filename):
     
     file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', 'classes', folder, filename)
     if os.path.isfile(file_path):
-        return send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', 'classes', folder), filename), 200
+        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', 'classes', folder), filename), 200
     else:
         return jsonify({"message": "File not found"}), 404
-    
 
 # ========== Routes ==========
 
 @user_routes.route('/add_people', methods=['POST'])
-def add_person():
-    conn = connect_to_db()
+async def add_person():
+    conn = await connect_to_db()
     BASE_URL = current_app.config['BASE_URL']
-    
-    data = request.form
-    lang = data.get('language') or data.get('Language') or 'en'
-    image = request.files.get('image')
 
+    data = await request.form
+    lang = data.get('language') or data.get('Language') or 'en'
+    image = (await request.files).get('image')
+    
     fullname = data.get('name_en')
     phone = data.get('phone')
     formatted_phone = format_phone_number(phone)
@@ -164,9 +161,7 @@ def add_person():
             return jsonify({"message": t("all_required_fields_student", lang)}), 400
         fields.update({k: f(k) for k in required})
 
-        # optional = ["email"]
-        # fields.update({k: f(k) for k in optional if f(k)})
-
+        
     elif acc_type in ['teachers', 'admins']:
         required = [
             'name_en', 'name_bn', 'name_ar', 'date_of_birth',
@@ -196,10 +191,7 @@ def add_person():
             return jsonify({"message": t("all_required_fields_type", lang, type=acc_type)}), 400
         fields.update({k: f(k) for k in required})
 
-        # optional = ["email"]
-        # fields.update({k: f(k) for k in optional if f(k)})
         
-
     else:
         if not f("name_en") or not f("phone") or not f("father_or_spouse") or not f("date_of_birth"):
             return jsonify({"message": t("name_phone_father_required_guest", lang)}), 400
@@ -217,11 +209,11 @@ def add_person():
 
 
     try:
-        with conn.cursor() as cursor:
-            insert_person(fields, acc_type, phone)
-            conn.commit()
-            cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
-            row = cursor.fetchone()
+        async with conn.cursor() as cursor:
+            await insert_person(fields, acc_type, phone)
+            await conn.commit()
+            await cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+            row = await cursor.fetchone()
             img_path = row["image_path"] if row else None
             return jsonify({
                 "success": True, 
@@ -230,25 +222,26 @@ def add_person():
                 "info": img_path
                 }), 201
             
-    except pymysql.err.IntegrityError:
+    except aiomysql.IntegrityError:
         return jsonify({"message": t("user_exists_with_id", lang)}), 409
     except Exception as e:
         log_event("add_people_failed", phone, str(e))
         return jsonify({"message": t("database_error", lang, error=str(e))}), 500
-
+    finally:
+        await conn.wait_closed()
 
 @user_routes.route('/members', methods=['POST'])
-def get_info():
-    conn = connect_to_db()
-
-    data = request.get_json()
+async def get_info():
+    conn = await connect_to_db()
+    
+    data = await request.get_json()
     lang = data.get('language') or data.get('Language') or 'en'
     lastfetched = data.get('updatedSince')
     # member_id_list = data.get('member_id')
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             sql = """SELECT name_en, name_bn, name_ar,
                     address_en, address_bn, address_ar,
                     degree, gender,
@@ -262,9 +255,9 @@ def get_info():
             if lastfetched:
                 sql += " AND updated_at > %s"
                 params.append(corrected_time)
-            
-            cursor.execute(sql, params)
-            members = cursor.fetchall()
+                
+            await cursor.execute(sql, params)
+            members = await cursor.fetchall()
         return jsonify({
             "members": members,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
@@ -273,24 +266,19 @@ def get_info():
         log_event("get_members_failed", "NULL", str(e))
         return jsonify({"message": t("database_error", lang, error=str(e))}), 500
     finally:
-        conn.close()
-
+        await conn.wait_closed()
+        
 
 @user_routes.route("/routine", methods=["POST"])
-def get_routine():
-    conn = connect_to_db()
-    lang = request.get_json().get("language") or "en"
-    
-    if conn is None:
-        return jsonify({"message": t("database_connection_failed", lang)}), 500
-
-    data = request.get_json()
+async def get_routine():
+    conn = await connect_to_db()
+    data = await request.get_json()
     lang = data.get('language') or data.get('Language') or 'en'
     lastfetched = data.get("updatedSince")
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             sql = "SELECT * FROM routine"
             params = []
             
@@ -299,9 +287,9 @@ def get_routine():
                 params.append(corrected_time)
 
             sql += " ORDER BY class_level"
-
-            cursor.execute(sql, params)
-            result = cursor.fetchall()
+            
+            await cursor.execute(sql, params)
+            result = await cursor.fetchall()
 
             return jsonify({
             "routine": result,
@@ -311,12 +299,12 @@ def get_routine():
         log_event("get_routine_failed", "NULL", str(e))
         return jsonify({"message": t("database_error", lang, error=str(e))}), 500
     finally:
-        conn.close()
-
+        await conn.wait_closed()
+        
 
 @user_routes.route('/events', methods=['POST'])
-def events():
-    data = request.get_json() or {}
+async def events():
+    data = await request.get_json() or {}
     lastfetched = data.get('updatedSince')
     DHAKA = ZoneInfo("Asia/Dhaka")
 
@@ -333,18 +321,18 @@ def events():
             return jsonify({"error": "Invalid updatedSince format"}), 400
 
     sql += " ORDER BY event_id DESC"
-
-    conn = connect_to_db()
+    
+    conn = await connect_to_db()
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(sql, params)
-            rows = cursor.fetchall()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(sql, params)
+            rows = await cursor.fetchall()
     except Exception as e:
         log_event("get_events_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
     finally:
-        conn.close()
-
+        await conn.wait_closed()
+        
     now_dhaka = datetime.now(DHAKA)
     today     = now_dhaka.date()
 
@@ -380,9 +368,9 @@ def events():
     }), 200
 
 @user_routes.route('/exam', methods=['POST'])
-def get_exams():
-    conn = connect_to_db()
-    data = request.get_json()
+async def get_exams():
+    conn = await connect_to_db()
+    data = await request.get_json()
     lastfetched = data.get("updatedSince")
     cutoff = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
@@ -401,10 +389,10 @@ def get_exams():
     sql += " ORDER BY exam_id"
 
     try:
-        with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(sql, params)
-            result = cursor.fetchall()
-
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(sql, params)
+            result = await cursor.fetchall()
+            
             return jsonify({
                 "exams": result,
                 "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -414,4 +402,4 @@ def get_exams():
         log_event("get_events_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
     finally:
-        conn.close()
+        await conn.wait_closed()

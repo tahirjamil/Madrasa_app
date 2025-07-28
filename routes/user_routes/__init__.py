@@ -1,21 +1,18 @@
-from flask import Blueprint, jsonify, request
-from helpers import is_maintenance_mode, is_valid_api_key, blocker
+from quart import Blueprint, jsonify, request
+from helpers import is_maintenance_mode, is_valid_api_key
 from translations import t
 
 user_routes = Blueprint("user_routes", __name__)
 
 @user_routes.before_request
-def check():
-    lang = request.accept_languages.best_match(["en", "bn", "ar"])
-    if is_maintenance_mode():
+async def check():
+    lang = (await request.accept_languages).best_match(["en", "bn", "ar"])
+    if await is_maintenance_mode():
         return jsonify({"action": "maintenance", "message": t("maintenance_message", lang)}), 503
 
-    if blocker(request.remote_addr):
-        return jsonify({"action": "maintenance", "message": t("blocklist_maintenance", lang)}), 503
-
     # Get API key from headers
-    auth_header = request.headers.get('Authorization')
-    api_key_header = request.headers.get('X-API-Key')
+    auth_header = (await request.headers).get('Authorization')
+    api_key_header = (await request.headers).get('X-API-Key')
     
     # Check if API key is valid
     if auth_header and auth_header.startswith('Bearer '):
@@ -23,11 +20,11 @@ def check():
     elif api_key_header:
         api_key = api_key_header
     else:
-        return {'action': 'block', 'message': 'No API key provided'}, 401
+        return await jsonify({'action': 'block', 'message': 'No API key provided'}), 401
     
     # Validate API key
-    if not is_valid_api_key(api_key):
-        return {'action': 'block', 'message': 'Invalid API key'}, 401
+    if not await is_valid_api_key(api_key):
+        return await jsonify({'action': 'block', 'message': 'Invalid API key'}), 401
 
 
 # Import routes from other modules to register them

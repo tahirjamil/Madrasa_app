@@ -6,10 +6,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 # Use the venv's gunicorn if it exists
-GUNICORN_PATH = str(BASE_DIR / "venv" / "bin" / "gunicorn")
+HYPERCORN_PATH = str(BASE_DIR / "venv" / "bin" / "hypercorn")
 
 WINDOWS_CMD = [sys.executable, "app.py"]
-LINUX_CMD = [GUNICORN_PATH, "-c", "gunicorn.conf.py", "app:app"]
+LINUX_CMD = [HYPERCORN_PATH, "app:app", "--config", "hypercorn.toml"]
 LINUX_CMD_DEBUG = LINUX_CMD + ["--log-level", "debug"]
 
 DEV_MD = BASE_DIR / "dev.md"
@@ -25,19 +25,19 @@ def main():
             subprocess.run(WINDOWS_CMD, check=True)
         else:
             if not dev_mode:
-                print("Starting server using Gunicorn (debug mode, logs to terminal)...")
-                print("If you don't have Gunicorn installed, run: pip install gunicorn")
+                print("Starting server using Hypercorn (debug mode, logs to terminal)...")
+                print("If you don't have Hypercorn installed, run: pip install hypercorn")
                 subprocess.run(LINUX_CMD_DEBUG, check=True)
             else:
-                print("Starting server using Gunicorn (production mode, logs to gunicorn.log)...")
-                print("If you don't have Gunicorn installed, run: pip install gunicorn")
-                with open("gunicorn.log", "a") as logfile:
+                print("Starting server using Hypercorn (production mode, logs to hypercorn.log)...")
+                print("If you don't have Hypercorn installed, run: pip install hypercorn")
+                with open("hypercorn.log", "a") as logfile:
                     subprocess.run(LINUX_CMD, stdout=logfile, stderr=logfile, check=True)
-                print("Logs are being written to gunicorn.log")
+                print("Logs are being written to hypercorn.log")
     except FileNotFoundError as e:
         print(f"Error: {e}")
         if current_os != "Windows":
-            print("Gunicorn not found. Please install it with: pip install gunicorn")
+            print("Hypercorn not found. Please install it with: pip install hypercorn")
     except subprocess.CalledProcessError as e:
         print(f"Server process exited with error: {e}")
     except KeyboardInterrupt:

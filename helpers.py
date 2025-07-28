@@ -1,4 +1,4 @@
-from flask import jsonify, current_app, request
+from quart import jsonify, current_app, request
 from password_validator import PasswordValidator
 import phonenumbers
 from phonenumbers.phonenumberutil import NumberParseException
@@ -8,8 +8,8 @@ import os , datetime
 from dotenv import load_dotenv
 from database import connect_to_db
 from logger import log_event
-import pymysql
-import pymysql.cursors
+import aiomysql
+from aiomysql import IntegrityError
 import json
 from functools import wraps
 from config import Config
@@ -17,7 +17,7 @@ import smtplib
 from email.mime.text import MIMEText
 import re
 from translations import t
-
+import asyncio
 
 # ─── Compute Upload Folder ───────────
 load_dotenv()
@@ -45,24 +45,19 @@ if not os.path.exists(NOTICES_INDEX_FILE):
 
 # ------------------------------- User ----------------------------------------
 
-# Api_token_Protection
-# TODO
-# add @require_api_key after every user_routes
 def require_api_key(f):
     @wraps(f)
-    def decorated(*args, **kwargs):
+    async def decorated(*args, **kwargs):
         key = request.headers.get('X-API-KEY')
         if not key or key != current_app.config.get('API_KEY'):
             return jsonify({"message": "Unauthorized"}), 401
-        return f(*args, **kwargs)
+        return await f(*args, **kwargs)
     return decorated
 
-# API Key Verify
 def is_valid_api_key(api_key):
     default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
 
     if not default_api:
-        # If no API key is configured, allow access (for development)
         return True
     
     if not api_key:
@@ -73,35 +68,35 @@ def is_valid_api_key(api_key):
     else:
         return True
 
-# Maintenance Mode
 def is_maintenance_mode():
     check = None
     verify = os.getenv("MAINTENANCE_MODE", "")
-    if verify == True or verify.lower() in ("true", "yes", "on"):
+    if verify == True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on")):
         check = True
     return check
 
-# Blocker
-def blocker(info):
-    conn = connect_to_db()
+async def blocker(info):
+    conn = await connect_to_db()
     try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) AS blocked FROM blocklist WHERE need_check = 1")
-            result = cursor.fetchone()
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) AS blocked FROM blocklist WHERE need_check = 1")
+            result = await cursor.fetchone()
             need_check = result["blocked"] if result else 0
 
             if need_check > 3:
                 return True
             else:
                 return None
-    except pymysql.IntegrityError as e:
-        log_event("check_blocklist_failed", info, f"failed to check blocklist : {e}")
+    except IntegrityError as e:
+        log_event("check_blocklist_failed", info, f"IntegrityError: {e}")
+        return None
+    except Exception as e:
+        log_event("check_blocklist_failed", info, f"Error: {e}")
         return None
     finally:
-        conn.close()
+        await conn.wait_closed()
 
-# Device Verification
-def is_device_unsafe(ip_address, device_id, info=None):
+async def is_device_unsafe(ip_address, device_id, info=None):
     dev_email = os.getenv("DEV_EMAIL")
     madrasa_email = os.getenv("EMAIL_ADDRESS")
     dev_phone = os.getenv("DEV_PHONE")
@@ -112,7 +107,7 @@ def is_device_unsafe(ip_address, device_id, info=None):
         log_event("security_breach", ip_address or device_id or info, "need to take action")
 
         for email in [dev_email, madrasa_email]:
-            if email:  # Only send if email is configured
+            if email:
                 send_email(subject="Security Breach", body=f"""An Unknown device tried to access the app
                          \nip_address: {ip_address}
                          device_id: {device_id}
@@ -120,50 +115,49 @@ def is_device_unsafe(ip_address, device_id, info=None):
                          \n@An-Nur.app""", to_email=email)
             
         for phone in [dev_phone, madrasa_phone]:
-            if phone:  # Only send if phone is configured
+            if phone:
                 send_sms(phone=phone, msg=f"""Security Breach
                          \nAn Unknown device tried to access the app
                          \nip_address: {ip_address}
                          device_id: {device_id}
                          info: {info}
                          \n@An-Nur.app""")
-        
-        conn = connect_to_db()
+        conn = await connect_to_db()
         basic_info = ip_address or device_id or "Basic Info Breached"
         additional_info = info or "NULL"
         try:
-            with conn.cursor() as cursor:
-                cursor.execute("INSERT INTO blocklist (basic_info, additional_info) VALUES (%s, %s)", (basic_info, additional_info))
-                conn.commit()
+            async with conn.cursor() as cursor:
+                await cursor.execute("INSERT INTO blocklist (basic_info, additional_info) VALUES (%s, %s)", (basic_info, additional_info))
+                await conn.commit()
                 return True
-        except pymysql.IntegrityError as e:
+        except Exception as e:
             log_event("update_blocklist_failed", info, f"failed to update blocklist : {e}")
             return True
         finally:
-            conn.close()
+            await conn.wait_closed()
     else:
-        return False  # Device is safe
+        return False
 
-# Delete Code
-def delete_code():
-    conn = connect_to_db()
+async def delete_code():
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(
                 """
                 DELETE FROM verifications
                 WHERE created_at < NOW() - INTERVAL 1 DAY
             """
             )
-        conn.commit()
+        await conn.commit()
     except Exception as e:
         log_event("failed to delete verifications", "Null", f"Database Error {str(e)}")
     finally:
-        conn.close()
+        await conn.wait_closed()
 
-# SMS Sender
 def send_sms(phone, signature=None, code=None, msg=None, lang="en"):
-    delete_code()
+    import requests
+
+    asyncio.create_task(delete_code())
     TEXTBELT_URL = "https://textbelt.com/text"
 
     # Use translation if no custom message is provided
@@ -190,7 +184,8 @@ def send_sms(phone, signature=None, code=None, msg=None, lang="en"):
 
 # Email Sender
 def send_email(to_email, code=None, subject=None, body=None, lang="en"):
-    delete_code()
+    asyncio.create_task(delete_code())
+    
     EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
     EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
     EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "fallback-email")
@@ -227,21 +222,19 @@ def send_email(to_email, code=None, subject=None, body=None, lang="en"):
 def generate_code():
     return random.randint(100000, 999999)
 
-# Check Code
-def check_code(user_code, phone):
+async def check_code(user_code, phone):
     CODE_EXPIRY_MINUTES = 10
-    conn = connect_to_db()
-
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("""
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("""
                 SELECT code, created_at FROM verifications
                 WHERE phone = %s
                 ORDER BY created_at DESC
                 LIMIT 1
             """, (phone,))
-            result = cursor.fetchone()
-
+            result = await cursor.fetchone()
+            
             if not result:
                 return jsonify({"message": "No verification code found"}), 404
 
@@ -253,7 +246,7 @@ def check_code(user_code, phone):
                 return jsonify({"message": "Verification code expired"}), 410
 
             if int(user_code) == db_code:
-                delete_code()
+                await delete_code()
                 return None
             else:
                 log_event("verification_failed", phone, "Code mismatch")
@@ -263,28 +256,25 @@ def check_code(user_code, phone):
     except Exception as e:
         return jsonify({"message": f"Error: {str(e)}"}), 500
     finally:
-        conn.close()
+        await conn.wait_closed()
 
-# Get Email
-def get_email(fullname, phone):
-    conn = connect_to_db()
+async def get_email(fullname, phone):
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("""SELECT email FROM users 
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("""SELECT email FROM users 
                               WHERE fullname = %s AND phone = %s""", (fullname, phone))
-            result = cursor.fetchone()
+            result = await cursor.fetchone()
+            
             if result:
                 return result['email']
             else:
                 return None
-    except pymysql.MySQLError as e:
+    except Exception as e:
         log_event("db_error", phone, str(e))
         return None
-
-
-# Phone formatter
-import phonenumbers
-from phonenumbers import NumberParseException
+    finally:
+        await conn.wait_closed()
 
 def format_phone_number(phone):
     if not phone:
@@ -310,8 +300,6 @@ def format_phone_number(phone):
     except NumberParseException:
         return None
 
-
-# Password Validator
 def validate_password(pwd):
     schema = PasswordValidator()
     schema.min(8).has().uppercase().has().lowercase().has().digits().has().no().spaces()
@@ -319,7 +307,6 @@ def validate_password(pwd):
         return False, "Password must be at least 8 chars, with upper, lower, digit, no space"
     return True, ""
 
-# Fullname Validator
 def validate_fullname(fullname):
     _FULLNAME_RE = re.compile(
     r'^(?!.*[\d])'                     # no digits
@@ -330,20 +317,20 @@ def validate_fullname(fullname):
     
     fullname = fullname.strip()
 
-    # 1) Quick checks for specific errors
+    
     if re.search(r'\d', fullname):
         return False, "Fullname shouldn’t contain digits"
     if re.search(r'[!@#$%^&*()_+=-]', fullname):
         return False, "Fullname shouldn’t contain special characters"
 
-    # 2) Full regex for proper casing & spacing
+        
     if not _FULLNAME_RE.match(fullname):
         return False, "Fullname must be words starting with uppercase, followed by lowercase letters"
 
     return True, ""
 
 
-# Fee Calculation
+
 def calculate_fees(class_name, gender, special_food, reduce_fee, food):
     total = 0
     class_lower = class_name.lower()
@@ -377,23 +364,20 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
 
     return total
 
-# Fetch ID
-def get_id(phone, fullname):
-    conn = connect_to_db()
+async def get_id(phone, fullname):
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
-            result = cursor.fetchone()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
+            result = await cursor.fetchone()
             return result['id'] if result else None
     finally:
-        conn.close()
+        await conn.wait_closed()
 
-# Insert People
-def insert_person(fields: dict, acc_type, phone):
-    conn = connect_to_db()
+async def insert_person(fields: dict, acc_type, phone):
+    conn = await connect_to_db()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            # Prepare fields
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             columns = ', '.join(fields.keys())
             placeholders = ', '.join(['%s'] * len(fields))
 
@@ -407,49 +391,47 @@ def insert_person(fields: dict, acc_type, phone):
                 VALUES ({placeholders}) 
                 ON DUPLICATE KEY UPDATE {updates}
             """
-            cursor.execute(sql, list(fields.values()))
+            await cursor.execute(sql, list(fields.values()))
 
             # Conditional insert for verify_people
             if acc_type in ['students', 'teachers', 'staffs', 'admins']:
-                # Safe: insert only if not exists
                 verify_sql = f"""
                     INSERT IGNORE INTO verify_people ({columns}) 
                     VALUES ({placeholders})
                 """
-                cursor.execute(verify_sql, list(fields.values()))
-
-        conn.commit()
+                await cursor.execute(verify_sql, list(fields.values()))
+                
+        await conn.commit()
         log_event("insert_success", phone, "Upserted into people and conditionally inserted into verify_people")
-    except pymysql.MySQLError as e:
-        conn.rollback()
+    except Exception as e:
+        await conn.rollback()
         log_event("db_insert_error", phone, str(e))
         raise
     finally:
-        conn.close()
+        await conn.wait_closed()
 
-def auto_delete_users():
-    conn = connect_to_db()
+async def auto_delete_users():
+    conn = await connect_to_db()
     try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("""
                 SELECT u.id, p.acc_type 
                 FROM users u
                 JOIN people p ON u.id = p.id
                 WHERE u.scheduled_deletion_at IS NOT NULL
                 AND u.scheduled_deletion_at < NOW()
             """)
-            users_to_delete = cursor.fetchall()
-
+            users_to_delete = await cursor.fetchall()
+            
             for user in users_to_delete:
                 uid = user["id"]
                 acc_type = user["acc_type"]
 
                 if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
-                    # Delete completely for non-essential accounts
-                    cursor.execute("DELETE FROM people WHERE id = %s", (uid,))
+                    await cursor.execute("DELETE FROM people WHERE id = %s", (uid,))
+                    
                 else:
-                    # Just anonymize for essential accounts
-                    cursor.execute("""UPDATE people
+                    await cursor.execute("""UPDATE people
                             SET 
                                 date_of_birth = NULL,
                                 birth_certificate = NULL,
@@ -468,17 +450,19 @@ def auto_delete_users():
                                 is_foundation_member = NULL
                             WHERE id = %s
                             """, (uid,))
-
-                cursor.execute("DELETE FROM transactions WHERE id = %s", (uid,))
-                cursor.execute("DELETE FROM verifications WHERE id = %s", (uid,))
-                cursor.execute("DELETE FROM users WHERE id = %s", (uid,))
+                await cursor.execute("DELETE FROM transactions WHERE id = %s", (uid,))
+                await cursor.execute("DELETE FROM verifications WHERE id = %s", (uid,))
+                await cursor.execute("DELETE FROM users WHERE id = %s", (uid,))
+        await conn.commit()
         
-        conn.commit()
-    except pymysql.MySQLError as e:
+    except IntegrityError as e:
+        log_event("auto_delete_error", "Null", f"IntegrityError: {e}")
+        return True
+    except Exception as e:
         log_event("auto_delete_error", "Null", str(e))
         return True
     finally:
-        conn.close()
+        await conn.wait_closed()
 
 
 # ------------------------------------ Admin -------------------------------------------

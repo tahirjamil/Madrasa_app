@@ -14,7 +14,7 @@ async def validate_csrf_token():
     form = await request.form
     token = form.get('csrf_token')
     if not csrf.validate_csrf(token):
-        flash("CSRF token validation failed. Please try again.", "danger")
+        await flash("CSRF token validation failed. Please try again.", "danger")
         return False
     return True
 

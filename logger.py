@@ -1,5 +1,6 @@
 from database.database_utils import get_db_connection
 import aiomysql
+import asyncio
 
 # Logger with auto-prune
 async def log_event(action, phone, message):
@@ -33,3 +34,14 @@ async def log_event(action, phone, message):
             await conn.commit()
     except Exception as e:
         print("Logging failed:", e)
+
+# Non-blocking wrapper that can be called without await
+def log_event_async(action, phone, message):
+    """
+    Non-blocking wrapper for log_event that schedules logging in the background.
+    Can be called without await to avoid blocking the main flow.
+    """
+    try:
+        asyncio.create_task(log_event(action, phone, message))
+    except Exception as e:
+        print(f"Failed to schedule log task: {e}")

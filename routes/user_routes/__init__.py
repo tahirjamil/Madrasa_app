@@ -20,11 +20,11 @@ async def check():
     elif api_key_header:
         api_key = api_key_header
     else:
-        return await jsonify({'action': 'block', 'message': 'No API key provided'}), 401
+        return jsonify({'action': 'block', 'message': 'No API key provided'}), 401
     
     # Validate API key
     if not await is_valid_api_key(api_key):
-        return await jsonify({'action': 'block', 'message': 'Invalid API key'}), 401
+        return jsonify({'action': 'block', 'message': 'Invalid API key'}), 401
 
 
 # Import routes from other modules to register them

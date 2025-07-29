@@ -29,13 +29,13 @@ async def run_maintenance():
         print("✅ Database backup completed")
         
         # Log the maintenance
-        log_event("maintenance_completed", "system", "Periodic maintenance completed successfully")
+    await log_event("maintenance_completed", "system", "Periodic maintenance completed successfully")
         print("✅ Maintenance completed successfully")
         
     except Exception as e:
         error_msg = f"Maintenance failed: {str(e)}"
         print(f"❌ {error_msg}")
-        log_event("maintenance_failed", "system", error_msg)
+    await log_event("maintenance_failed", "system", error_msg)
         sys.exit(1)
 
 if __name__ == "__main__":

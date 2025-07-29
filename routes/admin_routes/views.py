@@ -2,7 +2,8 @@ from quart import render_template, request, flash, session, redirect, url_for, c
 from . import admin_routes
 from database.database_utils import get_db_connection
 from datetime import datetime, date
-from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file, log_event
+from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
+from logger import log_event_async as log_event
 from config import Config
 import json, re, subprocess, sys, os, aiomysql, asyncio
 from functools import wraps
@@ -26,7 +27,7 @@ async def validate_csrf_token():
     form = await request.form
     token = form.get('csrf_token')
     if not csrf.validate_csrf(token):
-        flash("CSRF token validation failed. Please try again.", "danger")
+        await flash("CSRF token validation failed. Please try again.", "danger")
         return False
     return True
 
@@ -52,13 +53,13 @@ async def admin_dashboard():
     try:
         conn = await get_db_connection()
         if conn is None:
-            flash("Database connection failed", "danger")
+            await flash("Database connection failed", "danger")
             return await render_template("admin/dashboard.html", 
                 databases=[], tables={}, selected_db='madrasadb',
                 query_result=None, query_error="Database connection failed",
                 transactions=[], txn_limit='100', student_payments=[], student_class='all')
     except Exception as e:
-        flash(f"Database connection error: {str(e)}", "danger")
+        await flash(f"Database connection error: {str(e)}", "danger")
         return await render_template("admin/dashboard.html", 
             databases=[], tables={}, selected_db='madrasadb',
             query_result=None, query_error=f"Database connection error: {str(e)}",
@@ -113,11 +114,11 @@ async def admin_dashboard():
 
                 # Authenticate admin credentials
                 if username != ADMIN_USER or password != ADMIN_PASS:
-                    flash("Unauthorized admin login.", "danger")
+                    await flash("Unauthorized admin login.", "danger")
                 # Forbid dangerous keywords (whole‑word match)
                 elif _FORBIDDEN_RE.search(raw_sql):
-                    flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
-                    log_event("forbidden_query_attempt", username, raw_sql)
+                    await flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
+                    await log_event("forbidden_query_attempt", username, raw_sql)
                 else:
                     try:
                         await cursor.execute(raw_sql)
@@ -127,10 +128,10 @@ async def admin_dashboard():
                         else:
                             await conn.commit()
                             query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
-                        log_event("query_run", username, raw_sql)
+                        await log_event("query_run", username, raw_sql)
                     except Exception as e:
                         query_error = str(e)
-                        log_event("query_error", username, f"{raw_sql} | {str(e)}")
+                        await log_event("query_error", username, f"{raw_sql} | {str(e)}")
 
             # --- Fetch transactions ---
             txn_sql = "SELECT * FROM transactions ORDER BY date DESC"
@@ -185,10 +186,10 @@ async def view_logs():
     try:
         conn = await get_db_connection()
         if conn is None:
-            flash("Database connection failed", "danger")
+            await flash("Database connection failed", "danger")
             return await render_template("admin/logs.html", logs=[])
     except Exception as e:
-        flash(f"Database connection error: {str(e)}", "danger")
+        await flash(f"Database connection error: {str(e)}", "danger")
         return await render_template("admin/logs.html", logs=[])
     
     try:
@@ -199,6 +200,9 @@ async def view_logs():
                 "ORDER BY created_at DESC"
             )
             logs = await cursor.fetchall()
+    except Exception as e:
+        await flash(f"Database error: {str(e)}", "danger")
+        logs = []
 
     return await render_template("admin/logs.html", logs=logs)
 
@@ -219,6 +223,8 @@ async def logs_data():
         for l in logs:
             l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
         return jsonify(logs)
+    except Exception as e:
+        return jsonify([])
 
 
 
@@ -295,7 +301,7 @@ async def exam_results():
     #         save_results(results)
 
     #         flash("Exam result uploaded.", "success")
-    #         log_event("exam_uploaded", username, filename)
+    #         await log_event("exam_uploaded", username, filename)
     #     else:
     #         flash("Invalid file format.", "warning")
 
@@ -329,7 +335,7 @@ async def exam_results():
 #     save_results(results)
 
 #     flash(f"Deleted {filename}.", "info")
-#     log_event("exam_deleted", username, filename)
+#     await log_event("exam_deleted", username, filename)
 #     return redirect(url_for('admin_routes.exam_results'))
 
 
@@ -349,9 +355,9 @@ async def members():
             people = list(await cursor.fetchall())
             await cursor.execute("SELECT * FROM verify_people")
             pending = await cursor.fetchall()
-    finally:
-        if conn:
-            await conn.close()
+    except Exception as e:
+        people = []
+        pending = []
 
     # Build list of distinct account types
     types = sorted({m['acc_type'] for m in people if m.get('acc_type')})
@@ -495,7 +501,7 @@ async def notice_page():
     #         save_notices(notices)
 
     #         flash("Notice uploaded.", "success")
-    #         log_event("notice_uploaded", username, filename)
+    #         await log_event("notice_uploaded", username, filename)
     #     else:
     #         flash("Invalid file format.", "warning")
 
@@ -545,7 +551,7 @@ async def notice_page():
 #     save_notices(notices)
 
 #     flash(f"Notice '{filename}' deleted.", "info")
-#     log_event("notice_deleted", username, filename)
+#     await log_event("notice_deleted", username, filename)
 #     return redirect(url_for('admin_routes.notice_page'))
 
 
@@ -568,9 +574,8 @@ async def routine():
                  ORDER BY class_group ASC, serial ASC
             """)
             rows = await cursor.fetchall()
-    finally:
-        if conn:
-            await conn.close()
+    except Exception as e:
+        rows = []
 
     # group by class_group
     routines_by_class = {}
@@ -656,7 +661,7 @@ async def events():
     conn = await get_db_connection()
     events = []
     try:
-        async with conn.cursor(cursor=aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             # TODO: Disabled for view-only mode
             # ─── handle form submission ────────────────────────────
             # if request.method == 'POST':
@@ -696,7 +701,7 @@ async def events():
             events = await cursor.fetchall()
 
     except Exception as e:
-        flash(f"⚠️ Database error: {e}", "danger")
+        await flash(f"⚠️ Database error: {e}", "danger")
 
     return await render_template("admin/events.html", events=events)
 
@@ -816,8 +821,6 @@ async def exams():
         await cursor.execute("SELECT * FROM exam ORDER BY date DESC, start_time ASC")
         exams = await cursor.fetchall()
 
-    if conn:
-        await conn.close()
     return await render_template('admin/exams.html', exams=exams)
 
 # TODO: Disabled for view-only mode
@@ -898,11 +901,11 @@ async def exams():
 #             cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
 #             conn.commit()
 #             flash("Pending verification deleted.", "info")
-#             log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
+#             await log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
 #     except Exception as e:
 #         conn.rollback()
 #         flash(f"Error deleting pending verification: {e}", "danger")
-#         log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
+#         await log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
 #     finally:
 #         await conn.close()
 
@@ -969,6 +972,8 @@ async def interactions():
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("SELECT * FROM interactions")
             rows = list(await cursor.fetchall())
+    except Exception as e:
+        rows = []
 
     # Sorting logic
     if sort == 'device_brand':
@@ -991,7 +996,7 @@ async def power_management():
     # Get power key from environment
     POWER_KEY = os.getenv("POWER_KEY")
     if not POWER_KEY:
-        return render_template('admin/power.html', error="Power management is not configured")
+        return await render_template('admin/power.html', error="Power management is not configured")
     
     if request.method == 'POST':
         form = await request.form
@@ -1000,8 +1005,8 @@ async def power_management():
         
         # Verify power key
         if power_key != POWER_KEY:
-            flash("Invalid power key", "danger")
-            return render_template('admin/power.html')
+            await flash("Invalid power key", "danger")
+            return await render_template('admin/power.html')
         
         
         try:
@@ -1015,10 +1020,10 @@ async def power_management():
                     timeout=30
                 )
                 if result.returncode == 0:
-                    flash(f"✅ Git pull successful\n{result.stdout}", "success")
+                    await flash(f"✅ Git pull successful\n{result.stdout}", "success")
                 else:
-                    flash(f"❌ Git pull failed\n{result.stderr}", "danger")
-                log_event("git_pull", "admin", f"Git pull executed: {result.stdout[:100]}...")
+                    await flash(f"❌ Git pull failed\n{result.stderr}", "danger")
+                await log_event("git_pull", "admin", f"Git pull executed: {result.stdout[:100]}...")
                 
             elif action == 'git_push':
                 # Git push
@@ -1030,15 +1035,15 @@ async def power_management():
                     timeout=30
                 )
                 if result.returncode == 0:
-                    flash(f"✅ Git push successful\n{result.stdout}", "success")
+                    await flash(f"✅ Git push successful\n{result.stdout}", "success")
                 else:
-                    flash(f"❌ Git push failed\n{result.stderr}", "danger")
-                log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
+                    await flash(f"❌ Git push failed\n{result.stderr}", "danger")
+                await log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
                 
             elif action == 'server_stop':
                 # Server stop
-                flash("🛑 Server stop initiated. The server will stop in 3 seconds...", "warning")
-                log_event("server_stop", "admin", "Server stop initiated")
+                await flash("🛑 Server stop initiated. The server will stop in 3 seconds...", "warning")
+                await log_event("server_stop", "admin", "Server stop initiated")
                 
                 # Schedule server stop after 3 seconds
                 async def delayed_stop():
@@ -1048,8 +1053,8 @@ async def power_management():
                 
             elif action == 'server_restart':
                 # Server restart
-                flash("🔄 Server restart initiated. The server will restart in 3 seconds...", "warning")
-                log_event("server_restart", "admin", "Server restart initiated")
+                await flash("🔄 Server restart initiated. The server will restart in 3 seconds...", "warning")
+                await log_event("server_restart", "admin", "Server restart initiated")
                 
                 # Schedule server restart after 3 seconds
                 async def delayed_restart():
@@ -1058,13 +1063,13 @@ async def power_management():
                 asyncio.create_task(delayed_restart())
                 
             else:
-                flash("Invalid action", "danger")
+                await flash("Invalid action", "danger")
                 
         except subprocess.TimeoutExpired:
-            flash("❌ Operation timed out (30 seconds)", "danger")
-            log_event("power_timeout", "admin", f"Operation timed out: {action}")
+            await flash("❌ Operation timed out (30 seconds)", "danger")
+            await log_event("power_timeout", "admin", f"Operation timed out: {action}")
         except Exception as e:
-            flash(f"❌ Error: {str(e)}", "danger")
-            log_event("power_error", "admin", f"Error in {action}: {str(e)}")
+            await flash(f"❌ Error: {str(e)}", "danger")
+            await log_event("power_error", "admin", f"Error in {action}: {str(e)}")
     
-    return render_template('admin/power.html')
+    return await render_template('admin/power.html')

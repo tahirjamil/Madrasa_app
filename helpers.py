@@ -352,6 +352,9 @@ async def get_id(phone, fullname):
             await cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
             result = await cursor.fetchone()
             return result['id'] if result else None
+    except Exception as e:
+        log_event("get_id_error", phone, str(e))
+        return None
 
 async def insert_person(fields: dict, acc_type, phone):
     conn = await get_db_connection()

@@ -132,10 +132,10 @@ async def admin_dashboard():
                         else:
                             await conn.commit()
                             query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
-                        await log_event("query_run", username, raw_sql)
+                        log_event("query_run", username, raw_sql)
                     except Exception as e:
                         query_error = str(e)
-                        await log_event("query_error", username, f"{raw_sql} | {str(e)}")
+                        log_event("query_error", username, f"{raw_sql} | {str(e)}")
 
             # --- Fetch transactions ---
             txn_sql = "SELECT * FROM transactions ORDER BY date DESC"
@@ -312,7 +312,7 @@ async def exam_results():
     #         save_results(results)
 
     #         flash("Exam result uploaded.", "success")
-    #         await log_event("exam_uploaded", username, filename)
+    #         log_event("exam_uploaded", username, filename)
     #     else:
     #         flash("Invalid file format.", "warning")
 
@@ -346,7 +346,7 @@ async def exam_results():
 #     save_results(results)
 
 #     flash(f"Deleted {filename}.", "info")
-#     await log_event("exam_deleted", username, filename)
+#     log_event("exam_deleted", username, filename)
 #     return redirect(url_for('admin_routes.exam_results'))
 
 
@@ -516,7 +516,7 @@ async def notice_page():
     #         save_notices(notices)
 
     #         flash("Notice uploaded.", "success")
-    #         await log_event("notice_uploaded", username, filename)
+    #         log_event("notice_uploaded", username, filename)
     #     else:
     #         flash("Invalid file format.", "warning")
 
@@ -568,7 +568,7 @@ async def notice_page():
 #     save_notices(notices)
 
 #     flash(f"Notice '{filename}' deleted.", "info")
-#     await log_event("notice_deleted", username, filename)
+#     log_event("notice_deleted", username, filename)
 #     return redirect(url_for('admin_routes.notice_page'))
 
 
@@ -926,11 +926,11 @@ async def exams():
 #             cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
 #             conn.commit()
 #             flash("Pending verification deleted.", "info")
-#             await log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
+#             log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
 #     except Exception as e:
 #         conn.rollback()
 #         flash(f"Error deleting pending verification: {e}", "danger")
-#         await log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
+#         log_event("delete_pending_error", session.get('admin_username', 'admin'), str(e))
 #     finally:
 #         await conn.close()
 
@@ -1055,7 +1055,7 @@ async def power_management():
                     await flash(f"✅ Git pull successful\n{result.stdout}", "success")
                 else:
                     await flash(f"❌ Git pull failed\n{result.stderr}", "danger")
-                await log_event("git_pull", "admin", f"Git pull executed: {result.stdout[:100]}...")
+                log_event("git_pull", "admin", f"Git pull executed: {result.stdout[:100]}...")
                 
             elif action == 'git_push':
                 # Git push
@@ -1070,12 +1070,12 @@ async def power_management():
                     await flash(f"✅ Git push successful\n{result.stdout}", "success")
                 else:
                     await flash(f"❌ Git push failed\n{result.stderr}", "danger")
-                await log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
+                log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
                 
             elif action == 'server_stop':
                 # Server stop
                 await flash("🛑 Server stop initiated. The server will stop in 3 seconds...", "warning")
-                await log_event("server_stop", "admin", "Server stop initiated")
+                log_event("server_stop", "admin", "Server stop initiated")
                 
                 # Schedule server stop after 3 seconds
                 async def delayed_stop():
@@ -1086,7 +1086,7 @@ async def power_management():
             elif action == 'server_restart':
                 # Server restart
                 await flash("🔄 Server restart initiated. The server will restart in 3 seconds...", "warning")
-                await log_event("server_restart", "admin", "Server restart initiated")
+                log_event("server_restart", "admin", "Server restart initiated")
                 
                 # Schedule server restart after 3 seconds
                 async def delayed_restart():
@@ -1099,9 +1099,9 @@ async def power_management():
                 
         except subprocess.TimeoutExpired:
             await flash("❌ Operation timed out (30 seconds)", "danger")
-            await log_event("power_timeout", "admin", f"Operation timed out: {action}")
+            log_event("power_timeout", "admin", f"Operation timed out: {action}")
         except Exception as e:
             await flash(f"❌ Error: {str(e)}", "danger")
-            await log_event("power_error", "admin", f"Error in {action}: {str(e)}")
+            log_event("power_error", "admin", f"Error in {action}: {str(e)}")
     
     return await render_template('admin/power.html')

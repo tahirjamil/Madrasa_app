@@ -5,8 +5,9 @@ from datetime import datetime, date
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
 from logger import log_event_async as log_event
 from config import Config
-import json, re, subprocess, sys, os, aiomysql, asyncio
+import json, re, subprocess, os, aiomysql, asyncio
 from functools import wraps
+from helpers import is_test_mode
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
@@ -112,13 +113,16 @@ async def admin_dashboard():
                 ADMIN_USER = os.getenv("ADMIN_USERNAME")
                 ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
 
+                # Say test mode if in test
+                if is_test_mode():
+                    await flash("The server is in testing mode.", "danger")
                 # Authenticate admin credentials
                 if username != ADMIN_USER or password != ADMIN_PASS:
                     await flash("Unauthorized admin login.", "danger")
                 # Forbid dangerous keywords (whole‑word match)
                 elif _FORBIDDEN_RE.search(raw_sql):
                     await flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
-                    await log_event("forbidden_query_attempt", username, raw_sql)
+                    log_event("forbidden_query_attempt", username, raw_sql)
                 else:
                     try:
                         await cursor.execute(raw_sql)
@@ -179,13 +183,14 @@ async def admin_dashboard():
 
 @admin_routes.route('/logs')
 async def view_logs():
+    
     # Require admin login
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
     try:
         conn = await get_db_connection()
-        if conn is None:
+        if conn is None or is_test_mode():
             await flash("Database connection failed", "danger")
             return await render_template("admin/logs.html", logs=[])
     except Exception as e:
@@ -210,7 +215,8 @@ async def view_logs():
 async def logs_data():
     try:
         conn = await get_db_connection()
-        if conn is None:
+
+        if conn is None or is_test_mode():
             return jsonify([])
     except Exception as e:
         return jsonify([])
@@ -233,6 +239,9 @@ async def info_data_admin():
     # require admin
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
+    
+    if is_test_mode():
+        return jsonify([])
 
     logs = getattr(current_app, 'request_response_log', [])[-100:]
     # serializable copy
@@ -251,11 +260,13 @@ async def info_data_admin():
 
 @admin_routes.route('/info')
 async def info_admin():
+
     # require admin
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    logs = getattr(current_app, 'request_response_log', [])[-100:]
+    logs = getattr(current_app, 'request_response_log', [])[-100:] if not is_test_mode() else []
+
     return await render_template("admin/info.html", logs=logs)
 
 
@@ -308,7 +319,7 @@ async def exam_results():
     #     return redirect(url_for('admin_routes.exam_results'))
 
     # GET: show all together
-    results = load_results()
+    results = load_results() if not is_test_mode() else []
     return await render_template("admin/exam_results.html", results=results)
 
 
@@ -391,6 +402,10 @@ async def members():
                 return 0
         members.sort(key=user_id_int, reverse=reverse)
 
+    if is_test_mode():
+        members = []
+        pending = []
+
     return await render_template("admin/members.html",
                            types=types,
                            selected_type=selected_type,
@@ -438,7 +453,7 @@ async def members():
 #         image = request.files.get('image')
 #         if image and image.filename:
 #             filename = secure_filename(image.filename)
-#             upload_path = os.path.join(current_app.config['IMG_UPLOAD_FOLDER'], filename)
+#             upload_path = os.path.join(current_app.config['PROFILE_IMG_UPLOAD_FOLDER'], filename)
 #             image.save(upload_path)
 #             data['image_path'] = upload_path  # or just filename if you store relative path
 
@@ -511,17 +526,19 @@ async def notice_page():
     today = date.today()
     upcoming, ongoing, past = [], [], []
 
-    for n in notices:
-        try:
-            n_date = datetime.strptime(n['target_date'], '%Y-%m-%d').date()
-            if n_date > today:
-                upcoming.append(n)
-            elif n_date == today:
-                ongoing.append(n)
-            else:
+    if not is_test_mode():
+        for n in notices:
+            try:
+                n_date = datetime.strptime(n['target_date'], '%Y-%m-%d').date()
+                if n_date > today:
+                    upcoming.append(n)
+                elif n_date == today:
+                    ongoing.append(n)
+                else:
+                    past.append(n)
+            except Exception:
                 past.append(n)
-        except Exception:
-            past.append(n)
+    
 
     return await render_template("admin/notice.html",
                            upcoming=upcoming,
@@ -593,6 +610,9 @@ async def routine():
         for k in routines_by_class:
             routines_by_class[k].sort(key=lambda r: int(r.get('serial', 0)))
     # else: default (serial from db order)
+
+    if is_test_mode():
+        routines_by_class = {}
 
     return await render_template(
         'admin/routine.html',
@@ -698,7 +718,8 @@ async def events():
                  ORDER BY date  DESC,
                           time  DESC
             """)
-            events = await cursor.fetchall()
+            if not is_test_mode():
+                events = await cursor.fetchall()
 
     except Exception as e:
         await flash(f"⚠️ Database error: {e}", "danger")
@@ -766,8 +787,9 @@ async def madrasa_pictures():
     #     return redirect(url_for('admin_routes.madrasa_pictures'))
 
     # 4) On GET: load current list
-    with open(PIC_INDEX_PATH) as idx:
-        pictures = json.load(idx)
+    if not is_test_mode():
+        with open(PIC_INDEX_PATH) as idx:
+            pictures = json.load(idx)
 
     return await render_template('admin/madrasa_pictures.html', pictures=pictures)
 
@@ -813,6 +835,9 @@ async def madrasa_pictures():
 async def exams():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
+    
+    if not is_test_mode():
+        return await render_template('admin/exams.html', exams=[])
 
     conn = await get_db_connection()
     async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -984,7 +1009,11 @@ async def interactions():
         rows.sort(key=lambda r: int(r.get('open_times', 0)), reverse=True)
     # else: default order
 
+    if is_test_mode():
+        rows = []
+
     return await render_template('admin/interactions.html', interactions=rows, sort=sort)
+
 
 @admin_routes.route('/power', methods=['GET', 'POST'])
 @require_csrf
@@ -997,6 +1026,9 @@ async def power_management():
     POWER_KEY = os.getenv("POWER_KEY")
     if not POWER_KEY:
         return await render_template('admin/power.html', error="Power management is not configured")
+    
+    if is_test_mode():
+        return await render_template('admin/power.html', error="Server is in test mode")
     
     if request.method == 'POST':
         form = await request.form

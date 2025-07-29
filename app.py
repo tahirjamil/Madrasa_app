@@ -117,7 +117,7 @@ logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
 logger.info(f"CORS enabled: True (quart_cors)")
 
 # ensure upload folder exists
-os.makedirs(app.config['IMG_UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['PROFILE_IMG_UPLOAD_FOLDER'], exist_ok=True)
 
 async def create_tables_async():
     try:

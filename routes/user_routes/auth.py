@@ -3,13 +3,14 @@ from . import user_routes
 from werkzeug.security import generate_password_hash, check_password_hash
 from aiomysql import IntegrityError
 from database.database_utils import get_db_connection
-from logger import log_event
-from helpers import (validate_fullname, validate_password, delete_users,
-    send_sms, format_phone_number, is_device_unsafe,
+from logger import log_event_async as log_event
+from helpers import (validate_fullname, validate_password,
+    send_sms, format_phone_number, is_device_unsafe, is_test_mode,
     generate_code, check_code, send_email, get_email)
 from quart_babel import gettext as _
 import datetime, os, aiomysql
 from datetime import timedelta, datetime as dt
+from config import Config
 
 
 # ========== Routes ==========
@@ -23,8 +24,13 @@ async def register():
     phone = data.get("phone")
     password = data.get("password")
     user_code = data.get("code")
-    lang = data.get("language") or data.get("Language") or "en"
 
+    if is_test_mode():
+        return jsonify({
+            "success": True, "message": "Ignored because in test mode",
+            "info": None
+            }), 201
+    
     # Device Verify
     device_id = data.get("device_id")
     ip_address = data.get("ip_address")
@@ -93,7 +99,11 @@ async def login():
     fullname = data.get("fullname", "").strip()
     phone = data.get("phone")
     password = data.get("password")
-    lang = data.get("language") or "en"
+
+    if is_test_mode():
+        fullname = Config.dummy_fullname
+        phone = Config.dummy_phone
+        password = Config.dummy_password
 
     # Device Verify
     device_id = data.get("device_id")
@@ -161,6 +171,10 @@ async def login():
 
 @user_routes.route("/send_code", methods=["POST"])
 async def send_verification_code():
+
+    if is_test_mode():
+        return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": Config.dummy_email}}), 200
+    
     conn = await get_db_connection()
     SMS_LIMIT_PER_HOUR = 5
     EMAIL_LIMIT_PER_HOUR = 15
@@ -252,6 +266,7 @@ async def send_verification_code():
 
 @user_routes.route("/reset_password", methods=["POST"])
 async def reset_password():
+
     conn = await get_db_connection()
     
     data = await request.get_json()
@@ -260,8 +275,14 @@ async def reset_password():
     user_code = data.get("code")
     old_password = data.get("old_password")
     new_password = data.get("new_password")
-    lang = data.get("language") or data.get("Language") or "en"
 
+
+    if is_test_mode():
+        if not new_password:
+            return jsonify({"success": True, "message": "App in test mode"}), 200
+        else:
+            return jsonify({"success": True, "message": "App in test mode"}), 201
+        
     # Device Verify
     device_id = data.get("device_id")
     ip_address = data.get("ip_address")
@@ -317,7 +338,6 @@ async def reset_password():
 
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"])
 async def manage_account(page_type):
-    lang = request.get_json().get("language") or "en"
 
     if page_type not in ("remove", "deactivate"):
         return jsonify({"message": _("Invalid page type")}), 400
@@ -334,8 +354,13 @@ async def manage_account(page_type):
     phone    = data.get("phone", "").strip()
     fullname = (data.get("fullname") or "").strip()
     password = data.get("password", "")
-    lang     = data.get("language") or "en"
     email    = data.get("email")
+
+    if is_test_mode():
+        fullname = Config.dummy_fullname
+        phone = Config.dummy_phone
+        password = Config.dummy_password
+
 
     if not phone or not fullname or not password:
         return jsonify({"message": _("All fields are required")}), 400
@@ -384,7 +409,7 @@ async def manage_account(page_type):
                 return jsonify({"message": _("Could not send confirmation. Try again later.")}), 500
 
             # schedule deactivation/deletion
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc)
             scheduled = now + timedelta(days=deletion_days)
             sql = "UPDATE users SET deactivated_at=%s"
             params = [now]
@@ -411,10 +436,13 @@ async def manage_account(page_type):
 
 @user_routes.route("/account/reactivate", methods=['POST'])
 async def undo_remove():
+
+    if is_test_mode():
+        return jsonify({"success": True, "message": "App in test mode"}), 200
+    
     data = await request.get_json()
     phone = format_phone_number(data.get("phone"))
     fullname = data.get("fullname", "").strip()
-    lang = data.get("language") or "en"
 
     if not phone or not fullname:
         return jsonify({"message": _("All fields are required")}), 400
@@ -450,7 +478,9 @@ async def undo_remove():
 @user_routes.route("/account/check", methods=['POST'])
 async def get_account_status():
     data = await request.get_json()
-    lang = data.get("language") or data.get("Language") or "en"
+
+    if is_test_mode():
+        return jsonify({"success": True, "message": "App in test mode."}), 200
 
     LOGOUT_MSG = _("Session invalidated. Please log in again.")
     DEACTIVATE_MSG = _("Account is deactivated")

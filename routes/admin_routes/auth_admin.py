@@ -1,5 +1,5 @@
-import os, requests
-from datetime import datetime, timedelta
+import requests
+from datetime import datetime
 from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
 from config import Config
@@ -33,6 +33,9 @@ def require_csrf(f):
 @require_csrf
 async def login():
 
+    # See for test mode
+    test = True if is_test_mode() else False
+
     # Set session to expire after configured time
     session.permanent = True
     
@@ -61,47 +64,45 @@ async def login():
 
         session['login_attempts'] += 1
 
-        # Free access if in test mode
-        if not is_test_mode():
-            # Only require captcha if keys exist
-            if RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY:
-                if session['login_attempts'] >= 4:
-                    show_captcha = True
+        # Only require captcha if keys exist
+        if RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY:
+            if session['login_attempts'] >= 4:
+                show_captcha = True
 
-                    recaptcha_response = form.get('g-recaptcha-response')
-                    if not recaptcha_response:
-                        error = "Please complete the reCAPTCHA."
-                        return await render_template(
-                            'admin/login.html',
-                            error=error,
-                            show_captcha=show_captcha,
-                            site_key=RECAPTCHA_SITE_KEY
-                        )
+                recaptcha_response = form.get('g-recaptcha-response')
+                if not recaptcha_response:
+                    error = "Please complete the reCAPTCHA."
+                    return await render_template(
+                        'admin/login.html',
+                        error=error,
+                        show_captcha=show_captcha,
+                        site_key=RECAPTCHA_SITE_KEY
+                    )
 
-                    verify_url = "https://www.google.com/recaptcha/api/siteverify"
-                    payload = {
-                        'secret': RECAPTCHA_SECRET_KEY,
-                        'response': recaptcha_response
-                    }
-                    r = requests.post(verify_url, data=payload)
-                    result = r.json()
+                verify_url = "https://www.google.com/recaptcha/api/siteverify"
+                payload = {
+                    'secret': RECAPTCHA_SECRET_KEY,
+                    'response': recaptcha_response
+                }
+                r = requests.post(verify_url, data=payload)
+                result = r.json()
 
-                    if not result.get('success'):
-                        error = "Invalid reCAPTCHA. Please try again."
-                        return await render_template(
-                            'admin/login.html',
-                            error=error,
-                            show_captcha=show_captcha,
-                            site_key=RECAPTCHA_SITE_KEY
-                        )
+                if not result.get('success'):
+                    error = "Invalid reCAPTCHA. Please try again."
+                    return await render_template(
+                        'admin/login.html',
+                        error=error,
+                        show_captcha=show_captcha,
+                        site_key=RECAPTCHA_SITE_KEY
+                    )
 
-            if username == ADMIN_USER and password == ADMIN_PASS:
-                session['admin_logged_in'] = True
-                session['admin_login_time'] = datetime.now().isoformat()
-                session.pop('login_attempts', None)  # Reset
-                return redirect(url_for('admin_routes.admin_dashboard'))
-            else:
-                error = "Invalid credentials"
+        if (username == ADMIN_USER and password == ADMIN_PASS) or test:
+            session['admin_logged_in'] = True
+            session['admin_login_time'] = datetime.now().isoformat()
+            session.pop('login_attempts', None)  # Reset
+            return redirect(url_for('admin_routes.admin_dashboard'))
+        else:
+            error = "Invalid credentials"
 
     return await render_template(
         'admin/login.html',

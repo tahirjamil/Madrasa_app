@@ -6,12 +6,13 @@ This script performs periodic maintenance tasks like auto deletion and backups.
 
 import asyncio, os, sys
 from datetime import datetime
+from helpers import delete_users
+from logger import log_event_async as log_event
+from database.backup_db import main as backup_main
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from helpers import delete_users, log_event
-from database.backup_db import main as backup_main
 
 async def run_maintenance():
     """Run all maintenance tasks"""
@@ -29,13 +30,13 @@ async def run_maintenance():
         print("✅ Database backup completed")
         
         # Log the maintenance
-    await log_event("maintenance_completed", "system", "Periodic maintenance completed successfully")
+        log_event("maintenance_completed", "system", "Periodic maintenance completed successfully")
         print("✅ Maintenance completed successfully")
         
     except Exception as e:
         error_msg = f"Maintenance failed: {str(e)}"
         print(f"❌ {error_msg}")
-    await log_event("maintenance_failed", "system", error_msg)
+        log_event("maintenance_failed", "system", error_msg)
         sys.exit(1)
 
 if __name__ == "__main__":

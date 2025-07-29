@@ -48,6 +48,9 @@ if not os.path.exists(NOTICES_INDEX_FILE):
 def is_valid_api_key(api_key):
     default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
 
+    if is_test_mode():
+        return True
+
     if not default_api:
         return True
     
@@ -97,6 +100,9 @@ async def is_device_unsafe(ip_address, device_id, info=None):
     madrasa_email = os.getenv("EMAIL_ADDRESS")
     dev_phone = os.getenv("DEV_PHONE")
     madrasa_phone = os.getenv("MADRASA_PHONE")
+
+    if is_test_mode():
+        return False
 
     # Fix: Check if device info is missing (not present), not if it exists
     if not ip_address or not device_id:
@@ -217,6 +223,10 @@ def generate_code():
 async def check_code(user_code, phone):
     CODE_EXPIRY_MINUTES = 10
     conn = await get_db_connection()
+
+    if is_test_mode():
+        return None
+    
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
@@ -250,6 +260,10 @@ async def check_code(user_code, phone):
 
 async def get_email(fullname, phone):
     conn = await get_db_connection()
+
+    if is_test_mode():
+        return os.getenv("DUMMY_EMAIL", "")
+    
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""SELECT email FROM users 
@@ -267,6 +281,9 @@ async def get_email(fullname, phone):
 def format_phone_number(phone):
     if not phone:
         return None
+    
+    if is_test_mode():
+        phone = os.getenv("DUMMY_PHONE")
 
     phone = phone.strip().replace(" ", "").replace("-", "")
 
@@ -289,6 +306,10 @@ def format_phone_number(phone):
         return None
 
 def validate_password(pwd):
+
+    if is_test_mode():
+        return True
+    
     schema = PasswordValidator()
     schema.min(8).has().uppercase().has().lowercase().has().digits().has().no().spaces()
     if not schema.validate(pwd):
@@ -323,6 +344,9 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
     total = 0
     class_lower = class_name.lower()
 
+    if is_test_mode():
+        return 9999
+    
     if food == 1:
         total += 2400
     if special_food == 1:
@@ -354,6 +378,11 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
 
 async def get_id(phone, fullname):
     conn = await get_db_connection()
+
+    if is_test_mode():
+        fullname = os.getenv("DUMMY_FULLNAME")
+        phone = os.getenv("DUMMY_PHONE")
+    
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
@@ -364,6 +393,10 @@ async def get_id(phone, fullname):
         return None
 
 async def insert_person(fields: dict, acc_type, phone):
+
+    if is_test_mode():
+        return None
+    
     conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -398,6 +431,7 @@ async def insert_person(fields: dict, acc_type, phone):
         raise
 
 async def delete_users(uid=None, acc_type=None):
+    
     conn = await get_db_connection()
     try:
         if not uid and not acc_type:

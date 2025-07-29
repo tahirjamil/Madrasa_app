@@ -3,7 +3,7 @@ from . import user_routes
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from database.database_utils import get_db_connection
-from helpers import calculate_fees, format_phone_number, log_event
+from helpers import calculate_fees, format_phone_number, log_event, is_test_mode
 from config import Config
 from quart_babel import gettext as _
 
@@ -13,9 +13,12 @@ async def payment():
     conn = await get_db_connection()
 
     data = await request.get_json()
-    lang = data.get('language') or data.get('Language') or 'en'
     phone = data.get('phone') or ""
     fullname = (data.get('fullname') or 'guest').strip()
+
+    if is_test_mode():
+        fullname = Config.dummy_fullname
+        phone = Config.dummy_phone
 
     phone = format_phone_number(phone)
 
@@ -58,12 +61,14 @@ async def payment():
 @user_routes.route('/get_transactions', methods=['POST'])
 async def get_transactions():
     data = await request.get_json() or {}
-    lang = data.get('language') or data.get('Language') or 'en'
     phone            = data.get('phone')
     fullname         = (data.get('fullname') or '').strip()
     transaction_type = data.get('type')
     lastfetched      = data.get('updatedSince')
     
+    if is_test_mode():
+        fullname = Config.dummy_fullname
+        phone = Config.dummy_phone
 
     # Required fields
     if not phone or not fullname or not transaction_type:
@@ -139,7 +144,6 @@ async def get_transactions():
 @user_routes.route('/pay_sslcommerz', methods=['POST'])
 async def pay_sslcommerz():
     data = await request.get_json() or {}
-    lang = data.get('language') or data.get('Language') or 'en'
     phone            = data.get('phone') or "01XXXXXXXXX"
     fullname         = (data.get('fullname') or 'guest').strip()
     amount           = data.get('amount')
@@ -233,7 +237,6 @@ async def pay_sslcommerz():
 
 @user_routes.route('/payment/<return_type>', methods=['POST'])
 async def payment_success_ssl(return_type):
-    lang = (await request.form).get('language') or (await request.form).get('Language') or 'en'
     valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']
     if return_type not in valid_types:
         return await jsonify({"error": _("Invalid return type")}), 400

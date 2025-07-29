@@ -7,22 +7,23 @@ from PIL import Image
 from werkzeug.utils import secure_filename
 from database.database_utils import get_db_connection
 from config import Config
-from helpers import get_id, insert_person, format_phone_number, log_event
+from helpers import get_id, insert_person, format_phone_number, is_test_mode
 from quart_babel import gettext as _
+from logger import log_event_async as log_event
 
 # ========== Config ==========
-IMG_UPLOAD_FOLDER = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
+PROFILE_IMG_UPLOAD_FOLDER = Config.PROFILE_IMG_UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'HEIC'}
 
-os.makedirs(IMG_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROFILE_IMG_UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@user_routes.route('/uploads/people_img/<filename>')
+@user_routes.route('/static/user_profile_img/<filename>') # TODO fix in app
 async def uploaded_file(filename):
     filename = secure_filename(filename)  # ✅ sanitize again during fetch
-    upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'people_img')
+    upload_folder = os.path.join(PROFILE_IMG_UPLOAD_FOLDER)
     file_path = os.path.join(upload_folder, filename)
 
     if not os.path.isfile(file_path):
@@ -34,7 +35,6 @@ async def notices_file(filename):
     filename = secure_filename(filename)
     upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'notices')
     file_path = os.path.join(upload_folder, filename)
-    lang = request.args.get('language') or request.args.get('Language') or 'en'
 
     if not os.path.isfile(file_path):
         return jsonify({"message": _("File not found")}), 404
@@ -83,11 +83,14 @@ async def madrasa_pictures_classes_file(folder, filename):
 
 @user_routes.route('/add_people', methods=['POST'])
 async def add_person():
+
+    if is_test_mode():
+        return jsonify({"success": True, "message": "App in test mode", "id": None, "info": None}), 201
+    
     conn = await get_db_connection()
     BASE_URL = current_app.config['BASE_URL']
 
     data = await request.form
-    lang = data.get('language') or data.get('Language') or 'en'
     image = (await request.files).get('image')
     
     fullname = data.get('name_en')
@@ -121,7 +124,7 @@ async def add_person():
         if allowed_file(image.filename):
             filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
             filename = filename_base + ".webp"  # save as .webp
-            upload_folder = os.path.join(Config.BASE_UPLOAD_FOLDER, 'people_img')
+            upload_folder = os.path.join(Config.PROFILE_IMG_UPLOAD_FOLDER)
             image_path = os.path.join(upload_folder, filename)
         
             try:
@@ -135,7 +138,7 @@ async def add_person():
             except Exception as e:
                 return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
             
-            fields["image_path"] = BASE_URL + 'uploads/people_img/' + filename
+            fields["image_path"] = BASE_URL + 'static/user_people_img/' + filename
         else:
             return jsonify({"message": "Invalid image file format"}), 400
 
@@ -230,7 +233,6 @@ async def get_info():
     conn = await get_db_connection()
     
     data = await request.get_json()
-    lang = data.get('language') or data.get('Language') or 'en'
     lastfetched = data.get('updatedSince')
     # member_id_list = data.get('member_id')
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
@@ -266,7 +268,6 @@ async def get_info():
 async def get_routine():
     conn = await get_db_connection()
     data = await request.get_json()
-    lang = data.get('language') or data.get('Language') or 'en'
     lastfetched = data.get("updatedSince")
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 

@@ -33,7 +33,8 @@ class Config:
 
     # Upload Folders
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max
-    IMG_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'people_img')
+    STATIC_FOLDER = os.path.join('static')
+    PROFILE_IMG_UPLOAD_FOLDER = os.path.join(STATIC_FOLDER, 'user_profile_img')
     EXAM_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
     NOTICES_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
     MADRASA_IMG_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'madrasa_img')
@@ -47,6 +48,13 @@ class Config:
     MYSQL_USER = os.getenv("MYSQL_USER")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
     MYSQL_DB = os.getenv("MYSQL_DB")
+
+    # Dummy info
+    dummy_fullname = os.getenv("DUMMY_FULLNAME")
+    dummy_phone = os.getenv("DUMMY_PHONE")
+    dummy_password = os.getenv("DUMMY_PASSWORD")
+    dummy_email = os.getenv("DUMMY_EMAIL")
+
     
     # Warn about default database credentials
     if not MYSQL_USER or MYSQL_USER == "admin":

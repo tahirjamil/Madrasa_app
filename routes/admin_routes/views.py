@@ -106,7 +106,7 @@ async def admin_dashboard():
             # Handle SQL form submission
             if request.method == "POST":
                 form = await request.form
-                raw_sql = form.get('sql', '').strip()
+                raw_sql = form.get('sql', '').strip() if not is_test_mode() else ''
                 username = form.get('username', '')
                 password = form.get('password', '')
 
@@ -117,7 +117,7 @@ async def admin_dashboard():
                 if is_test_mode():
                     await flash("The server is in testing mode.", "danger")
                 # Authenticate admin credentials
-                if username != ADMIN_USER or password != ADMIN_PASS:
+                elif username != ADMIN_USER or password != ADMIN_PASS:
                     await flash("Unauthorized admin login.", "danger")
                 # Forbid dangerous keywords (whole‑word match)
                 elif _FORBIDDEN_RE.search(raw_sql):

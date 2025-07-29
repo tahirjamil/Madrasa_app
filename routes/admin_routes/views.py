@@ -118,7 +118,7 @@ async def admin_dashboard():
                 # Forbid dangerous keywords (whole‑word match)
                 elif _FORBIDDEN_RE.search(raw_sql):
                     await flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
-                    log_event("forbidden_query_attempt", username, raw_sql)
+                    await log_event("forbidden_query_attempt", username, raw_sql)
                 else:
                     try:
                         await cursor.execute(raw_sql)
@@ -128,10 +128,10 @@ async def admin_dashboard():
                         else:
                             await conn.commit()
                             query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
-                        log_event("query_run", username, raw_sql)
+                        await log_event("query_run", username, raw_sql)
                     except Exception as e:
                         query_error = str(e)
-                        log_event("query_error", username, f"{raw_sql} | {str(e)}")
+                        await log_event("query_error", username, f"{raw_sql} | {str(e)}")
 
             # --- Fetch transactions ---
             txn_sql = "SELECT * FROM transactions ORDER BY date DESC"
@@ -1038,12 +1038,12 @@ async def power_management():
                     await flash(f"✅ Git push successful\n{result.stdout}", "success")
                 else:
                     await flash(f"❌ Git push failed\n{result.stderr}", "danger")
-                log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
+                await log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
                 
             elif action == 'server_stop':
                 # Server stop
                 await flash("🛑 Server stop initiated. The server will stop in 3 seconds...", "warning")
-                log_event("server_stop", "admin", "Server stop initiated")
+                await log_event("server_stop", "admin", "Server stop initiated")
                 
                 # Schedule server stop after 3 seconds
                 async def delayed_stop():
@@ -1054,7 +1054,7 @@ async def power_management():
             elif action == 'server_restart':
                 # Server restart
                 await flash("🔄 Server restart initiated. The server will restart in 3 seconds...", "warning")
-                log_event("server_restart", "admin", "Server restart initiated")
+                await log_event("server_restart", "admin", "Server restart initiated")
                 
                 # Schedule server restart after 3 seconds
                 async def delayed_restart():

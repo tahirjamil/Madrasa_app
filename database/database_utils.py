@@ -282,4 +282,11 @@ async def create_tables():
         raise
     finally:
         if conn:
-            await conn.close()
+            try:
+                # Check if connection is still open
+                if not conn.closed:
+                    conn.close()
+            except Exception as e:
+                print(f"Error closing database connection: {e}")
+        else:
+            print("Connection was None in finally block")

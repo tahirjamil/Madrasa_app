@@ -1,23 +1,14 @@
 from quart import jsonify, current_app, request
 from password_validator import PasswordValidator
-import phonenumbers
+import phonenumbers, re, asyncio, random, os, datetime, aiomysql, json, smtplib, requests
 from phonenumbers.phonenumberutil import NumberParseException
-import random
-import requests
-import os , datetime
 from dotenv import load_dotenv
 from database.database_utils import get_db_connection
-from logger import log_event
-import aiomysql
 from aiomysql import IntegrityError
-import json
-from functools import wraps
 from config import Config
-import smtplib
+from logger import log_event
 from email.mime.text import MIMEText
-import re
 from quart_babel import gettext as _
-import asyncio
 
 # ─── Compute Upload Folder ───────────
 load_dotenv()

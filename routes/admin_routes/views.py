@@ -791,9 +791,13 @@ async def madrasa_pictures():
     #     return redirect(url_for('admin_routes.madrasa_pictures'))
 
     # 4) On GET: load current list
+    pictures = []
     if not is_test_mode():
-        with open(PIC_INDEX_PATH) as idx:
-            pictures = json.load(idx)
+        try:
+            with open(PIC_INDEX_PATH) as idx:
+                pictures = json.load(idx)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pictures = []
 
     return await render_template('admin/madrasa_pictures.html', pictures=pictures)
 

@@ -17,3 +17,4 @@ phonenumbers
 Pillow
 markdown
 cryptography
+psutil

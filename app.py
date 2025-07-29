@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from quart import (
@@ -128,6 +129,9 @@ async def create_tables_async():
 
 @app.before_serving
 async def before_serving():
+    # Set app start time for health checks
+    app.start_time = time.time()
+    
     # Create database tables if they don't exist
     await create_tables_async()
     
@@ -226,6 +230,44 @@ async def favicon():
         'favicon.ico',
         mimetype='image/vnd.microsoft.icon'
     )
+
+@app.route('/health')
+async def health_check():
+    """Health check endpoint for monitoring"""
+    try:
+        # Basic health check
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0",
+            "uptime": time.time() - app.start_time if hasattr(app, 'start_time') else 0
+        }
+        
+        # Check database connection
+        try:
+            from database.database_utils import get_db_connection
+            conn = await get_db_connection()
+            if conn:
+                health_status["database"] = "connected"
+                conn.close()
+            else:
+                health_status["database"] = "disconnected"
+        except Exception as e:
+            health_status["database"] = f"error: {str(e)}"
+        
+        # Check maintenance mode
+        health_status["maintenance_mode"] = is_maintenance_mode()
+        
+        return jsonify(health_status), 200
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+        
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')
 app.register_blueprint(web_routes)

@@ -20,7 +20,9 @@ from helpers import is_maintenance_mode
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
-# from quart_csrf import CSRFProtect  # Temporarily disabled due to compatibility issues
+import secrets
+import hashlib
+import time
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
@@ -64,9 +66,39 @@ def get_locale():
 # Set the locale selector
 babel.localeselector = get_locale
 
-# Setup CSRF protection (Quart) - Temporarily disabled
-# csrf = CSRFProtect()
-# csrf.init_app(app)
+# Custom CSRF protection
+class CSRFProtect:
+    def __init__(self):
+        self.secret_key = Config.WTF_CSRF_SECRET_KEY
+        
+    def generate_csrf(self):
+        """Generate a CSRF token"""
+        token = secrets.token_urlsafe(32)
+        timestamp = str(int(time.time()))
+        data = f"{token}:{timestamp}"
+        signature = hashlib.sha256(f"{data}:{self.secret_key}".encode()).hexdigest()
+        return f"{data}:{signature}"
+    
+    def validate_csrf(self, token):
+        """Validate a CSRF token"""
+        try:
+            if not token:
+                return False
+            parts = token.split(':')
+            if len(parts) != 3:
+                return False
+            data, timestamp, signature = parts
+            expected_signature = hashlib.sha256(f"{data}:{timestamp}:{self.secret_key}".encode()).hexdigest()
+            if not secrets.compare_digest(signature, expected_signature):
+                return False
+            # Check if token is expired (1 hour)
+            if int(time.time()) - int(timestamp) > 3600:
+                return False
+            return True
+        except:
+            return False
+
+csrf = CSRFProtect()
 
 # Security headers
 @app.after_request
@@ -156,11 +188,18 @@ async def handle_exception(e):
     }), 500
 
 # ─── Error & Favicon ────────────────────────────────────────
-# CSRF exempt not needed (no CSRF)
+# CSRF error handler
 @app.errorhandler(404)
 async def not_found(e):
     logger.warning(f"404 error: {request.path}")
     return await render_template('404.html'), 404
+
+@app.errorhandler(400)
+async def csrf_error(e):
+    if "CSRF" in str(e):
+        logger.warning(f"CSRF error: {request.path}")
+        return await render_template('admin/csrf_error.html', reason=str(e)), 400
+    return jsonify({"error": "Bad request"}), 400
 
 @app.route('/favicon.ico')
 async def favicon():
@@ -198,14 +237,14 @@ app.register_blueprint(admin_routes, url_prefix='/admin')
 app.register_blueprint(web_routes)
 app.register_blueprint(user_routes)
 
-# For Quart-CSRF, you can exempt blueprints like this:
-# csrf.exempt(user_routes)
-# csrf.exempt(admin_routes)
+# CSRF configuration
+# User routes don't need CSRF protection (API routes)
+# Admin routes need CSRF protection for security
  
-# Inject CSRF token into templates (for forms) - Temporarily disabled
-# @app.context_processor
-# def inject_csrf_token():
-#     return dict(csrf_token=csrf.generate_csrf)
+# Inject CSRF token into templates (for forms)
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=csrf.generate_csrf)
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":

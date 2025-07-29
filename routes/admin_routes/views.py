@@ -2,10 +2,10 @@ from quart import render_template, request, flash, session, redirect, url_for, c
 from . import admin_routes
 from database import connect_to_db
 from datetime import datetime, date
-from logger import log_event
-from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
+from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file, log_event
 from config import Config
 import json, re, subprocess, sys, os, aiomysql, asyncio
+from functools import wraps
 
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
@@ -19,15 +19,51 @@ _FORBIDDEN_RE = re.compile(
     re.IGNORECASE
 )
 
+# CSRF validation
+async def validate_csrf_token():
+    """Validate CSRF token from form data"""
+    from app import csrf
+    form = await request.form
+    token = form.get('csrf_token')
+    if not csrf.validate_csrf(token):
+        flash("CSRF token validation failed. Please try again.", "danger")
+        return False
+    return True
+
+def require_csrf(f):
+    """Decorator to require CSRF validation for POST requests"""
+    @wraps(f)
+    async def decorated_function(*args, **kwargs):
+        if request.method == 'POST':
+            if not await validate_csrf_token():
+                return redirect(request.url)
+        return await f(*args, **kwargs)
+    return decorated_function
+
 # ------------- Root / Dashboard ----------------
 
 @admin_routes.route('/', methods=['GET', 'POST'])
+@require_csrf
 async def admin_dashboard():
     # 1) Ensure admin is logged in
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await connect_to_db()
+    try:
+        conn = await connect_to_db()
+        if conn is None:
+            flash("Database connection failed", "danger")
+            return await render_template("admin/dashboard.html", 
+                databases=[], tables={}, selected_db='madrasadb',
+                query_result=None, query_error="Database connection failed",
+                transactions=[], txn_limit='100', student_payments=[], student_class='all')
+    except Exception as e:
+        flash(f"Database connection error: {str(e)}", "danger")
+        return await render_template("admin/dashboard.html", 
+            databases=[], tables={}, selected_db='madrasadb',
+            query_result=None, query_error=f"Database connection error: {str(e)}",
+            transactions=[], txn_limit='100', student_payments=[], student_class='all')
+    
     databases = []
     tables = {}
     selected_db = request.args.get('db', 'madrasadb')
@@ -123,7 +159,8 @@ async def admin_dashboard():
     except Exception as e:
         query_error = str(e)
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
     return await render_template(
         "admin/dashboard.html",
@@ -148,7 +185,15 @@ async def view_logs():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await connect_to_db()
+    try:
+        conn = await connect_to_db()
+        if conn is None:
+            flash("Database connection failed", "danger")
+            return await render_template("admin/logs.html", logs=[])
+    except Exception as e:
+        flash(f"Database connection error: {str(e)}", "danger")
+        return await render_template("admin/logs.html", logs=[])
+    
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
@@ -158,21 +203,31 @@ async def view_logs():
             )
             logs = await cursor.fetchall()
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
     return await render_template("admin/logs.html", logs=logs)
 
 @admin_routes.route('/logs/data')
 async def logs_data():
-    conn = await connect_to_db()
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-        await cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
-        logs = await cursor.fetchall()
-    await conn.close()
-    # Convert datetime to string
-    for l in logs:
-        l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-    return jsonify(logs)
+    try:
+        conn = await connect_to_db()
+        if conn is None:
+            return jsonify([])
+    except Exception as e:
+        return jsonify([])
+    
+    try:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
+            logs = await cursor.fetchall()
+        # Convert datetime to string
+        for l in logs:
+            l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+        return jsonify(logs)
+    finally:
+        if conn:
+            await conn.close()
 
 
 
@@ -290,6 +345,7 @@ async def exam_results():
 # ------------------- Members --------------------------
 
 @admin_routes.route('/members', methods=['GET', 'POST'])
+@require_csrf
 async def members():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -303,7 +359,8 @@ async def members():
             await cursor.execute("SELECT * FROM verify_people")
             pending = await cursor.fetchall()
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
     # Build list of distinct account types
     types = sorted({m['acc_type'] for m in people if m.get('acc_type')})
@@ -521,7 +578,8 @@ async def routine():
             """)
             rows = await cursor.fetchall()
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
     # group by class_group
     routines_by_class = {}
@@ -650,7 +708,8 @@ async def events():
         flash(f"⚠️ Database error: {e}", "danger")
 
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
     return await render_template("admin/events.html", events=events)
 
@@ -770,7 +829,8 @@ async def exams():
         await cursor.execute("SELECT * FROM exam ORDER BY date DESC, start_time ASC")
         exams = await cursor.fetchall()
 
-    await conn.close()
+    if conn:
+        await conn.close()
     return await render_template('admin/exams.html', exams=exams)
 
 # TODO: Disabled for view-only mode
@@ -923,7 +983,8 @@ async def interactions():
             await cursor.execute("SELECT * FROM interactions")
             rows = list(await cursor.fetchall())
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
     # Sorting logic
     if sort == 'device_brand':
@@ -937,6 +998,7 @@ async def interactions():
     return await render_template('admin/interactions.html', interactions=rows, sort=sort)
 
 @admin_routes.route('/power', methods=['GET', 'POST'])
+@require_csrf
 async def power_management():
     # Require admin login
     if not session.get('admin_logged_in'):

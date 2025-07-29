@@ -1,0 +1,39 @@
+[Unit]
+Description=Madrasa App Server
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/tahirjamil/Python/Madrasa_app
+Environment=PATH=/home/tahirjamil/Python/Madrasa_app/venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/home/tahirjamil/Python/Madrasa_app
+
+# Run periodic maintenance tasks before starting
+ExecStartPre=/home/tahirjamil/Python/Madrasa_app/venv/bin/python maintenance.py
+
+# Start the server
+ExecStart=/home/tahirjamil/Python/Madrasa_app/venv/bin/python run_server.py
+
+# Restart configuration
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/tahirjamil/Python/Madrasa_app/uploads /home/tahirjamil/Python/Madrasa_app/database/backups
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=madrasa-app
+
+[Install]
+WantedBy=multi-user.target 

@@ -34,4 +34,5 @@ async def log_event(action, phone, message):
     except Exception as e:
         print("Logging failed:", e)
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()

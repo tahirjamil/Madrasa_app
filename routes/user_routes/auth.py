@@ -1,15 +1,14 @@
 from quart import request, jsonify, render_template
 from . import user_routes
-import aiomysql
 from werkzeug.security import generate_password_hash, check_password_hash
 from aiomysql import IntegrityError
 from database import connect_to_db
 from logger import log_event
-from helpers import (validate_fullname, validate_password, auto_delete_users,
-send_sms, format_phone_number, is_device_unsafe,
-generate_code, check_code, send_email, get_email)
+from helpers import (validate_fullname, validate_password, delete_users,
+    send_sms, format_phone_number, is_device_unsafe,
+    generate_code, check_code, send_email, get_email)
 from quart_babel import gettext as _
-import datetime, os
+import datetime, os, aiomysql
 from datetime import timedelta, datetime as dt
 
 
@@ -85,7 +84,8 @@ async def register():
         except Exception as e:
             return jsonify({"message": _("Internal server error"), "error": str(e)}), 500
         finally:
-            await conn.close()
+            if conn:
+                await conn.close()
 
 
 @user_routes.route("/login", methods=["POST"])
@@ -163,7 +163,8 @@ async def login():
         return jsonify({"message": _("Internal server error")}), 500
 
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 @user_routes.route("/send_code", methods=["POST"])
 async def send_verification_code():
@@ -324,8 +325,6 @@ async def reset_password():
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"])
 async def manage_account(page_type):
     lang = request.get_json().get("language") or "en"
-    # clean up any expired accounts
-    auto_delete_users()
 
     if page_type not in ("remove", "deactivate"):
         return jsonify({"message": _("Invalid page type")}), 400
@@ -418,7 +417,8 @@ async def manage_account(page_type):
         return jsonify({"message": _("An error occurred")}), 500
 
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 @user_routes.route("/account/reactivate", methods=['POST'])
 async def undo_remove():
@@ -458,12 +458,11 @@ async def undo_remove():
         log_event("account_reactivation_failed", phone, str(e))
         return jsonify({"message": _("Account reactivation failed.")}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 @user_routes.route("/account/check", methods=['POST'])
 async def get_account_status():
-    auto_delete_users()
-
     data = await request.get_json()
     lang = data.get("language") or data.get("Language") or "en"
 
@@ -603,7 +602,8 @@ async def get_account_status():
             await conn.rollback()
             log_event("Saving interactions failed", phone, str(e))
         finally:
-            await conn.close()
+            if conn:
+                await conn.close()
                 
             # all checks passed
         return jsonify({"success": True, "message": _("Account is valid"), "id": record["id"]}), 200
@@ -613,4 +613,5 @@ async def get_account_status():
         return jsonify({"message": _("Internal error")}), 500
 
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()

@@ -45,15 +45,6 @@ if not os.path.exists(NOTICES_INDEX_FILE):
 
 # ------------------------------- User ----------------------------------------
 
-def require_api_key(f):
-    @wraps(f)
-    async def decorated(*args, **kwargs):
-        key = request.headers.get('X-API-KEY')
-        if not key or key != current_app.config.get('API_KEY'):
-            return jsonify({"message": "Unauthorized"}), 401
-        return await f(*args, **kwargs)
-    return decorated
-
 def is_valid_api_key(api_key):
     default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
 
@@ -94,7 +85,8 @@ async def blocker(info):
         log_event("check_blocklist_failed", info, f"Error: {e}")
         return None
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 async def is_device_unsafe(ip_address, device_id, info=None):
     dev_email = os.getenv("DEV_EMAIL")
@@ -134,7 +126,8 @@ async def is_device_unsafe(ip_address, device_id, info=None):
             log_event("update_blocklist_failed", info, f"failed to update blocklist : {e}")
             return True
         finally:
-            await conn.close()
+            if conn:
+                await conn.close()
     else:
         return False
 
@@ -152,7 +145,8 @@ async def delete_code():
     except Exception as e:
         log_event("failed to delete verifications", "Null", f"Database Error {str(e)}")
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 def send_sms(phone, signature=None, code=None, msg=None, lang="en"):
     import requests
@@ -256,7 +250,8 @@ async def check_code(user_code, phone):
     except Exception as e:
         return jsonify({"message": f"Error: {str(e)}"}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 async def get_email(fullname, phone):
     conn = await connect_to_db()
@@ -274,7 +269,8 @@ async def get_email(fullname, phone):
         log_event("db_error", phone, str(e))
         return None
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 def format_phone_number(phone):
     if not phone:
@@ -372,7 +368,8 @@ async def get_id(phone, fullname):
             result = await cursor.fetchone()
             return result['id'] if result else None
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 async def insert_person(fields: dict, acc_type, phone):
     conn = await connect_to_db()
@@ -408,20 +405,24 @@ async def insert_person(fields: dict, acc_type, phone):
         log_event("db_insert_error", phone, str(e))
         raise
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
-async def auto_delete_users():
+async def delete_users(uid=None, acc_type=None):
     conn = await connect_to_db()
     try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-                SELECT u.id, p.acc_type 
-                FROM users u
-                JOIN people p ON u.id = p.id
-                WHERE u.scheduled_deletion_at IS NOT NULL
-                AND u.scheduled_deletion_at < NOW()
-            """)
-            users_to_delete = await cursor.fetchall()
+        if not uid and not acc_type:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("""
+                    SELECT u.id, p.acc_type 
+                    FROM users u
+                    JOIN people p ON u.id = p.id
+                    WHERE u.scheduled_deletion_at IS NOT NULL
+                    AND u.scheduled_deletion_at < NOW()
+                """)
+                users_to_delete = await cursor.fetchall()
+        else:
+            users_to_delete = [{'id': uid, 'acc_type': acc_type}]
             
             for user in users_to_delete:
                 uid = user["id"]
@@ -429,7 +430,6 @@ async def auto_delete_users():
 
                 if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
                     await cursor.execute("DELETE FROM people WHERE id = %s", (uid,))
-                    
                 else:
                     await cursor.execute("""UPDATE people
                             SET 
@@ -462,7 +462,8 @@ async def auto_delete_users():
         log_event("auto_delete_error", "Null", str(e))
         return True
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 
 # ------------------------------------ Admin -------------------------------------------

@@ -1,13 +1,35 @@
-import os
-import requests
+import os, requests
 from datetime import datetime, timedelta
-from quart import render_template, request, redirect, url_for, session
+from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
 from config import Config
+from functools import wraps
 
 login_attempts = {}
 
+# CSRF validation
+async def validate_csrf_token():
+    """Validate CSRF token from form data"""
+    from app import csrf
+    form = await request.form
+    token = form.get('csrf_token')
+    if not csrf.validate_csrf(token):
+        flash("CSRF token validation failed. Please try again.", "danger")
+        return False
+    return True
+
+def require_csrf(f):
+    """Decorator to require CSRF validation for POST requests"""
+    @wraps(f)
+    async def decorated_function(*args, **kwargs):
+        if request.method == 'POST':
+            if not await validate_csrf_token():
+                return redirect(request.url)
+        return await f(*args, **kwargs)
+    return decorated_function
+
 @admin_routes.route('/login', methods=['GET', 'POST'])
+@require_csrf
 async def login():
     # Set session to expire after configured time
     session.permanent = True

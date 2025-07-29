@@ -142,6 +142,7 @@
             <label for="pullPowerKey" class="form-label">Power Key:</label>
             <input type="password" class="form-control" id="pullPowerKey" name="power_key" required>
           </div>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="git_pull">
         </div>
         <div class="modal-footer">
@@ -172,6 +173,7 @@
             <label for="pushPowerKey" class="form-label">Power Key:</label>
             <input type="password" class="form-control" id="pushPowerKey" name="power_key" required>
           </div>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="git_push">
         </div>
         <div class="modal-footer">
@@ -205,6 +207,7 @@
             <label for="stopPowerKey" class="form-label">Power Key:</label>
             <input type="password" class="form-control" id="stopPowerKey" name="power_key" required>
           </div>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="server_stop">
         </div>
         <div class="modal-footer">
@@ -238,6 +241,7 @@
             <label for="restartPowerKey" class="form-label">Power Key:</label>
             <input type="password" class="form-control" id="restartPowerKey" name="power_key" required>
           </div>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="server_restart">
         </div>
         <div class="modal-footer">

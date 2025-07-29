@@ -1,13 +1,9 @@
 from quart import request, jsonify
 from . import user_routes
-import aiomysql
+import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from database import connect_to_db
-from helpers import calculate_fees, format_phone_number
-from logger import log_event
-import os
-import time
-import requests
+from helpers import calculate_fees, format_phone_number, log_event
 from config import Config
 from quart_babel import gettext as _
 
@@ -43,7 +39,8 @@ async def payment():
         log_event("get_payment_failed", phone, f"DB Error: {str(e)}")
         return await jsonify({"error": _("Transaction failed")}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 
     # Extract data
@@ -124,7 +121,8 @@ async def get_transactions():
         log_event("payment_transaction_error", phone, str(e))
         return await jsonify({"error": _("Internal server error during payment processing")}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
     # Handle no‐results
     if not transactions:

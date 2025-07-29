@@ -1,16 +1,13 @@
 from quart import request, jsonify, current_app, send_from_directory
 from . import user_routes
-import aiomysql
-from aiomysql import IntegrityError
-import os
+import aiomysql, os
 from datetime import datetime, date, timezone
 from zoneinfo import ZoneInfo
 from PIL import Image
 from werkzeug.utils import secure_filename
 from database import connect_to_db
-from logger import log_event
 from config import Config
-from helpers import get_id, insert_person, format_phone_number
+from helpers import get_id, insert_person, format_phone_number, log_event
 from quart_babel import gettext as _
 
 # ========== Config ==========
@@ -228,7 +225,8 @@ async def add_person():
         log_event("add_people_failed", phone, str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 @user_routes.route('/members', methods=['POST'])
 async def get_info():
@@ -266,7 +264,8 @@ async def get_info():
         log_event("get_members_failed", "NULL", str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
         
 
 @user_routes.route("/routine", methods=["POST"])
@@ -299,7 +298,8 @@ async def get_routine():
         log_event("get_routine_failed", "NULL", str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
         
 
 @user_routes.route('/events', methods=['POST'])
@@ -331,7 +331,8 @@ async def events():
         log_event("get_events_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
         
     now_dhaka = datetime.now(DHAKA)
     today     = now_dhaka.date()
@@ -402,4 +403,5 @@ async def get_exams():
         log_event("get_events_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()

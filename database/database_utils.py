@@ -1,6 +1,5 @@
 import aiomysql
 from config import Config
-import asyncio
 
 # Centralized Async DB Connection
 def get_db_config():
@@ -23,14 +22,21 @@ def get_db_config():
     )
 
 async def connect_to_db():
-    config = get_db_config()
-    return await aiomysql.connect(**config)
+    try:
+        config = get_db_config()
+        return await aiomysql.connect(**config)
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        return None
 
 # Table Creation
 async def create_tables():
     conn = None
     try:
         conn = await connect_to_db()
+        if conn is None:
+            print("Database connection failed during table creation")
+            return
 
         # Suppress MySQL warnings
         async with conn.cursor(aiomysql.DictCursor) as cursor:

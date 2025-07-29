@@ -1,61 +1,4 @@
-import aiomysql
-from config import Config
-
-# Centralized Async DB Connection
-def get_db_config():
-    # Ensure all required config values are present and not None
-    if not all([
-        Config.MYSQL_HOST,
-        Config.MYSQL_USER,
-        Config.MYSQL_PASSWORD is not None,  # Password can be empty string but not None
-        Config.MYSQL_DB
-    ]):
-        raise ValueError("Database configuration is incomplete. Please check your config settings.")
-    return dict(
-        host=Config.MYSQL_HOST,
-        user=Config.MYSQL_USER,
-        password=Config.MYSQL_PASSWORD or "",
-        db=Config.MYSQL_DB,
-        autocommit=False,
-        charset='utf8mb4',
-        connect_timeout=60
-    )
-
-async def connect_to_db():
-    try:
-        config = get_db_config()
-        return await aiomysql.connect(**config)
-    except Exception as e:
-        print(f"Database connection failed: {e}")
-        return None
-
-async def get_db_connection():
-    """
-    Get the database connection from the app context.
-    This should be used in route handlers to access the single connection.
-    """
-    from quart import current_app
-    if not hasattr(current_app, 'db') or current_app.db is None:
-        raise RuntimeError("Database connection not available")
-    return current_app.db
-
-# Table Creation
-async def create_tables():
-    conn = None
-    try:
-        conn = await connect_to_db()
-        if conn is None:
-            print("Database connection failed during table creation")
-            return
-
-        # Suppress MySQL warnings
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("SET sql_notes = 0")
-            await conn.commit()
-
-            # ─── users ──────────────────────────────────────────────────────────────
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 fullname    VARCHAR(50)            NOT NULL,
                 phone       VARCHAR(20)            NOT NULL,
@@ -65,26 +8,20 @@ async def create_tables():
                 deactivated_at  DATETIME            NULL,
                 scheduled_deletion_at  DATETIME     NULL,
                 UNIQUE KEY unique_user (fullname, phone)
-            )
-            """)
+            );
 
-        # ─── payment ────────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS payment (
+
+CREATE TABLE IF NOT EXISTS payment (
                 id           INT           PRIMARY KEY,
                 food         BOOLEAN       NOT NULL,
                 special_food BOOLEAN       NOT NULL,
                 reduce_fee   INT           DEFAULT 0,
                 due_months   INT           NOT NULL,
                 FOREIGN KEY (id) REFERENCES users(id)
-            )
-            """)
+            );
 
-        # ─── transactions ───────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS transactions (
+
+CREATE TABLE IF NOT EXISTS transactions (
                 transaction_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 id             INT NOT NULL,
                 type           ENUM('fees','donations') NOT NULL,
@@ -96,26 +33,19 @@ async def create_tables():
                                  DEFAULT CURRENT_TIMESTAMP 
                                  ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (id) REFERENCES users(id)
-            )
-            """)
+            );
 
-        # ─── verifications ─────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS verifications (
+
+CREATE TABLE IF NOT EXISTS verifications (
                 verification_id   INT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 created_at  TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 phone       VARCHAR(20) NOT NULL,
                 code        INT,
                 ip_address  VARCHAR(20)
-            )
-            """)
+            );
 
-        # ─── people & verify_people ────────────────────────────────────────────
-        for table in ('people','verify_people'):
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(f"""
-                CREATE TABLE IF NOT EXISTS `{table}` (
+
+CREATE TABLE IF NOT EXISTS `{table}` (
                     user_id            INT             NOT NULL AUTO_INCREMENT PRIMARY KEY,
                     member_id          INT,
                     id                 INT             UNIQUE,
@@ -162,13 +92,10 @@ async def create_tables():
                     is_foundation_member BOOLEAN        DEFAULT 0,
                     UNIQUE KEY unique_person (name_en, phone),
                     FOREIGN KEY (id) REFERENCES users(id)
-                )
-                """)
+                );
 
-        # ─── routine ────────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS routine (
+
+CREATE TABLE IF NOT EXISTS routine (
                 routine_id   INT    NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 updated_at   TIMESTAMP 
                               NOT NULL 
@@ -188,37 +115,28 @@ async def create_tables():
                 name_bn      VARCHAR(100),
                 name_ar      VARCHAR(100),
                 serial       INT                   NOT NULL
-            )
-            """)
+            );
 
-        # ─── book ───────────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS book (
+
+CREATE TABLE IF NOT EXISTS book (
                 book_id INT AUTO_INCREMENT PRIMARY KEY,
                 name_en VARCHAR(50),
                 name_bn VARCHAR(50),
                 name_ar VARCHAR(50),
                 class   VARCHAR(50)
-            )
-            """)
+            );                           
 
-        # ─── logs ───────────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS logs (
+
+CREATE TABLE IF NOT EXISTS logs (
                 log_id     INT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 action     VARCHAR(100),
                 phone      VARCHAR(20),
                 message    TEXT
-            )
-            """)
+            );            
 
-        # ─── exam ───────────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS exam (
+
+CREATE TABLE IF NOT EXISTS exam (
                 exam_id         INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
                                     ON UPDATE CURRENT_TIMESTAMP,
@@ -236,13 +154,10 @@ async def create_tables():
                                   'saturday','sunday','monday','tuesday',
                                   'wednesday','thursday','friday'
                                 ) NOT NULL
-            )
-            """)
+            );
 
-        # ─── event(s) ──────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS events (
+
+CREATE TABLE IF NOT EXISTS events (
                 event_id     INT       AUTO_INCREMENT PRIMARY KEY,
                 created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                                 ON UPDATE CURRENT_TIMESTAMP,
@@ -251,23 +166,19 @@ async def create_tables():
                 time         TIMESTAMP NOT NULL,
                 date         DATE      NOT NULL,
                 function_url TEXT
-            )
-            """)
-        # ─── interaction(s) ──────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS interactions (
+            );
+
+
+CREATE TABLE IF NOT EXISTS interactions (
                 device_id      TEXT NOT NULL,
                 device_brand   TEXT,
                 ip_address     TEXT NOT NULL,
                 id             INT  NOT NULL,
                 open_times     INT  NOT NULL DEFAULT 1
-            )
-            """)
-        # ─── Block(s) ──────────────────────────────────────────────────────────
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS blocklist (
+            );
+
+
+CREATE TABLE IF NOT EXISTS blocklist (
                 block_id            INT             AUTO_INCREMENT PRIMARY KEY,
                 basic_info          VARCHAR(50)     NOT NULL,
                 additional_info    TEXT,
@@ -275,24 +186,4 @@ async def create_tables():
                 created_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP
                                             ON UPDATE CURRENT_TIMESTAMP
-            )
-            """)
-
-        # Re-enable MySQL warnings
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("SET sql_notes = 1")
-            await conn.commit()
-            
-
-    except Exception as e:
-        if conn:
-            await conn.rollback()
-        print(f"Database table creation failed: {e}")
-        raise
-    finally:
-        if conn:
-            try:
-                if not conn.closed:
-                    conn.close()
-            except Exception as e:
-                print(f"Error closing database connection: {e}")
+            );

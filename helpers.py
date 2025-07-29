@@ -66,6 +66,13 @@ def is_maintenance_mode():
         check = True
     return check
 
+def is_test_mode():
+    check = None
+    verify = os.getenv("TEST_MODE", "")
+    if verify == True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on")):
+        check = True
+    return check
+
 async def blocker(info):
     conn = await get_db_connection()
     try:

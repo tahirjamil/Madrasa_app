@@ -226,38 +226,10 @@ async def favicon():
         'favicon.ico',
         mimetype='image/vnd.microsoft.icon'
     )
-
-# # ─── Health Check ───────────────────────────────────────────
-# @app.route('/health')
-# def health_check():
-#     try:
-#         # Check database connection
-#         with app.app_context():
-#             create_tables()  # This will try to connect to the database
-        
-#         return jsonify({
-#             "status": "healthy",
-#             "timestamp": datetime.now().isoformat(),
-#             "environment": "development" if dev_mode else "production",
-#             "host_ip": socket.gethostbyname(socket.gethostname()),
-#             "base_url": Config.BASE_URL
-#         })
-#     except Exception as e:
-#         logger.error(f"Health check failed: {str(e)}")
-#         return jsonify({
-#             "status": "unhealthy",
-#             "error": str(e),
-#             "timestamp": datetime.now().isoformat()
-#         }), 500
-
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')
 app.register_blueprint(web_routes)
 app.register_blueprint(user_routes)
-
-# CSRF configuration
-# User routes don't need CSRF protection (API routes)
-# Admin routes need CSRF protection for security
  
 # Inject CSRF token into templates (for forms)
 @app.context_processor

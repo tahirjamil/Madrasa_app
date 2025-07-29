@@ -62,7 +62,7 @@ async def login():
         session['login_attempts'] += 1
 
         # Free access if in test mode
-
+        if not is_test_mode():
             # Only require captcha if keys exist
             if RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY:
                 if session['login_attempts'] >= 4:

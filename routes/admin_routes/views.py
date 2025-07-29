@@ -187,10 +187,14 @@ async def view_logs():
     # Require admin login
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
-
+    
+    if is_test_mode():
+        await flash("Server is in test mode", "danger")
+        return await render_template("admin/logs.html", logs=[])
+    
     try:
         conn = await get_db_connection()
-        if conn is None or is_test_mode():
+        if conn is None:
             await flash("Database connection failed", "danger")
             return await render_template("admin/logs.html", logs=[])
     except Exception as e:

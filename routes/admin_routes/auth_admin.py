@@ -11,10 +11,10 @@ login_attempts = {}
 # CSRF validation
 async def validate_csrf_token():
     """Validate CSRF token from form data"""
-    from app import csrf
+    from csrf_protection import validate_csrf_token
     form = await request.form
     token = form.get('csrf_token')
-    if not csrf.validate_csrf(token):
+    if not validate_csrf_token(token):
         await flash("CSRF token validation failed. Please try again.", "danger")
         return False
     return True

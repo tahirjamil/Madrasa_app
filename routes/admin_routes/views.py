@@ -24,10 +24,10 @@ _FORBIDDEN_RE = re.compile(
 # CSRF validation
 async def validate_csrf_token():
     """Validate CSRF token from form data"""
-    from app import csrf
+    from csrf_protection import validate_csrf_token
     form = await request.form
     token = form.get('csrf_token')
-    if not csrf.validate_csrf(token):
+    if not validate_csrf_token(token):
         await flash("CSRF token validation failed. Please try again.", "danger")
         return False
     return True
@@ -1081,26 +1081,66 @@ async def power_management():
                 log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
                 
             elif action == 'server_stop':
-                # Server stop
-                await flash("🛑 Server stop initiated. The server will stop in 3 seconds...", "warning")
-                log_event("server_stop", "admin", "Server stop initiated")
+                # Enhanced server stop using advanced server runner
+                await flash("🛑 Server stop initiated. The server will stop gracefully...", "warning")
+                log_event("server_stop", "admin", "Server stop initiated via power management")
                 
-                # Schedule server stop after 3 seconds
-                async def delayed_stop():
-                    await asyncio.sleep(3)
-                    os._exit(0)
-                asyncio.create_task(delayed_stop())
+                # Use the advanced server runner's stop functionality
+                try:
+                    import subprocess
+                    import sys
+                    from pathlib import Path
+                    
+                    # Get the server runner path
+                    server_runner = Path(__file__).resolve().parent.parent.parent / "run_server.py"
+                    
+                    # Stop server using the advanced runner
+                    result = subprocess.run([
+                        sys.executable, str(server_runner), "--stop"
+                    ], capture_output=True, text=True, timeout=10)
+                    
+                    if result.returncode == 0:
+                        await flash("✅ Server stop command sent successfully", "success")
+                    else:
+                        await flash(f"⚠️ Server stop command sent with warnings: {result.stderr}", "warning")
+                        
+                except subprocess.TimeoutExpired:
+                    await flash("⚠️ Server stop command timed out, but may still be processing", "warning")
+                except Exception as e:
+                    await flash(f"❌ Error sending stop command: {str(e)}", "danger")
+                    log_event("server_stop_error", "admin", f"Error: {str(e)}")
                 
             elif action == 'server_restart':
-                # Server restart
-                await flash("🔄 Server restart initiated. The server will restart in 3 seconds...", "warning")
-                log_event("server_restart", "admin", "Server restart initiated")
+                # Enhanced server restart using advanced server runner
+                await flash("🔄 Server restart initiated. The server will restart gracefully...", "warning")
+                log_event("server_restart", "admin", "Server restart initiated via power management")
                 
-                # Schedule server restart after 3 seconds
-                async def delayed_restart():
-                    await asyncio.sleep(3)
-                    os._exit(0)  # Process manager should restart it
-                asyncio.create_task(delayed_restart())
+                # Use the advanced server runner's restart functionality
+                try:
+                    import subprocess
+                    import sys
+                    from pathlib import Path
+                    
+                    # Get the server runner path
+                    server_runner = Path(__file__).resolve().parent.parent.parent / "run_server.py"
+                    
+                    # Stop and restart server using the advanced runner
+                    # First stop
+                    stop_result = subprocess.run([
+                        sys.executable, str(server_runner), "--stop"
+                    ], capture_output=True, text=True, timeout=10)
+                    
+                    if stop_result.returncode == 0:
+                        await flash("✅ Server restart command sent successfully", "success")
+                        log_event("server_restart_success", "admin", "Server restart command sent successfully")
+                    else:
+                        await flash(f"⚠️ Server restart command sent with warnings: {stop_result.stderr}", "warning")
+                        
+                except subprocess.TimeoutExpired:
+                    await flash("⚠️ Server restart command timed out, but may still be processing", "warning")
+                except Exception as e:
+                    await flash(f"❌ Error sending restart command: {str(e)}", "danger")
+                    log_event("server_restart_error", "admin", f"Error: {str(e)}")
                 
             else:
                 await flash("Invalid action", "danger")

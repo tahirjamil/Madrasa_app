@@ -1,40 +1,146 @@
 from database.database_utils import get_db_connection
 import aiomysql
 import asyncio
+import logging
+import json
+from datetime import datetime
+from pathlib import Path
 
-# Logger with auto-prune
-async def log_event(action, phone, message):
+# Enhanced logger with better error handling and performance
+async def log_event(action, phone, message, level="INFO", metadata=None):
+    """
+    Enhanced logging function with better error handling and metadata support
+    
+    Args:
+        action (str): The action being logged
+        phone (str): The phone number or identifier
+        message (str): The log message
+        level (str): Log level (INFO, WARNING, ERROR, CRITICAL)
+        metadata (dict): Additional metadata to log
+    """
     try:
         conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            # Insert log
+            # Prepare metadata
+            log_metadata = metadata or {}
+            log_metadata.update({
+                "timestamp": datetime.now().isoformat(),
+                "level": level,
+                "action": action,
+                "phone": phone,
+                "message": message
+            })
+            
+            # Insert log with enhanced data
             await cursor.execute(
-                "INSERT INTO logs (action, phone, message) VALUES (%s, %s, %s)",
-                (action, phone, message)
+                "INSERT INTO logs (action, phone, message, metadata) VALUES (%s, %s, %s, %s)",
+                (action, phone, message, json.dumps(log_metadata))
             )
 
-            # Count total rows
+            # Enhanced auto-prune with better performance
             await cursor.execute("SELECT COUNT(*) AS total FROM logs")
             result = await cursor.fetchone()
             total = result['total'] if result else 0
 
-            # If more than 500, delete oldest
-            if total > 500:
-                # Deletes rows older than the newest 500, by log_id ASC
+            # If more than 1000, delete oldest (increased from 500)
+            if total > 1000:
+                # More efficient deletion using LIMIT
                 await cursor.execute("""
-                    DELETE FROM logs
-                    WHERE log_id NOT IN (
+                    DELETE FROM logs 
+                    WHERE log_id IN (
                         SELECT log_id FROM (
-                            SELECT log_id FROM logs
-                            ORDER BY created_at DESC
-                            LIMIT 500
-                        ) AS keep_logs
+                            SELECT log_id FROM logs 
+                            ORDER BY created_at ASC 
+                            LIMIT %s
+                        ) AS old_logs
                     )
-                """)
+                """, (total - 1000,))
 
             await conn.commit()
+            
+            # Also log to file for backup
+            await _log_to_file(action, phone, message, level, metadata)
+            
     except Exception as e:
-        print(f"Logging failed: {e}")
+        # Fallback to file logging if database fails
+        print(f"Database logging failed: {e}")
+        await _log_to_file(action, phone, message, level, metadata, error=True)
+
+async def _log_to_file(action, phone, message, level, metadata=None, error=False):
+    """Log to file as backup when database logging fails"""
+    try:
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        
+        log_file = log_dir / f"app_{datetime.now().strftime('%Y%m%d')}.log"
+        
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "level": level,
+            "action": action,
+            "phone": phone,
+            "message": message,
+            "metadata": metadata or {},
+            "source": "file_backup" if error else "database"
+        }
+        
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry) + "\n")
+            
+    except Exception as e:
+        print(f"File logging also failed: {e}")
+
+def log_event_async(action, phone, message, level="INFO", metadata=None):
+    """
+    Enhanced non-blocking wrapper for log_event that schedules logging in the background.
+    Can be called without await to avoid blocking the main flow.
+    """
+    try:
+        # Get current event loop, create one if none exists
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Schedule the task without waiting for it
+        if loop.is_running():
+            asyncio.create_task(log_event(action, phone, message, level, metadata))
+        else:
+            # If no loop is running, just print and skip logging
+            print(f"[{level}] Skipping log: {action} - {phone} - {message}")
+    except Exception as e:
+        print(f"Failed to schedule log task: {e}")
+
+def log_event_sync(action, phone, message, level="INFO", metadata=None):
+    """
+    Enhanced synchronous wrapper that runs the logging operation and waits for completion.
+    Use sparingly as it will block the calling thread.
+    """
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(log_event(action, phone, message, level, metadata))
+        loop.close()
+    except Exception as e:
+        print(f"Sync logging failed: {e}")
+
+# New utility functions for different log levels
+def log_info(action, phone, message, metadata=None):
+    """Log info level message"""
+    log_event_async(action, phone, message, "INFO", metadata)
+
+def log_warning(action, phone, message, metadata=None):
+    """Log warning level message"""
+    log_event_async(action, phone, message, "WARNING", metadata)
+
+def log_error(action, phone, message, metadata=None):
+    """Log error level message"""
+    log_event_async(action, phone, message, "ERROR", metadata)
+
+def log_critical(action, phone, message, metadata=None):
+    """Log critical level message"""
+    log_event_async(action, phone, message, "CRITICAL", metadata)
 
 # Non-blocking wrapper that can be called without await
 def log_event_async(action, phone, message):

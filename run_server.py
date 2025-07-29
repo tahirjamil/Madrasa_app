@@ -185,28 +185,40 @@ class ProcessManager:
             current_os = platform.system()
             self.logger.info(f"Starting server on {current_os}")
             
-            if current_os == "Windows":
-                cmd = [sys.executable, "app.py"]
+            # Use Hypercorn for all platforms
+            if dev_mode:
+                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "hypercorn.toml", "--log-level", "debug", "--access-logformat", "%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s \"%(f)s\" \"%(a)s\""]
             else:
-                if dev_mode:
-                    cmd = ["hypercorn", "app:app", "--config", "hypercorn.toml", "--log-level", "debug"]
-                else:
-                    cmd = ["hypercorn", "app:app", "--config", "hypercorn.toml"]
+                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "hypercorn.toml"]
             
             # Set environment variables
             env = os.environ.copy()
             env["PYTHONPATH"] = str(self.config.base_dir)
             
-            # Start process
-            self.process = subprocess.Popen(
-                cmd,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
-            )
+            # Start process with different output handling for dev mode
+            if dev_mode:
+                # In dev mode, show server logs in real-time
+                self.process = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=None,  # Use parent's stdout
+                    stderr=None,  # Use parent's stderr
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                self.logger.info("Dev mode: Server logs will be displayed in real-time")
+            else:
+                # In production mode, capture output
+                self.process = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
             
             # Save PID
             with open(self.config.pid_file, 'w') as f:
@@ -227,6 +239,27 @@ class ProcessManager:
         """Start background monitoring thread"""
         self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
         self.monitor_thread.start()
+        
+        # Start log streaming if not in dev mode
+        if hasattr(self, 'process') and self.process and self.process.stdout:
+            self.log_stream_thread = threading.Thread(target=self._stream_logs, daemon=True)
+            self.log_stream_thread.start()
+    
+    def _stream_logs(self):
+        """Stream server logs to console"""
+        try:
+            while self.process and self.process.poll() is None:
+                if self.process.stdout:
+                    line = self.process.stdout.readline()
+                    if line:
+                        print(f"[SERVER] {line.strip()}")
+                if self.process.stderr:
+                    line = self.process.stderr.readline()
+                    if line:
+                        print(f"[SERVER-ERROR] {line.strip()}")
+                time.sleep(0.1)
+        except Exception as e:
+            self.logger.error(f"Log streaming error: {e}")
     
     def _monitor_process(self):
         """Monitor server process and restart if needed"""
@@ -348,26 +381,38 @@ class HealthChecker:
     def __init__(self, config: ServerConfig, logger: AdvancedLogger):
         self.config = config
         self.logger = logger
-        self.server_url = f"http://{config.config['server']['host']}:{config.config['server']['port']}"
+        # Use localhost for health checks since server binds to 0.0.0.0 but is accessible via localhost
+        self.server_url = f"http://127.0.0.1:{config.config['server']['port']}"
     
     def check_health(self) -> bool:
         """Perform health check on server"""
         try:
             import requests
             response = requests.get(f"{self.server_url}/health", timeout=5)
-            return response.status_code == 200
+            if response.status_code == 200:
+                self.logger.info(f"Health check successful: {response.status_code}")
+                return True
+            else:
+                self.logger.warning(f"Health check failed with status: {response.status_code}")
+                return False
         except Exception as e:
-            self.logger.debug(f"Health check failed: {e}")
+            self.logger.warning(f"Health check failed: {e}")
             return False
     
-    def wait_for_server(self, timeout: int = 60) -> bool:
+    def wait_for_server(self, timeout: int = 120) -> bool:
         """Wait for server to become available"""
         start_time = time.time()
+        attempts = 0
+        max_attempts = timeout // 5  # Check every 5 seconds
+        
         while time.time() - start_time < timeout:
+            attempts += 1
+            self.logger.info(f"Health check attempt {attempts}/{max_attempts}")
+            
             if self.check_health():
                 self.logger.info("Server is healthy and responding")
                 return True
-            time.sleep(2)
+            time.sleep(5)  # Wait 5 seconds between checks
         
         self.logger.error("Server did not become healthy within timeout")
         return False
@@ -426,9 +471,15 @@ class AdvancedServerRunner:
             
             self.logger.info("Server is running successfully")
             
-            # Keep main thread alive
-            while not self.process_manager.shutdown_event.is_set():
-                time.sleep(1)
+            if dev_mode:
+                # In dev mode, wait for the server process to complete
+                self.logger.info("Dev mode: Waiting for server process...")
+                if self.process_manager.process:
+                    self.process_manager.process.wait()
+            else:
+                # Keep main thread alive
+                while not self.process_manager.shutdown_event.is_set():
+                    time.sleep(1)
             
             return True
             

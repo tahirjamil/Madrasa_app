@@ -211,7 +211,8 @@ async def create_tables():
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 action     VARCHAR(100),
                 phone      VARCHAR(20),
-                message    TEXT
+                message    TEXT,
+                metadata   JSON      DEFAULT NULL
             )
             """)
 

@@ -40,14 +40,9 @@ logger = logging.getLogger(__name__)
 # ─── App Setup ──────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 
-dev_md = BASE_DIR / "dev.md"
 env = BASE_DIR / ".env"
 
 # load development
-dev_mode = False
-if dev_md.is_file():
-    dev_mode = True
-    logger.info("Running in development mode")
 
 load_dotenv(env)
 
@@ -68,39 +63,8 @@ def get_locale():
 # Set the locale selector
 babel.localeselector = get_locale
 
-# Custom CSRF protection
-class CSRFProtect:
-    def __init__(self):
-        self.secret_key = Config.WTF_CSRF_SECRET_KEY
-        
-    def generate_csrf(self):
-        """Generate a CSRF token"""
-        token = secrets.token_urlsafe(32)
-        timestamp = str(int(time.time()))
-        data = f"{token}:{timestamp}"
-        signature = hashlib.sha256(f"{data}:{self.secret_key}".encode()).hexdigest()
-        return f"{data}:{signature}"
-    
-    def validate_csrf(self, token):
-        """Validate a CSRF token"""
-        try:
-            if not token:
-                return False
-            parts = token.split(':')
-            if len(parts) != 3:
-                return False
-            data, timestamp, signature = parts
-            expected_signature = hashlib.sha256(f"{data}:{timestamp}:{self.secret_key}".encode()).hexdigest()
-            if not secrets.compare_digest(signature, expected_signature):
-                return False
-            # Check if token is expired (1 hour)
-            if int(time.time()) - int(timestamp) > 3600:
-                return False
-            return True
-        except:
-            return False
-
-csrf = CSRFProtect()
+# Import CSRF protection from dedicated module
+from csrf_protection import csrf
 
 # Security headers
 @app.after_request
@@ -276,7 +240,8 @@ app.register_blueprint(user_routes)
 # Inject CSRF token into templates (for forms)
 @app.context_processor
 def inject_csrf_token():
-    return dict(csrf_token=csrf.generate_csrf)
+    from csrf_protection import generate_csrf_token
+    return dict(csrf_token=generate_csrf_token)
 
 # ─── Run ────────────────────────────────────────────────────
 if __name__ == "__main__":

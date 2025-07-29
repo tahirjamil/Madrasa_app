@@ -1,19 +1,12 @@
 # Quart and async dependencies
 Quart>=0.20.0
 quart-cors>=0.1.1
-quart-csrf>=0.4.0
+quart-csrf>=0.2.0
 aiomysql>=0.2.0
 hypercorn>=0.16.0
 quart-babel>=0.6.0
 Babel>=2.14.0
 werkzeug>=3.0.0
-
-# Old Flask dependencies (commented out)
-# Flask
-# flask-cors
-# Flask-WTF
-# waitress
-# pymysql
 
 # Other dependencies
 requests

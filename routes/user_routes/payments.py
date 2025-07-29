@@ -2,7 +2,7 @@ from quart import request, jsonify
 from . import user_routes
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
-from database import connect_to_db
+from database.database_utils import get_db_connection
 from helpers import calculate_fees, format_phone_number, log_event
 from config import Config
 from quart_babel import gettext as _
@@ -10,7 +10,7 @@ from quart_babel import gettext as _
 # ====== Payment Fee Info ======
 @user_routes.route('/due_payment', methods=['POST'])
 async def payment():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
 
     data = await request.get_json()
     lang = data.get('language') or data.get('Language') or 'en'
@@ -38,9 +38,6 @@ async def payment():
         await conn.rollback()
         log_event("get_payment_failed", phone, f"DB Error: {str(e)}")
         return await jsonify({"error": _("Transaction failed")}), 500
-    finally:
-        if conn:
-            await conn.close()
 
 
     # Extract data
@@ -111,7 +108,7 @@ async def get_transactions():
     sql += " ORDER BY t.date DESC"
 
     # Execute
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(sql, params)
@@ -120,9 +117,6 @@ async def get_transactions():
         await conn.rollback()
         log_event("payment_transaction_error", phone, str(e))
         return await jsonify({"error": _("Internal server error during payment processing")}), 500
-    finally:
-        if conn:
-            await conn.close()
 
     # Handle no‐results
     if not transactions:
@@ -287,7 +281,7 @@ async def payment_success_ssl(return_type):
     # 2️⃣ Record transaction directly in the database
     db = None
     try:
-        db = await connect_to_db()
+        db = await get_db_connection()
         async with db.cursor(aiomysql.DictCursor) as cursor:
             # Start transaction
             await db.begin()
@@ -315,8 +309,5 @@ async def payment_success_ssl(return_type):
             await db.rollback()
         log_event("payment_insert_fail", phone, str(e))
         return await jsonify({"error": _("Transaction failed")}), 500
-    finally:
-        if db:
-            db.close()
             
     return await jsonify({"message": _("Payment recorded successfully")}), 200

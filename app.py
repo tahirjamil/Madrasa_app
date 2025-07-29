@@ -14,6 +14,7 @@ from quart_babel import Babel, gettext as _
 
 from config import Config
 from database import create_tables
+from database.database_utils import connect_to_db
 
 # API & Web Blueprints
 from helpers import is_maintenance_mode
@@ -127,7 +128,24 @@ async def create_tables_async():
 
 @app.before_serving
 async def before_serving():
+    # Create database tables if they don't exist
     await create_tables_async()
+    
+    # Create single database connection for server lifetime
+    app.db = await connect_to_db()
+    if app.db is None:
+        raise RuntimeError("Failed to establish database connection")
+    print("Database connection established successfully")
+
+@app.after_serving
+async def after_serving():
+    # Close database connection when server shuts down
+    if hasattr(app, 'db') and app.db:
+        try:
+            app.db.close()
+            print("Database connection closed successfully")
+        except Exception as e:
+            print(f"Error closing database connection: {e}")
 
 # ─── Request/Response Logging ───────────────────────────────
 request_response_log = []

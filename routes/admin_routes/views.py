@@ -1,6 +1,6 @@
 from quart import render_template, request, flash, session, redirect, url_for, current_app, jsonify
 from . import admin_routes
-from database import connect_to_db
+from database.database_utils import get_db_connection
 from datetime import datetime, date
 from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file, log_event
 from config import Config
@@ -50,7 +50,7 @@ async def admin_dashboard():
         return redirect(url_for('admin_routes.login'))
 
     try:
-        conn = await connect_to_db()
+        conn = await get_db_connection()
         if conn is None:
             flash("Database connection failed", "danger")
             return await render_template("admin/dashboard.html", 
@@ -158,9 +158,6 @@ async def admin_dashboard():
 
     except Exception as e:
         query_error = str(e)
-    finally:
-        if conn:
-            await conn.close()
 
     return await render_template(
         "admin/dashboard.html",
@@ -186,7 +183,7 @@ async def view_logs():
         return redirect(url_for('admin_routes.login'))
 
     try:
-        conn = await connect_to_db()
+        conn = await get_db_connection()
         if conn is None:
             flash("Database connection failed", "danger")
             return await render_template("admin/logs.html", logs=[])
@@ -202,16 +199,13 @@ async def view_logs():
                 "ORDER BY created_at DESC"
             )
             logs = await cursor.fetchall()
-    finally:
-        if conn:
-            await conn.close()
 
     return await render_template("admin/logs.html", logs=logs)
 
 @admin_routes.route('/logs/data')
 async def logs_data():
     try:
-        conn = await connect_to_db()
+        conn = await get_db_connection()
         if conn is None:
             return jsonify([])
     except Exception as e:
@@ -225,9 +219,6 @@ async def logs_data():
         for l in logs:
             l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
         return jsonify(logs)
-    finally:
-        if conn:
-            await conn.close()
 
 
 
@@ -350,7 +341,7 @@ async def members():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             # Fetch all people and pending verifies
@@ -568,7 +559,7 @@ async def routine():
 
     sort = request.args.get('sort', 'default')
 
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
@@ -662,7 +653,7 @@ async def events():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     events = []
     try:
         async with conn.cursor(cursor=aiomysql.DictCursor) as cursor:
@@ -706,10 +697,6 @@ async def events():
 
     except Exception as e:
         flash(f"⚠️ Database error: {e}", "danger")
-
-    finally:
-        if conn:
-            await conn.close()
 
     return await render_template("admin/events.html", events=events)
 
@@ -822,7 +809,7 @@ async def exams():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     async with conn.cursor(aiomysql.DictCursor) as cursor:
 
         # Fetch all exams
@@ -977,14 +964,11 @@ async def interactions():
         return redirect(url_for('admin_routes.login'))
 
     sort = request.args.get('sort', 'default')
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("SELECT * FROM interactions")
             rows = list(await cursor.fetchall())
-    finally:
-        if conn:
-            await conn.close()
 
     # Sorting logic
     if sort == 'device_brand':

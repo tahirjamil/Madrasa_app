@@ -6,7 +6,7 @@ import random
 import requests
 import os , datetime
 from dotenv import load_dotenv
-from database import connect_to_db
+from database.database_utils import get_db_connection
 from logger import log_event
 import aiomysql
 from aiomysql import IntegrityError
@@ -67,7 +67,7 @@ def is_maintenance_mode():
     return check
 
 async def blocker(info):
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT COUNT(*) AS blocked FROM blocklist WHERE need_check = 1")
@@ -84,9 +84,6 @@ async def blocker(info):
     except Exception as e:
         log_event("check_blocklist_failed", info, f"Error: {e}")
         return None
-    finally:
-        if conn:
-            await conn.close()
 
 async def is_device_unsafe(ip_address, device_id, info=None):
     dev_email = os.getenv("DEV_EMAIL")
@@ -114,7 +111,7 @@ async def is_device_unsafe(ip_address, device_id, info=None):
                          device_id: {device_id}
                          info: {info}
                          \n@An-Nur.app""")
-        conn = await connect_to_db()
+        conn = await get_db_connection()
         basic_info = ip_address or device_id or "Basic Info Breached"
         additional_info = info or "NULL"
         try:
@@ -125,14 +122,11 @@ async def is_device_unsafe(ip_address, device_id, info=None):
         except Exception as e:
             log_event("update_blocklist_failed", info, f"failed to update blocklist : {e}")
             return True
-        finally:
-            if conn:
-                await conn.close()
     else:
         return False
 
 async def delete_code():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
@@ -144,9 +138,6 @@ async def delete_code():
         await conn.commit()
     except Exception as e:
         log_event("failed to delete verifications", "Null", f"Database Error {str(e)}")
-    finally:
-        if conn:
-            await conn.close()
 
 def send_sms(phone, signature=None, code=None, msg=None, lang="en"):
     import requests
@@ -218,7 +209,7 @@ def generate_code():
 
 async def check_code(user_code, phone):
     CODE_EXPIRY_MINUTES = 10
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
@@ -249,12 +240,9 @@ async def check_code(user_code, phone):
 
     except Exception as e:
         return jsonify({"message": f"Error: {str(e)}"}), 500
-    finally:
-        if conn:
-            await conn.close()
 
 async def get_email(fullname, phone):
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""SELECT email FROM users 
@@ -268,9 +256,6 @@ async def get_email(fullname, phone):
     except Exception as e:
         log_event("db_error", phone, str(e))
         return None
-    finally:
-        if conn:
-            await conn.close()
 
 def format_phone_number(phone):
     if not phone:
@@ -361,18 +346,15 @@ def calculate_fees(class_name, gender, special_food, reduce_fee, food):
     return total
 
 async def get_id(phone, fullname):
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("SELECT id FROM users WHERE phone = %s AND fullname = %s", (phone, fullname))
             result = await cursor.fetchone()
             return result['id'] if result else None
-    finally:
-        if conn:
-            await conn.close()
 
 async def insert_person(fields: dict, acc_type, phone):
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             columns = ', '.join(fields.keys())
@@ -404,12 +386,9 @@ async def insert_person(fields: dict, acc_type, phone):
         await conn.rollback()
         log_event("db_insert_error", phone, str(e))
         raise
-    finally:
-        if conn:
-            await conn.close()
 
 async def delete_users(uid=None, acc_type=None):
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         if not uid and not acc_type:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -461,9 +440,6 @@ async def delete_users(uid=None, acc_type=None):
     except Exception as e:
         log_event("auto_delete_error", "Null", str(e))
         return True
-    finally:
-        if conn:
-            await conn.close()
 
 
 # ------------------------------------ Admin -------------------------------------------

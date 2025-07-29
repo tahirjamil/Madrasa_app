@@ -2,7 +2,7 @@ from quart import request, jsonify, render_template
 from . import user_routes
 from werkzeug.security import generate_password_hash, check_password_hash
 from aiomysql import IntegrityError
-from database import connect_to_db
+from database.database_utils import get_db_connection
 from logger import log_event
 from helpers import (validate_fullname, validate_password, delete_users,
     send_sms, format_phone_number, is_device_unsafe,
@@ -15,7 +15,7 @@ from datetime import timedelta, datetime as dt
 # ========== Routes ==========
 @user_routes.route("/register", methods=["POST"])
 async def register():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
 
     data = await request.get_json()
     fullname = data.get("fullname", "").strip()
@@ -83,14 +83,11 @@ async def register():
             return jsonify({"message": _("User with this fullname and phone already registered")}), 400
         except Exception as e:
             return jsonify({"message": _("Internal server error"), "error": str(e)}), 500
-        finally:
-            if conn:
-                await conn.close()
 
 
 @user_routes.route("/login", methods=["POST"])
 async def login():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
 
     data = await request.get_json()
     fullname = data.get("fullname", "").strip()
@@ -162,13 +159,9 @@ async def login():
         log_event("auth_error", formatted_phone, str(e))
         return jsonify({"message": _("Internal server error")}), 500
 
-    finally:
-        if conn:
-            await conn.close()
-
 @user_routes.route("/send_code", methods=["POST"])
 async def send_verification_code():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     SMS_LIMIT_PER_HOUR = 5
     EMAIL_LIMIT_PER_HOUR = 15
 
@@ -259,7 +252,7 @@ async def send_verification_code():
 
 @user_routes.route("/reset_password", methods=["POST"])
 async def reset_password():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     
     data = await request.get_json()
     phone = data.get("phone")
@@ -352,7 +345,7 @@ async def manage_account(page_type):
         return jsonify({"message": _("Invalid phone number")}), 400
 
     # lookup user
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
@@ -416,10 +409,6 @@ async def manage_account(page_type):
         log_event("manage_account_error", phone, str(e))
         return jsonify({"message": _("An error occurred")}), 500
 
-    finally:
-        if conn:
-            await conn.close()
-
 @user_routes.route("/account/reactivate", methods=['POST'])
 async def undo_remove():
     data = await request.get_json()
@@ -430,7 +419,7 @@ async def undo_remove():
     if not phone or not fullname:
         return jsonify({"message": _("All fields are required")}), 400
 
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("""
@@ -457,9 +446,6 @@ async def undo_remove():
     except Exception as e:
         log_event("account_reactivation_failed", phone, str(e))
         return jsonify({"message": _("Account reactivation failed.")}), 500
-    finally:
-        if conn:
-            await conn.close()
 
 @user_routes.route("/account/check", methods=['POST'])
 async def get_account_status():
@@ -526,7 +512,7 @@ async def get_account_status():
             log_event("account_check_missing_field", ip_address, f"Field {c} is missing")
             return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
 
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
 
@@ -601,9 +587,6 @@ async def get_account_status():
         except Exception as e:
             await conn.rollback()
             log_event("Saving interactions failed", phone, str(e))
-        finally:
-            if conn:
-                await conn.close()
                 
             # all checks passed
         return jsonify({"success": True, "message": _("Account is valid"), "id": record["id"]}), 200
@@ -611,7 +594,3 @@ async def get_account_status():
     except Exception as e:
         log_event("account_check_error", phone, str(e))
         return jsonify({"message": _("Internal error")}), 500
-
-    finally:
-        if conn:
-            await conn.close()

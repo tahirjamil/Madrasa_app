@@ -5,7 +5,7 @@ from datetime import datetime, date, timezone
 from zoneinfo import ZoneInfo
 from PIL import Image
 from werkzeug.utils import secure_filename
-from database import connect_to_db
+from database.database_utils import get_db_connection
 from config import Config
 from helpers import get_id, insert_person, format_phone_number, log_event
 from quart_babel import gettext as _
@@ -83,7 +83,7 @@ async def madrasa_pictures_classes_file(folder, filename):
 
 @user_routes.route('/add_people', methods=['POST'])
 async def add_person():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     BASE_URL = current_app.config['BASE_URL']
 
     data = await request.form
@@ -224,13 +224,10 @@ async def add_person():
     except Exception as e:
         log_event("add_people_failed", phone, str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
-    finally:
-        if conn:
-            await conn.close()
 
 @user_routes.route('/members', methods=['POST'])
 async def get_info():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     
     data = await request.get_json()
     lang = data.get('language') or data.get('Language') or 'en'
@@ -263,14 +260,11 @@ async def get_info():
     except Exception as e:
         log_event("get_members_failed", "NULL", str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
-    finally:
-        if conn:
-            await conn.close()
         
 
 @user_routes.route("/routine", methods=["POST"])
 async def get_routine():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     data = await request.get_json()
     lang = data.get('language') or data.get('Language') or 'en'
     lastfetched = data.get("updatedSince")
@@ -297,9 +291,6 @@ async def get_routine():
     except Exception as e:
         log_event("get_routine_failed", "NULL", str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
-    finally:
-        if conn:
-            await conn.close()
         
 
 @user_routes.route('/events', methods=['POST'])
@@ -322,7 +313,7 @@ async def events():
 
     sql += " ORDER BY event_id DESC"
     
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(sql, params)
@@ -330,9 +321,6 @@ async def events():
     except Exception as e:
         log_event("get_events_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
-    finally:
-        if conn:
-            await conn.close()
         
     now_dhaka = datetime.now(DHAKA)
     today     = now_dhaka.date()
@@ -370,7 +358,7 @@ async def events():
 
 @user_routes.route('/exam', methods=['POST'])
 async def get_exams():
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     data = await request.get_json()
     lastfetched = data.get("updatedSince")
     cutoff = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
@@ -402,6 +390,3 @@ async def get_exams():
     except Exception as e:
         log_event("get_events_failed", "NULL", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
-    finally:
-        if conn:
-            await conn.close()

@@ -29,6 +29,16 @@ async def connect_to_db():
         print(f"Database connection failed: {e}")
         return None
 
+async def get_db_connection():
+    """
+    Get the database connection from the app context.
+    This should be used in route handlers to access the single connection.
+    """
+    from quart import current_app
+    if not hasattr(current_app, 'db') or current_app.db is None:
+        raise RuntimeError("Database connection not available")
+    return current_app.db
+
 # Table Creation
 async def create_tables():
     conn = None

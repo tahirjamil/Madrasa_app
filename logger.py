@@ -1,9 +1,9 @@
-from database import connect_to_db
+from database.database_utils import get_db_connection
 import aiomysql
 
 # Logger with auto-prune
 async def log_event(action, phone, message):
-    conn = await connect_to_db()
+    conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             # Insert log
@@ -33,6 +33,3 @@ async def log_event(action, phone, message):
             await conn.commit()
     except Exception as e:
         print("Logging failed:", e)
-    finally:
-        if conn:
-            await conn.close()

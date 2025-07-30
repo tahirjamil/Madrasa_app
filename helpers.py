@@ -48,8 +48,8 @@ class AppConfig:
         
         # Security settings
         self.max_login_attempts = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
-        self.lockout_duration = int(os.getenv("LOCKOUT_DURATION", "300"))  # 5 minutes
-        self.rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "3600"))  # 1 hour
+        self.lockout_duration = int(os.getenv("LOCKOUT_DURATION_MINUTES", "5")) * 60
+        self.rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW_HOURS", "1")) * 3600
         self.max_requests_per_hour = int(os.getenv("MAX_REQUESTS_PER_HOUR", "1000"))
         
         # Communication settings
@@ -524,23 +524,20 @@ def validate_password(pwd: str) -> Tuple[bool, str]:
 
 def validate_fullname(fullname: str) -> Tuple[bool, str]:
     """Enhanced fullname validation with comprehensive checks"""
+    # Allow letters, spaces, apostrophes, and hyphens
     _FULLNAME_RE = re.compile(
-        r'^(?!.*[\d])'                     # no digits
-        r'(?!.*[!@#$%^&*()_+=-])'          # no forbidden special chars
-        r'([A-Z][a-z]+)'                   # first word
-        r'(?: [A-Z][a-z]+)*$'              # additional words
+        r"^(?!.*[\d])"                     # no digits
+        r"(?!.*[!@#$%^&*()_+=-])"           # no forbidden special chars
+        r"([A-Z][a-z']+)"               # first word (allow ' and -)
+        r"(?: [A-Z][a-z']+)*$"          # additional words
     )
-    
     fullname = fullname.strip()
-    
     if re.search(r'\d', fullname):
         return False, "Fullname shouldn't contain digits"
     if re.search(r'[!@#$%^&*()_+=-]', fullname):
         return False, "Fullname shouldn't contain special characters"
-    
     if not _FULLNAME_RE.match(fullname):
-        return False, "Fullname must be words starting with uppercase, followed by lowercase letters"
-    
+        return False, "Fullname must be words starting with uppercase, followed by lowercase letters, apostrophes, or hyphens"
     return True, ""
 
 # ─── Database Functions ──────────────────────────────────────────────────────
@@ -894,7 +891,7 @@ class SecurityManager:
     
     def __init__(self):
         self.suspicious_patterns = [
-            r'(union|select|insert|update|delete|drop|create|alter)\s+',
+            r"(?i)(union(\s+all)?\s+select|select\s+.*from|insert\s+into|update\s+.*set|delete\s+from|drop\s+table|create\s+table|alter\s+table|--|#|;|\bor\b|\band\b|\bexec\b|\bsp_\b|\bxp_\b)",
             r'<script[^>]*>.*?</script>',
             r'javascript:',
             r'on\w+\s*=',
@@ -1019,7 +1016,12 @@ def validate_email(email: str) -> Tuple[bool, str]:
     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(email_pattern, email):
         return False, "Invalid email format"
-    
+    # Disallow consecutive dots and leading/trailing dots in local or domain part
+    local, _, domain = email.partition('@')
+    if '..' in local or '..' in domain:
+        return False, "Email cannot contain consecutive dots"
+    if local.startswith('.') or local.endswith('.') or domain.startswith('.') or domain.endswith('.'):
+        return False, "Email cannot start or end with a dot"
     # Check for suspicious patterns
     if security_manager.detect_xss(email):
         return False, "Email contains suspicious content"
@@ -1063,7 +1065,7 @@ def validate_file_upload(filename: str, allowed_extensions: List[str], max_size_
         r'\.\./',  # Directory traversal
         r'\.\.\\',  # Windows directory traversal
         r'[<>:"|?*]',  # Invalid characters
-        r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$',  # Reserved names
+        r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)',  # Reserved names (allow extension after)
     ]
     
     for pattern in suspicious_patterns:

@@ -1,10 +1,10 @@
 [
-    {
-        "filename": "1.webp",
-        "section": "kitab",
-        "class": "ifta",
-        "year": "2025",
-        "exam_type": "monthly",
-        "uploaded_at": "2025-07-05 05:03:31"
-    }
+  {
+    "id": 1,
+    "name": "Test 1"
+  },
+  {
+    "id": 2,
+    "name": "Test 2"
+  }
 ]

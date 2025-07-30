@@ -1,6 +1,4 @@
-import os
-import logging
-import time
+import os, time, logging
 from datetime import datetime
 from pathlib import Path
 from quart import (
@@ -9,9 +7,8 @@ from quart import (
 )
 from quart_cors import cors
 from dotenv import load_dotenv
-import socket
-import platform
-from quart_babel import Babel, gettext as _
+import socket, platform
+from quart_babel import Babel
 
 from config import Config
 from database import create_tables
@@ -22,9 +19,6 @@ from helpers import is_maintenance_mode
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
-import secrets
-import hashlib
-import time
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(

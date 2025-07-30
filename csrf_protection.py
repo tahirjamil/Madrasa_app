@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
 """
 CSRF Protection Module
-======================
 
-Enhanced CSRF protection with better security and logging.
-This module provides comprehensive CSRF token generation, validation,
-and refresh capabilities.
 """
 
-import secrets
-import hashlib
-import time
-import logging
+import secrets, hashlib, time, logging
 from config import Config
 
 class CSRFProtect:

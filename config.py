@@ -1,15 +1,13 @@
-import os
-import secrets
+import os, secrets
 from dotenv import load_dotenv
 
 load_dotenv()
 
 class Config:
     # Basic Info - Improved security
-    SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
-    WTF_CSRF_SECRET_KEY = os.getenv("CSRF_SECRET_KEY") or secrets.token_urlsafe(32)
+    SECRET_KEY = secrets.token_urlsafe(32)
+    WTF_CSRF_SECRET_KEY = secrets.token_urlsafe(32)
     BASE_URL = os.getenv("BASE_URL")
-    BASE_UPLOAD_FOLDER = os.path.join('uploads')
     
     # Warn about default credentials
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
@@ -23,16 +21,18 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.getenv("SESSION_SECURE", "False").lower() == "true"
     SESSION_COOKIE_HTTPONLY = True
-    PERMANENT_SESSION_LIFETIME = 3600  # 1 hour session timeout
+    PERMANENT_SESSION_LIFETIME = 1 * 3600  # 1 hour session timeout
     
     # Security Headers
-    WTF_CSRF_TIME_LIMIT = 3600  # CSRF token expires in 1 hour
+    WTF_CSRF_TIME_LIMIT = 1 * 3600  # CSRF token expires in 1 hour
     
     RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
     RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
 
     # Upload Folders
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max
+    BASE_UPLOAD_FOLDER = os.path.join('uploads')
+    BASE_TEMP_FOLDER = os.path.join('temp')
     STATIC_FOLDER = os.path.join('static')
     PROFILE_IMG_UPLOAD_FOLDER = os.path.join(STATIC_FOLDER, 'user_profile_img')
     EXAM_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
@@ -49,11 +49,15 @@ class Config:
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
     MYSQL_DB = os.getenv("MYSQL_DB")
 
+    # Verification
+    CODE_EXPIRY_MINUTES = 10
+    CODE_LENGTH = 6
+
     # Dummy info
-    dummy_fullname = os.getenv("DUMMY_FULLNAME")
-    dummy_phone = os.getenv("DUMMY_PHONE")
-    dummy_password = os.getenv("DUMMY_PASSWORD")
-    dummy_email = os.getenv("DUMMY_EMAIL")
+    DUMMY_FULLNAME = os.getenv("DUMMY_FULLNAME")
+    DUMMY_PHONE = os.getenv("DUMMY_PHONE")
+    DUMMY_EMAIL = os.getenv("DUMMY_EMAIL")
+    DUMMY_PASSWORD = os.getenv("DUMMY_PASSWORD")
 
     
     # Warn about default database credentials

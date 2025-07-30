@@ -2,35 +2,12 @@
 """
 Advanced Server Runner for Madrasha App
 
-Features:
-- Multi-environment support (dev, staging, production)
-- Comprehensive logging with rotation
-- Health monitoring and auto-restart
-- Graceful shutdown handling
-- Configuration validation
-- Process management
-- Security enhancements
-- Performance monitoring
 """
 
-import os
-import sys
-import platform
-import subprocess
-import signal
-import time
-import json
-import logging
-import argparse
-import threading
-import psutil
-import socket
+import os, sys, platform, subprocess, signal, time, json, logging, argparse, threading, psutil, socket
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
-import asyncio
-import tempfile
-import shutil
+from datetime import datetime
+from typing import Optional, Dict, Any
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 

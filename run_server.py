@@ -52,56 +52,19 @@ class ServerConfig:
         self.config = self._load_config()
         
     def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from file or create defaults"""
-        default_config = {
-            "server": {
-                "host": "0.0.0.0",
-                "port": 8000,
-                "workers": 1,
-                "timeout": 60,
-                "max_requests": 1000,
-                "max_requests_jitter": 50
-            },
-            "logging": {
-                "level": "INFO",
-                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                "rotation": "1 day",
-                "retention": "30 days",
-                "max_size": "10MB"
-            },
-            "monitoring": {
-                "health_check_interval": 30,
-                "max_memory_usage": "512MB",
-                "max_cpu_usage": 80,
-                "auto_restart": True,
-                "restart_threshold": 3
-            },
-            "security": {
-                "bind_host": "0.0.0.0",
-                "allowed_hosts": ["localhost", "127.0.0.1"],
-                "rate_limit": 100,
-                "timeout": 30
-            }
-        }
-        
+        """Load configuration from file"""
         if self.config_file.exists():
             try:
                 with open(self.config_file, 'r') as f:
-                    loaded_config = json.load(f)
-                    # Merge with defaults
-                    self._merge_config(default_config, loaded_config)
+                    return json.load(f)
             except Exception as e:
-                print(f"Warning: Could not load config file: {e}")
-        
-        return default_config
-    
-    def _merge_config(self, default: Dict, loaded: Dict):
-        """Recursively merge loaded config with defaults"""
-        for key, value in loaded.items():
-            if key in default and isinstance(default[key], dict) and isinstance(value, dict):
-                self._merge_config(default[key], value)
-            else:
-                default[key] = value
+                print(f"Error loading config file: {e}")
+                print("Please check your server_config.json file")
+                sys.exit(1)
+        else:
+            print(f"Config file not found: {self.config_file}")
+            print("Please create server_config.json with your configuration")
+            sys.exit(1)
     
     def save_config(self):
         """Save current configuration to file"""

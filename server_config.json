@@ -23,7 +23,7 @@
     },
     "security": {
       "bind_host": "0.0.0.0",
-      "allowed_hosts": ["localhost", "127.0.0.1"],
+      "allowed_hosts": ["*"],
       "rate_limit": 100,
       "timeout": 30
     }

@@ -9,9 +9,8 @@ CREATE TABLE IF NOT EXISTS translations (
                 updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-                INDEX idx_translations_translation_text (translation_text),
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                INDEX idx_translations_translation_text (translation_text)
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS users (
@@ -28,9 +27,8 @@ CREATE TABLE IF NOT EXISTS users (
 
                 UNIQUE KEY unique_user (fullname, phone),
                 INDEX idx_users_phone_fullname (phone, fullname),
-                INDEX idx_users_email (email),
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                INDEX idx_users_email (email)
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -49,9 +47,8 @@ CREATE TABLE IF NOT EXISTS payments (
                 INDEX idx_payments_reduced_fee (reduced_fee),
                 INDEX idx_payments_due_months (due_months),
                 INDEX idx_payments_updated_at (updated_at),
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -70,9 +67,8 @@ CREATE TABLE IF NOT EXISTS transactions (
                 INDEX idx_transactions_month (month),
                 INDEX idx_transactions_amount (amount),
                 INDEX idx_transactions_updated_at (updated_at),
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE ON UPDATE CASCADE,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS verifications (
@@ -84,9 +80,8 @@ CREATE TABLE IF NOT EXISTS verifications (
                 ip_address  VARCHAR(45),
 
                 INDEX idx_verifications_phone (phone),
-                INDEX idx_verifications_ip_address (ip_address),
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                INDEX idx_verifications_ip_address (ip_address)
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS peoples (
@@ -136,9 +131,8 @@ CREATE TABLE IF NOT EXISTS peoples (
                     FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
                     FOREIGN KEY (address) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
                     FOREIGN KEY (father_name) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
-                    FOREIGN KEY (mother_name) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
-                    ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                );
+                    FOREIGN KEY (mother_name) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE
+                    ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS routines (
@@ -159,9 +153,8 @@ CREATE TABLE IF NOT EXISTS routines (
                 INDEX idx_routines_class_level (class_level),
                 INDEX idx_routines_weekday (weekday),
                 FOREIGN KEY (subject) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
-                FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS books (
@@ -172,9 +165,8 @@ CREATE TABLE IF NOT EXISTS books (
                 class   VARCHAR(50),
 
                 INDEX idx_books_class (class),
-                FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );                           
+                FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;                           
 
 
 CREATE TABLE IF NOT EXISTS logs (
@@ -187,9 +179,8 @@ CREATE TABLE IF NOT EXISTS logs (
 
                 INDEX idx_logs_phone (phone),
                 INDEX idx_logs_action (action),
-                INDEX idx_logs_created_at (created_at),
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );            
+                INDEX idx_logs_created_at (created_at)
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;            
 
 
 CREATE TABLE IF NOT EXISTS exams (
@@ -210,9 +201,8 @@ CREATE TABLE IF NOT EXISTS exams (
                 INDEX idx_exams_class (class),
                 INDEX idx_exams_gender (gender),
                 INDEX idx_exams_weekday (weekday),
-                FOREIGN KEY (book) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                FOREIGN KEY (book) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS events (
@@ -228,9 +218,8 @@ CREATE TABLE IF NOT EXISTS events (
 
                 INDEX idx_events_type (type),
                 INDEX idx_events_title (title),
-                FOREIGN KEY (title) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                FOREIGN KEY (title) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS interactions (
@@ -250,9 +239,8 @@ CREATE TABLE IF NOT EXISTS interactions (
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE ON UPDATE CASCADE,
                 INDEX idx_interactions_device_id (device_id),
                 INDEX idx_interactions_ip_address (ip_address),
-                INDEX idx_interactions_user_id (user_id),
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                INDEX idx_interactions_user_id (user_id)
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS blocklist (
@@ -263,14 +251,13 @@ CREATE TABLE IF NOT EXISTS blocklist (
                 treat_level     VARCHAR(50)  NOT NULL CHECK (treat_level IN ('low','medium','high')) DEFAULT 'low',
 
                 INDEX idx_blocklist_basic_info (basic_info),
-                INDEX idx_blocklist_additional_info (additional_info),
+                INDEX idx_blocklist_additional_info (additional_info(191)),
                 INDEX idx_blocklist_threat (threat),
                 INDEX idx_blocklist_treat_level (treat_level),
 
                 created_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                updated_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 -- later add this table
@@ -285,6 +272,5 @@ CREATE TABLE IF NOT EXISTS notifications (
 
                 INDEX idx_notifications_updated_at (updated_at),
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE ON UPDATE CASCADE,
-                FOREIGN KEY (title) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
-                ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            );
+                FOREIGN KEY (title) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

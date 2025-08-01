@@ -1,8 +1,8 @@
 # Hypercorn Configuration for Madrasha App
 # ========================================
 
-# Server Binding
-bind = ["0.0.0.0:8000"]
+# Server Binding (also saved in server_config)
+bind = ["0.0.0.0:80"]
 backlog = 2048
 
 # Worker Configuration

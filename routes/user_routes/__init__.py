@@ -7,7 +7,7 @@ user_routes = Blueprint("user_routes", __name__)
 @user_routes.before_request
 async def check():
     lang = request.accept_languages.best_match(["en", "bn", "ar"])
-    if await is_maintenance_mode():
+    if is_maintenance_mode():
         return jsonify({"action": "maintenance", "message": _("System is under maintenance. Please try again later.")}), 503
 
     # Get API key from headers
@@ -23,7 +23,7 @@ async def check():
         return jsonify({'action': 'block', 'message': 'No API key provided'}), 401
     
     # Validate API key
-    if not await is_valid_api_key(api_key):
+    if not is_valid_api_key(api_key):
         return jsonify({'action': 'block', 'message': 'Invalid API key'}), 401
 
 

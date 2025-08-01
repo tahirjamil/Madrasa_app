@@ -50,7 +50,7 @@ app.config['BABEL_DEFAULT_TIMEZONE'] = 'Asia/Dhaka'
 babel = Babel(app)
 
 # Locale selector for Babel
-def get_locale():
+async def get_locale():
     # Try to get language from request args, headers, or session
     return request.args.get('lang') or request.accept_languages.best_match(['en', 'bn', 'ar'])
 

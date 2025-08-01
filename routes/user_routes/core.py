@@ -239,14 +239,21 @@ async def get_info():
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            sql = """SELECT name_en, name_bn, name_ar,
-                    address_en, address_bn, address_ar,
-                    degree, gender,
-                    father_en, father_bn, father_ar, 
-                    blood_group,
-                    phone, image_path AS picUrl, member_id, acc_type AS role,
-                    COALESCE(title1, title2, class) AS title
-                    FROM peoples WHERE member_id IS NOT NULL"""
+            sql = """SELECT tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+                    taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+                    p.degree, p.gender,
+                    tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+                    p.blood_group,
+                    p.phone, p.image_path AS picUrl, p.member_id, p.acc_type AS role,
+                    COALESCE(p.title1, p.title2, p.class) AS title
+                    FROM peoples p
+                    
+                    JOIN translations tname ON tname.translation_text = p.name
+                    LEFT JOIN translations taddress ON taddress.translation_text = p.address
+                    LEFT JOIN translations tfather ON tfather.translation_text = p.father_name
+                    LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+
+                    WHERE p.member_id IS NOT NULL"""
             params = []
 
             if lastfetched:
@@ -273,7 +280,13 @@ async def get_routine():
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            sql = "SELECT * FROM routines"
+            sql = """SELECT r.gender, r.class_group, r.class_level, r.weekday, r.serial,
+            tsubject.en_text AS subject_en, tsubject.bn_text AS subject_bn, tsubject.ar_text AS subject_ar, 
+            tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar 
+            FROM routines r
+
+            JOIN translations tsubject ON tsubject.translation_text = r.subject 
+            JOIN translations tname ON tname.translation_text = r.name"""
             params = []
             
             if lastfetched:
@@ -300,7 +313,10 @@ async def events():
     lastfetched = data.get('updatedSince')
     DHAKA = ZoneInfo("Asia/Dhaka")
 
-    sql = "SELECT * FROM events"
+    sql = """SELECT e.type, e.time, e.date, e.function_url,
+            ttitle.en_text AS title_en, ttitle.bn_text AS title_bn, ttitle.ar_text AS title_ar
+            FROM events e
+            JOIN translations ttitle ON ttitle.translation_text = e.title"""
     params = []
 
     if lastfetched:
@@ -364,7 +380,10 @@ async def get_exams():
     lastfetched = data.get("updatedSince")
     cutoff = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
-    sql = "SELECT * FROM exam"
+    sql = """SELECT e.class, e.gender, e.start_time, e.end_time, e.date, e.weekday, e.sec_start_time, e.sec_end_time,
+            tbook.en_text AS book_en, tbook.bn_text AS book_bn, tbook.ar_text AS book_ar
+            FROM exams e
+            JOIN translations tbook ON tbook.translation_text = e.book"""
     params = []
 
     if lastfetched:

@@ -1,20 +1,35 @@
 -- Insert into users table
 INSERT INTO users (
-    user_id, fullname, phone, password, email, ip_address
+    user_id, fullname, phone, email, ip_address, password
 ) VALUES (
-    9999, 'dummy', '+8801000000000', 'Dummy@123', 'gmail@example.com', '192.0.0.8'
+    9999, 'Dummy', '+8801000000000', 'dummy@gmail.com', '192.0.0.8', 'scrypt:32768:8:1$wcVAqhqYEEVBrmCt$c6efe4945f8f54c807187650181abb5822402ecee2fe8744af128c0e1ca271a713bdcb4d501d142f57ad05b8fd97eaec6420afa26a94dcc48745744811719a51'
 );
 
 -- Insert into peoples table
 INSERT INTO peoples (
-    person_id, user_id, member_id, student_id, name_en, name_bn, name_ar, date_of_birth, birth_certificate, national_id, 
-    blood_group, gender, title1, present_address, address_en, address_bn, address_ar, permanent_address, father_or_spouse, father_en, 
-    father_bn, father_ar, mother_en, mother_bn, mother_ar, class, phone, guardian_number, degree, image_path
+    person_id, user_id, member_id, student_id, name, date_of_birth, birth_certificate, national_id, 
+    blood_group, gender, title1, present_address, address, permanent_address, father_or_spouse, father_name, 
+    mother_name, class, phone, guardian_number, degree, image_path
 ) VALUES (
-    9999, 9999, 'M9999', 'S9999', 'Dummy Name', 'ডামি নাম', 'اسم وهمي', '2000-01-01', '1234567890', '9876543210', 
-    'O+', 'Male', 'Mawlana.', '123 Dummy Street', '123 Dummy Street', '১২৩ ডামি স্ট্রিট', '١٢٣ شارع وهمي', '456 Fake Avenue', 'Father Dummy', 'Father Dummy', 
-    'ফাদার ডামি', 'أب وهمي', 'Mother Dummy', 'মাদার ডামি', 'أم وهمية', 'Daora', '+8801000000000', '+8801999999999', 'Mawlana', 'user_profile_img/dummy.webp'
+    9999, 9999, 'M9999', 'S9999', 'Dummy Name', '2000-01-01', '1234567890', '9876543210', 
+    'O+', 'Male', 'Mawlana.', '123 Dummy Street', '123 Dummy Street', '456 Fake Avenue', 'Father Dummy', 'Father Dummy', 
+    'Mother Dummy', 'Daora', '+8801000000000', '+8801999999999', 'Mawlana', 'user_profile_img/dummy.webp'
 );
+
+-- Insert into translations table
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Name', 'Dummy Name', 'ডামি নাম', 'اسم وهمي',
+    'Dummy Address', 'ডামি ঠিকানা', 'اسم وهمي',
+    'Dummy Father', 'ডামি পিতা', 'اسم وهمي',
+    'Dummy Mother', 'ডামি মা', 'اسم وهمي',
+    'Dummy Class', 'ডামি ক্লাস', 'اسم وهمي',
+    'Dummy Degree', 'ডামি ডিগ্রি', 'اسم وهمي',
+    'Dummy Guardian Number', 'ডামি গার্ডিয়ন নম্বর', 'اسم وهمي',
+    'Dummy Image Path', 'ডামি ছবি পথ', 'اسم وهمي'
+);
+
 
 -- Insert into transactions table (donation)
 INSERT INTO transactions (

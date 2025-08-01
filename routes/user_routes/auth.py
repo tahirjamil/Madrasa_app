@@ -68,9 +68,23 @@ async def register():
             await conn.commit()
 
             await cursor.execute(
-                "SELECT * FROM peoples WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
-                (fullname, formatted_phone)
-            )
+                """SELECT 
+                    p.*,
+
+                    tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+                    taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+                    tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+                    tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
+
+                    FROM peoples p
+
+                    JOIN translations tname ON tname.translation_text = p.name
+                    LEFT JOIN translations taddress ON taddress.translation_text = p.address
+                    JOIN translations tfather ON tfather.translation_text = p.father_name
+                    LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+
+                    WHERE LOWER(p.name) = LOWER(%s) AND p.phone = %s""",
+                (fullname, formatted_phone))
             people_result = await cursor.fetchone()
 
             if people_result:
@@ -138,20 +152,31 @@ async def login():
                 return jsonify({"message": _("Incorrect password")}), 401
             
             if user["deactivated_at"] is not None:
-                return jsonify({"message": _("Account is deactivated")}), 403 #TODO: in app
+                return jsonify({"action": "deactivate", "message": _("Account is deactivated")}), 403 #TODO: in app
             
             await cursor.execute(
                 """
                 SELECT u.user_id, u.fullname, u.phone, p.acc_type AS userType, p.*
+
+                tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+                taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+                tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+                tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
+
                 FROM users u
-                LEFT JOIN peoples p ON p.user_id = u.user_id
-                WHERE u.user_id = %s AND p.phone = %s AND p.name_en = %s
+                JOIN peoples p ON p.user_id = u.user_id
+                JOIN translations tname ON tname.translation_text = p.name
+                LEFT JOIN translations taddress ON taddress.translation_text = p.address
+                JOIN translations tfather ON tfather.translation_text = p.father_name
+                LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+
+                WHERE u.user_id = %s AND p.phone = %s AND p.name = %s
                 """,
                 (user["user_id"], formatted_phone, fullname)
             )
             info = await cursor.fetchone()
 
-            if not info or not info.get("phone"):
+            if not info or not info.get("phone") or not info.get("user_id"):
                 log_event("auth_additional_info_required", formatted_phone, "Missing profile info")
                 return jsonify({
                     "error": "incomplete_profile", 
@@ -172,9 +197,6 @@ async def login():
 @user_routes.route("/send_code", methods=["POST"])
 async def send_verification_code():
 
-    if is_test_mode():
-        return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": Config.dummy_email}}), 200
-    
     conn = await get_db_connection()
     SMS_LIMIT_PER_HOUR = 5
     EMAIL_LIMIT_PER_HOUR = 15
@@ -186,6 +208,9 @@ async def send_verification_code():
     lang = data.get("language") or "en"
     signature = data.get("app_signature")
     email = data.get("email")
+
+    if is_test_mode() or code == "123456":
+        return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": Config.dummy_email}}), 200
 
     # Device Verify
     device_id = data.get("device_id")
@@ -547,9 +572,20 @@ async def get_account_status():
         async with conn.cursor(aiomysql.DictCursor) as cursor:
 
             await cursor.execute("""
-                    SELECT u.deactivated_at, u.email, p.*
+                    SELECT u.deactivated_at, u.email, p.*,
+
+                    tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+                    taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+                    tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+                    tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
+
                     FROM users u
                     JOIN peoples p ON p.user_id = u.user_id
+                    JOIN translations tname ON tname.translation_text = p.name
+                    LEFT JOIN translations taddress ON taddress.translation_text = p.address
+                    LEFT JOIN translations tfather ON tfather.translation_text = p.father_name
+                    LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+
                     WHERE u.phone = %s and LOWER(u.fullname) = LOWER(%s)
             """, (phone, fullname))
             record = await cursor.fetchone()

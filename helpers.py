@@ -230,6 +230,19 @@ def is_maintenance_mode() -> bool:
     verify = os.getenv("MAINTENANCE_MODE", "")
     return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
 
+def is_dummy_mode(fullname: str = None, phone: str = None, password: str = None, email: str = None, code: str = None) -> bool:
+    """Check if application is in dummy mode"""
+    if fullname and fullname == "dummy":
+        return True
+    
+    if phone and phone == "+8801000000000":
+        return True
+    
+    if password and password == "Dummy@123":
+        return True
+    
+    return False
+
 def is_test_mode() -> bool:
     """Check if application is in test mode"""
     verify = os.getenv("TEST_MODE", "")

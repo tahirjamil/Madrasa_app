@@ -1,13 +1,13 @@
 -- Insert into users table
 INSERT INTO users (
-    id, fullname, phone, password, email, ip_address
+    user_id, fullname, phone, password, email, ip_address
 ) VALUES (
     9999, 'dummy', '+8801000000000', 'Dummy@123', 'gmail@example.com', '192.0.0.8'
 );
 
--- Insert into people table
-INSERT INTO people (
-    id, user_id, member_id, student_id, name_en, name_bn, name_ar, date_of_birth, birth_certificate, national_id, 
+-- Insert into peoples table
+INSERT INTO peoples (
+    person_id, user_id, member_id, student_id, name_en, name_bn, name_ar, date_of_birth, birth_certificate, national_id, 
     blood_group, gender, title1, present_address, address_en, address_bn, address_ar, permanent_address, father_or_spouse, father_en, 
     father_bn, father_ar, mother_en, mother_bn, mother_ar, class, phone, guardian_number, degree, image_path
 ) VALUES (
@@ -18,21 +18,21 @@ INSERT INTO people (
 
 -- Insert into transactions table (donation)
 INSERT INTO transactions (
-    id, type, month, amount, date
+    transaction_id, user_id, type, month, amount, date
 ) VALUES (
     9999, 'donation', 9, 9999, '2009-09-09'
 );
 
 -- Insert into transactions table (generic transaction)
 INSERT INTO transactions (
-    id, type, amount, date
+    transaction_id, user_id, type, amount, date
 ) VALUES (
     9999, 'transaction', 9999, '2009-09-09'
 );
 
--- Insert into payment table
-INSERT INTO payment (
-    id, food, special_food, due_months
+-- Insert into payments table
+INSERT INTO payments (
+    payment_id, user_id, food, special_food, reduced_fee, due_months
 ) VALUES (
     9999, 1, 1, 9
 );

@@ -19,7 +19,7 @@ async def register():
     conn = await get_db_connection()
 
     data = await request.get_json()
-    fullname = data.get("fullname", "").strip()
+    fullname = data.get("fullname", "").strip().lower()
     email = data.get("email")
     phone = data.get("phone")
     password = data.get("password")
@@ -60,22 +60,22 @@ async def register():
             await conn.commit()
 
             await cursor.execute(
-                "SELECT id FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+                "SELECT user_id FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
                 (fullname, formatted_phone)
             )
             result = await cursor.fetchone()
-            user_id = result['id'] if result else None
+            user_id = result['user_id'] if result else None
             await conn.commit()
 
             await cursor.execute(
-                "SELECT * FROM people WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
+                "SELECT * FROM peoples WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
                 (fullname, formatted_phone)
             )
             people_result = await cursor.fetchone()
 
             if people_result:
                 await cursor.execute(
-                    "UPDATE people SET id = %s WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
+                    "UPDATE peoples SET user_id = %s WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
                     (user_id, fullname, formatted_phone)
                 )
                 await conn.commit()
@@ -96,7 +96,7 @@ async def login():
     conn = await get_db_connection()
 
     data = await request.get_json()
-    fullname = data.get("fullname", "").strip()
+    fullname = data.get("fullname", "").strip().lower()
     phone = data.get("phone")
     password = data.get("password")
 
@@ -124,7 +124,7 @@ async def login():
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
-                "SELECT id, deactivated_at, password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                "SELECT user_id, deactivated_at, password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                 (formatted_phone, fullname)
             )
             user = await cursor.fetchone()
@@ -142,12 +142,12 @@ async def login():
             
             await cursor.execute(
                 """
-                SELECT u.id, u.fullname, u.phone, p.acc_type AS userType, p.*
+                SELECT u.user_id, u.fullname, u.phone, p.acc_type AS userType, p.*
                 FROM users u
-                LEFT JOIN people p ON p.id = u.id
-                WHERE u.id = %s AND p.phone = %s AND p.name_en = %s
+                LEFT JOIN peoples p ON p.user_id = u.user_id
+                WHERE u.user_id = %s AND p.phone = %s AND p.name_en = %s
                 """,
-                (user["id"], formatted_phone, fullname)
+                (user["user_id"], formatted_phone, fullname)
             )
             info = await cursor.fetchone()
 
@@ -181,7 +181,7 @@ async def send_verification_code():
 
     data = await request.get_json()
     phone = data.get("phone")
-    fullname = data.get("fullname").strip()
+    fullname = data.get("fullname").strip().lower()
     password = data.get("password")
     lang = data.get("language") or "en"
     signature = data.get("app_signature")
@@ -271,7 +271,7 @@ async def reset_password():
     
     data = await request.get_json()
     phone = data.get("phone")
-    fullname = data.get("fullname").strip()
+    fullname = data.get("fullname").strip().lower()
     user_code = data.get("code")
     old_password = data.get("old_password")
     new_password = data.get("new_password")
@@ -352,7 +352,7 @@ async def manage_account(page_type):
     # POST: gather input
     data     = request.get_json() if request.method == "POST" else request.form
     phone    = data.get("phone", "").strip()
-    fullname = (data.get("fullname") or "").strip()
+    fullname = (data.get("fullname") or "").strip().lower()
     password = data.get("password", "")
     email    = data.get("email")
 
@@ -374,7 +374,7 @@ async def manage_account(page_type):
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
-                "SELECT id, password FROM users "
+                "SELECT user_id, password FROM users "
                 "WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (formatted_phone, fullname)
             )
@@ -416,8 +416,8 @@ async def manage_account(page_type):
             if page_type == "remove":
                 sql += ", scheduled_deletion_at=%s"
                 params.append(scheduled)
-            sql += " WHERE id=%s"
-            params.append(user["id"])
+            sql += " WHERE user_id=%s"
+            params.append(user["user_id"])
 
             await cursor.execute(sql, params)
             await conn.commit()
@@ -442,7 +442,7 @@ async def undo_remove():
     
     data = await request.get_json()
     phone = format_phone_number(data.get("phone"))
-    fullname = data.get("fullname", "").strip()
+    fullname = data.get("fullname", "").strip().lower()
 
     if not phone or not fullname:
         return jsonify({"message": _("All fields are required")}), 400
@@ -451,7 +451,7 @@ async def undo_remove():
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("""
-                SELECT id, deactivated_at FROM users
+                SELECT user_id, deactivated_at FROM users
                 WHERE phone = %s AND LOWER(fullname) = LOWER(%s)
             """, (phone, fullname))
             user = await cursor.fetchone()
@@ -467,8 +467,8 @@ async def undo_remove():
                 UPDATE users
                 SET deactivated_at = NULL,
                     scheduled_deletion_at = NULL
-                WHERE id = %s
-            """, (user["id"],))
+                WHERE user_id = %s
+            """, (user["user_id"],))
             await conn.commit()
         return jsonify({"success": True, "message": _("Account reactivated.")}), 200
     except Exception as e:
@@ -491,7 +491,7 @@ async def get_account_status():
 
     phone        = format_phone_number(data.get("phone") or "")
     user_id      = data.get("user_id")
-    fullname     = (data.get("name_en") or "").strip()
+    fullname     = (data.get("name_en") or "").strip().lower()
     member_id    = data.get("member_id")
 
     if not ip_address and not device_id and not device_brand:
@@ -549,8 +549,8 @@ async def get_account_status():
             await cursor.execute("""
                     SELECT u.deactivated_at, u.email, p.*
                     FROM users u
-                    JOIN people p ON p.id = u.id
-                    WHERE u.phone = %s and u.fullname = %s
+                    JOIN peoples p ON p.user_id = u.user_id
+                    WHERE u.phone = %s and LOWER(u.fullname) = LOWER(%s)
             """, (phone, fullname))
             record = await cursor.fetchone()
 
@@ -560,7 +560,7 @@ async def get_account_status():
 
         # Check deactivation
         if record.get("deactivated_at"):
-            log_event("account_check_deactivated", record["id"], "Account deactivated")
+            log_event("account_check_deactivated", record["user_id"], "Account deactivated")
             return jsonify({"action": "deactivate", "message": DEACTIVATE_MSG}), 401
 
         # Compare fields
@@ -573,45 +573,43 @@ async def get_account_status():
                 try:
                     provided_date = dt.fromisoformat(provided).date()
                 except Exception:
-                    log_event("account_check_bad_date", record["id"], f"Bad date: {provided}")
+                    log_event("account_check_bad_date", record["user_id"], f"Bad date: {provided}")
                     return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
                 if db_val:
                     if db_val.date() != provided_date:
-                        log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided_date} != {db_val}, so {fullname} logged out")
+                        log_event("account_check_mismatch", record["user_id"], f"Mismatch: {col}: {provided_date} != {db_val}, so {fullname} logged out")
                         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
             else:
                 # cast both to strings for comparison
                 try:
                     provided_date = dt.fromisoformat(provided).date()
                 except Exception:
-                    log_event("account_check_bad_date", record["id"], f"Bad date: {provided}")
+                    log_event("account_check_bad_date", record["user_id"], f"Bad date: {provided}")
                     return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
                 if str(provided).strip() != str(db_val).strip():
-                    log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided} != {db_val}, so {fullname} logged out")
+                    log_event("account_check_mismatch", record["user_id"], f"Mismatch: {col}: {provided} != {db_val}, so {fullname} logged out")
                     return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
                 if db_val:
                     if db_val.date() != provided_date:
-                        log_event("account_check_mismatch", record["id"], f"Mismatch: {col}: {provided_date} != {db_val}, so {fullname} logged out")
+                        log_event("account_check_mismatch", record["user_id"], f"Mismatch: {col}: {provided_date} != {db_val}, so {fullname} logged out")
                         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
-        await cursor.execute("SELECT open_times FROM interactions WHERE id = %s", (user_id,))
-        result = await cursor.fetchall()
+        await cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND user_id = %s LIMIT 1", (device_id, device_brand, record["user_id"]))
+        open_times = await cursor.fetchone()
 
         try:
-            if not result:
+            if not open_times:
                 await cursor.execute("""INSERT INTO interactions 
-                            (device_id, ip_address, device_brand, id)
+                            (device_id, ip_address, device_brand, user_id)
                             VALUES
                             (%s, %s, %s, %s)
                             """, (device_id, ip_address, device_brand, user_id))
             else:
-                await cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND id = %s", (device_id, device_brand, user_id))
-                open_times_result = await cursor.fetchone()
-                opened = open_times_result['open_times'] if open_times_result else 0
+                opened = open_times['open_times'] if open_times else 0
                 
                 opened += 1
                 await cursor.execute("""UPDATE interactions SET open_times = %s
-                            WHERE device_id = %s AND device_brand = %s AND id = %s
+                            WHERE device_id = %s AND device_brand = %s AND user_id = %s
                             """, (opened, device_id, device_brand, user_id))
             await conn.commit()
         except Exception as e:
@@ -619,7 +617,7 @@ async def get_account_status():
             log_event("Saving interactions failed", phone, str(e))
                 
             # all checks passed
-        return jsonify({"success": True, "message": _("Account is valid"), "id": record["id"]}), 200
+        return jsonify({"success": True, "message": _("Account is valid"), "user_id": record["user_id"]}), 200
 
     except Exception as e:
         log_event("account_check_error", phone, str(e))

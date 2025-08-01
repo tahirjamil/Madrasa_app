@@ -593,12 +593,12 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute(
-                    "SELECT id FROM users WHERE phone = %s AND fullname = %s",
+                    "SELECT user_id FROM users WHERE phone = %s AND fullname = %s",
                     (phone, fullname)
                 )
                 result = await cursor.fetchone()
                 
-                user_id = result['id'] if result else None
+                user_id = result['user_id'] if result else None
                 if user_id:
                     cache.set(cache_key, user_id, ttl=3600)  # Cache for 1 hour
                 return user_id
@@ -620,13 +620,13 @@ async def insert_person(fields: Dict[str, Any], acc_type: str, phone: str) -> No
                 # Only update non-identity or safe fields
                 updatable_fields = [
                     col for col in fields.keys() 
-                    if col not in ('id', 'created_at')
+                    if col not in ('user_id', 'created_at')
                 ]
                 updates = ', '.join([f"{col} = VALUES({col})" for col in updatable_fields])
                 
-                # UPSERT for people
+                # UPSERT for peoples
                 sql = f"""
-                    INSERT INTO people ({columns}) 
+                    INSERT INTO peoples ({columns}) 
                     VALUES ({placeholders}) 
                     ON DUPLICATE KEY UPDATE {updates}
                 """
@@ -641,7 +641,7 @@ async def insert_person(fields: Dict[str, Any], acc_type: str, phone: str) -> No
                     await cursor.execute(verify_sql, list(fields.values()))
             
             await conn.commit()
-            log_event("insert_success", phone, "Upserted into people and conditionally inserted into verify_people")
+            log_event("insert_success", phone, "Upserted into peoples and conditionally inserted into verify_people")
         except Exception as e:
             await conn.rollback()
             log_event("db_insert_error", phone, str(e))
@@ -654,25 +654,25 @@ async def delete_users(uid: int = None, acc_type: str = None) -> bool:
             if not uid and not acc_type:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     await cursor.execute("""
-                        SELECT u.id, p.acc_type 
+                        SELECT u.user_id, p.acc_type 
                         FROM users u
-                        JOIN people p ON u.id = p.id
+                        JOIN peoples p ON u.user_id = p.user_id
                         WHERE u.scheduled_deletion_at IS NOT NULL
                         AND u.scheduled_deletion_at < NOW()
                     """)
                     users_to_delete = await cursor.fetchall()
             else:
-                users_to_delete = [{'id': uid, 'acc_type': acc_type}]
+                users_to_delete = [{'user_id': uid, 'acc_type': acc_type}]
             
             for user in users_to_delete:
-                uid = user["id"]
+                uid = user["user_id"]
                 acc_type = user["acc_type"]
                 
                 if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
-                    await cursor.execute("DELETE FROM people WHERE id = %s", (uid,))
+                    await cursor.execute("DELETE FROM peoples WHERE user_id = %s", (uid,))
                 else:
                     await cursor.execute("""
-                        UPDATE people SET 
+                        UPDATE peoples SET 
                             date_of_birth = NULL,
                             birth_certificate = NULL,
                             national_id = NULL,
@@ -688,12 +688,12 @@ async def delete_users(uid: int = None, acc_type: str = None) -> bool:
                             is_donor = NULL,
                             is_badri_member = NULL,
                             is_foundation_member = NULL
-                        WHERE id = %s
+                        WHERE user_id = %s
                     """, (uid,))
                 
-                await cursor.execute("DELETE FROM transactions WHERE id = %s", (uid,))
-                await cursor.execute("DELETE FROM verifications WHERE id = %s", (uid,))
-                await cursor.execute("DELETE FROM users WHERE id = %s", (uid,))
+                await cursor.execute("DELETE FROM transactions WHERE user_id = %s", (uid,))
+                await cursor.execute("DELETE FROM verifications WHERE user_id = %s", (uid,))
+                await cursor.execute("DELETE FROM users WHERE user_id = %s", (uid,))
             
             await conn.commit()
             return True
@@ -708,7 +708,7 @@ async def delete_users(uid: int = None, acc_type: str = None) -> bool:
 # ─── Business Logic Functions ────────────────────────────────────────────────
 
 def calculate_fees(class_name: str, gender: str, special_food: int, 
-                  reduce_fee: int, food: int) -> int:
+                  reduced_fee: int, food: int) -> int:
     """Calculate fees with comprehensive pricing logic"""
     total = 0
     class_lower = class_name.lower()
@@ -743,15 +743,15 @@ def calculate_fees(class_name: str, gender: str, special_food: int,
             total += 1500
     
     # Apply fee reduction
-    if reduce_fee:
-        total -= reduce_fee
+    if reduced_fee:
+        total -= reduced_fee
     
     return max(0, total)  # Ensure non-negative total
 
 # ─── File Management Functions ───────────────────────────────────────────────
 
 def load_results() -> List[Dict[str, Any]]:
-    """Load exam results with error handling"""
+    """Load exams results with error handling"""
     try:
         with open(config.exam_result_index_file, 'r') as f:
             return json.load(f)

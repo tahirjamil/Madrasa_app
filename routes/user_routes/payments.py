@@ -8,8 +8,8 @@ from config import Config
 from quart_babel import gettext as _
 
 # ====== Payment Fee Info ======
-@user_routes.route('/due_payment', methods=['POST'])
-async def payment():
+@user_routes.route('/due_payments', methods=['POST'])
+async def payments():
     conn = await get_db_connection()
 
     data = await request.get_json()
@@ -25,21 +25,21 @@ async def payment():
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
-                SELECT people.class, people.gender, payment.special_food, payment.reduce_fee,
-                    payment.food, payment.due_months AS month, users.phone, users.fullname
+                SELECT peoples.class, peoples.gender, payments.special_food, payments.reduced_fee,
+                    payments.food, payments.due_months AS month, users.phone, users.fullname
                 FROM users
-                JOIN people ON people.id = users.id
-                JOIN payment ON payment.id = users.id
+                JOIN peoples ON peoples.user_id = users.user_id
+                JOIN payments ON payments.user_id = users.user_id
                 WHERE users.phone = %s AND LOWER(users.fullname) = LOWER(%s)
             """, (phone, fullname))
             result = await cursor.fetchone()
 
         if not result:
-            log_event("payment_user_not_found", phone, f"User {fullname} not found")
-            return await jsonify({"message": _("User not found for payment")}), 404
+            log_event("payments_user_not_found", phone, f"User {fullname} not found")
+            return await jsonify({"message": _("User not found for payments")}), 404
     except Exception as e:
         await conn.rollback()
-        log_event("get_payment_failed", phone, f"DB Error: {str(e)}")
+        log_event("get_payments_failed", phone, f"DB Error: {str(e)}")
         return await jsonify({"error": _("Transaction failed")}), 500
 
 
@@ -47,12 +47,12 @@ async def payment():
     class_name = result['class']
     gender = result['gender']
     special_food = result['special_food']
-    reduce_fee = result['reduce_fee']
+    reduced_fee = result['reduced_fee']
     food = result['food']
     due_months = result['month']
 
     # Calculate fees
-    fees = await calculate_fees(class_name, gender, special_food, reduce_fee, food)
+    fees = await calculate_fees(class_name, gender, special_food, reduced_fee, food)
 
     return await jsonify({"amount": fees, "month": due_months}), 200
 
@@ -90,7 +90,7 @@ async def get_transactions():
         t.amount,
         t.date
       FROM transactions t
-      JOIN users        u ON t.id = u.id
+      JOIN users        u ON t.user_id = u.user_id
       WHERE u.phone = %s
         AND LOWER(u.fullname) = LOWER(%s)
         AND t.type = %s
@@ -121,7 +121,7 @@ async def get_transactions():
     except Exception as e:
         await conn.rollback()
         log_event("payment_transaction_error", phone, str(e))
-        return await jsonify({"error": _("Internal server error during payment processing")}), 500
+        return await jsonify({"error": _("Internal server error during payments processing")}), 500
 
     # Handle no‐results
     if not transactions:
@@ -173,10 +173,10 @@ async def pay_sslcommerz():
         "total_amount":  amount,
         "currency":      "BDT",
         "tran_id":       tran_id,
-        "success_url":   f"{Config.BASE_URL}payment/payment_success_ssl",
-        "fail_url":      f"{Config.BASE_URL}payment/payment_fail_ssl",
-        "cancel_url":    f"{Config.BASE_URL}payment/payment_cancel_ssl",   # new
-        "ipn_url":       f"{Config.BASE_URL}payment/payment_ipn",          # optional
+        "success_url":   f"{Config.BASE_URL}payments/payment_success_ssl",
+        "fail_url":      f"{Config.BASE_URL}payments/payment_fail_ssl",
+        "cancel_url":    f"{Config.BASE_URL}payments/payment_cancel_ssl",   # new
+        "ipn_url":       f"{Config.BASE_URL}payments/payment_ipn",          # optional
 
         # product
         "product_name":      transaction_type.capitalize(),
@@ -235,8 +235,8 @@ async def pay_sslcommerz():
         }), 400
 
 
-@user_routes.route('/payment/<return_type>', methods=['POST'])
-async def payment_success_ssl(return_type):
+@user_routes.route('/payments/<return_type>', methods=['POST'])
+async def payments_success_ssl(return_type):
     valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']
     if return_type not in valid_types:
         return await jsonify({"error": _("Invalid return type")}), 400
@@ -278,7 +278,7 @@ async def payment_success_ssl(return_type):
             return await jsonify({"error": _("Payment validation failed")}), 400
     except Exception as e:
         log_event("sslcommerz_validation_error", phone, str(e))
-        return await jsonify({"error": _("Error during payment validation")}), 502
+        return await jsonify({"error": _("Error during payments validation")}), 502
 
         
     # 2️⃣ Record transaction directly in the database
@@ -291,19 +291,19 @@ async def payment_success_ssl(return_type):
             
             # Fetch the user's internal ID
             await cursor.execute(
-                "SELECT id FROM users WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
+                "SELECT user_id FROM users WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (phone, fullname)
             )
             user = await cursor.fetchone()
             if not user:
                 log_event("transaction_user_not_found", phone, fullname)
-                return await jsonify({"error": _("User not found for payment")}), 404
+                return await jsonify({"error": _("User not found for payments")}), 404
                 
             # Insert the new transaction
             await cursor.execute(
-                "INSERT INTO transactions (id, type, month, amount, date) "
+                "INSERT INTO transactions (user_id, type, month, amount, date) "
                 "VALUES (%s, %s, %s, %s, CURDATE())",
-                (user['id'], transaction_type, months or '', amount)
+                (user['user_id'], transaction_type, months or '', amount)
             )
             # Commit transaction
             await db.commit()

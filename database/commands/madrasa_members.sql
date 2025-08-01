@@ -1,4 +1,4 @@
-INSERT INTO people (
+INSERT INTO peoples (
   member_id,
   name_en, name_bn, name_ar,
   father_en, father_bn, father_ar,

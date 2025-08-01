@@ -87,7 +87,7 @@ async def privacy():
         parsed_sections.append({
             'title': title,
             'content_html': markdown.markdown(content_md, extensions=['extra']),
-            'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
+            'user_id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
         })
 
     return await render_template(
@@ -133,7 +133,7 @@ async def terms():
         parsed_sections.append({
             'title': title,
             'content_html': markdown.markdown(content_md, extensions=['extra']),
-            'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
+            'user_id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
         })
 
     return await render_template(

@@ -146,18 +146,18 @@ async def admin_dashboard():
 
             # --- Fetch all students payment info ---
             student_sql = '''
-                SELECT users.fullname, users.phone, people.class, people.gender, payment.special_food, payment.reduce_fee,
-                       payment.food, payment.due_months AS month, payment.id, payment.id as user_id
+                SELECT users.fullname, users.phone, peoples.class, peoples.gender, payments.special_food, payments.reduced_fee,
+                       payments.food, payments.due_months AS month, payments.payment_id, payments.user_id
                 FROM users
-                JOIN people ON people.id = users.id
-                JOIN payment ON payment.id = users.id
-                WHERE people.acc_type = 'students'
+                JOIN peoples ON peoples.user_id = users.user_id
+                JOIN payments ON payments.user_id = users.user_id
+                WHERE peoples.acc_type = 'students'
             '''
             params = []
             if student_class and student_class != 'all':
-                student_sql += " AND people.class = %s"
+                student_sql += " AND peoples.class = %s"
                 params.append(student_class)
-            student_sql += " ORDER BY people.class, users.fullname"
+            student_sql += " ORDER BY peoples.class, users.fullname"
             await cursor.execute(student_sql, params)
             student_payments = await cursor.fetchall()
 
@@ -365,25 +365,25 @@ async def members():
     conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            # Fetch all people and pending verifies
-            await cursor.execute("SELECT * FROM people")
-            people = list(await cursor.fetchall())
-            await cursor.execute("SELECT * FROM verify_people")
+            # Fetch all peoples and pending verifies
+            await cursor.execute("SELECT * FROM peoples")
+            peoples = list(await cursor.fetchall())
+            await cursor.execute("SELECT * FROM verify_peoples")
             pending = await cursor.fetchall()
     except Exception as e:
-        people = []
+        peoples = []
         pending = []
 
     # Build list of distinct account types
-    types = sorted({m['acc_type'] for m in people if m.get('acc_type')})
+    types = sorted({m['acc_type'] for m in peoples if m.get('acc_type')})
     selected_type = request.args.get('type', types[0] if types else None)
     sort_key = request.args.get('sort', 'user_id_asc')
 
     # Filter members by type (or all)
     if selected_type == 'all':
-        members = people[:]
+        members = peoples[:]
     else:
-        members = [m for m in people if m['acc_type'] == selected_type] if selected_type else []
+        members = [m for m in peoples if m['acc_type'] == selected_type] if selected_type else []
 
     # Sorting logic
     reverse = False
@@ -439,7 +439,7 @@ async def members():
 #             conn = connect_to_db()
 #             try:
 #                 with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-#                     cursor.execute("SELECT * FROM people WHERE user_id = %s", (user_id,))
+#                     cursor.execute("SELECT * FROM peoples WHERE user_id = %s", (user_id,))
 #                     member = cursor.fetchone()
 #             finally:
 #                 await conn.close()
@@ -467,7 +467,7 @@ async def members():
 #                 cols = ','.join(data.keys())
 #                 vals = ','.join(['%s']*len(data))
 #                 cursor.execute(
-#                   f"INSERT INTO people ({cols}) VALUES ({vals})",
+#                   f"INSERT INTO peoples ({cols}) VALUES ({vals})",
 #                   tuple(data.values())
 #                 )
 #                 conn.commit()
@@ -578,8 +578,8 @@ async def notice_page():
 
 # ------------------ Routine ----------------------
 
-@admin_routes.route('/routine', methods=['GET'])
-async def routine():
+@admin_routes.route('/routines', methods=['GET'])
+async def routines():
     # require login
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -591,7 +591,7 @@ async def routine():
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
                 SELECT *
-                  FROM routine
+                  FROM routines
                  ORDER BY class_group ASC, serial ASC
             """)
             rows = await cursor.fetchall()
@@ -619,13 +619,13 @@ async def routine():
         routines_by_class = {}
 
     return await render_template(
-        'admin/routine.html',
+        'admin/routines.html',
         routines_by_class=routines_by_class,
         sort=sort
     )
 
 # TODO: Disabled for view-only mode
-# @admin_routes.route('/routine/add', methods=['GET', 'POST'])
+# @admin_routes.route('/routines/add', methods=['GET', 'POST'])
 # def add_routine():
 #     conn = connect_to_db()
 #     # 1) require login
@@ -635,13 +635,13 @@ async def routine():
 #     if request.method == 'POST':
 #         # 2) grab form values
 #         data = request.form.to_dict()
-#         # TODO: validate & possibly look up IDs from people/book tables
-#         # e.g. if data['name_mode']=='id': lookup the three name fields...
-#         # then insert into routine table:
+#         # TODO: validate & possibly look up IDs from peoples/books table
+#         # e.g. if data['name_mode']=='user_id': lookup the three name fields...
+#         # then insert into routines table:
 #         try:
 #             with conn.cursor() as cursor:
 #                 cursor.execute("""
-#                     INSERT INTO routine
+#                     INSERT INTO routines
 #                       (gender, class_group, class_level, weekday,
 #                        subject_en, subject_bn, subject_ar,
 #                        name_en,    name_bn,    name_ar,
@@ -662,7 +662,7 @@ async def routine():
 #                 ])
 #                 conn.commit()
 #             flash("Routine added successfully.", "success")
-#             return redirect(url_for('admin_routes.routine'))
+#             return redirect(url_for('admin_routes.routines'))
 #         except Exception as e:
 #             flash(f"Error adding routine: {e}", "danger")
 #         finally:
@@ -851,7 +851,7 @@ async def exams():
     async with conn.cursor(aiomysql.DictCursor) as cursor:
 
         # Fetch all exams
-        await cursor.execute("SELECT * FROM exam ORDER BY date DESC, start_time ASC")
+        await cursor.execute("SELECT * FROM exams ORDER BY date DESC, start_time ASC")
         exams = await cursor.fetchall()
 
     return await render_template('admin/exams.html', exams=exams)
@@ -890,22 +890,22 @@ async def exams():
 #     conn = connect_to_db()
 #     cursor = conn.cursor()
 
-#     if book_mode == 'id':
+#     if book_mode == 'user_id':
 #         book_id = request.form.get('book_id')
-#         cursor.execute("SELECT book_en, book_bn, book_ar FROM book WHERE book_id = %s", (book_id,))
+#         cursor.execute("SELECT name_en, name_bn, name_ar FROM books WHERE book_id = %s", (book_id,))
 #         book = cursor.fetchone()
 #         if not book:
 #             await conn.close()
 #             return "Book ID not found", 400
-#         book_en, book_bn, book_ar = book
+#         name_en, name_bn, name_ar = book
 #     else:
-#         book_en = request.form.get('book_en')
-#         book_bn = request.form.get('book_bn')
+#         name_en = request.form.get('name_en')
+#         name_bn = request.form.get('name_bn')
 #         book_ar = request.form.get('book_ar')
 
 #     # ✅ Insert exam
 #     cursor.execute("""
-#         INSERT INTO exam (
+#         INSERT INTO exams (
 #             class, gender, weekday, date,
 #             start_time, end_time, sec_start_time, sec_end_time,
 #             book_en, book_bn, book_ar
@@ -931,7 +931,7 @@ async def exams():
 #     conn = connect_to_db()
 #     try:
 #         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-#             cursor.execute("DELETE FROM verify_people WHERE id = %s", (verify_people_id,))
+#             cursor.execute("DELETE FROM verify_people WHERE user_id = %s", (verify_people_id,))
 #             conn.commit()
 #             flash("Pending verification deleted.", "info")
 #             log_event("pending_verification_deleted", session.get('admin_username', 'admin'), f"ID {verify_people_id}")
@@ -945,7 +945,7 @@ async def exams():
 #     return redirect(url_for('admin_routes.members'))
 
 # TODO: Disabled for view-only mode
-# @admin_routes.route('/payment/<modify>', methods=['GET', 'POST'])
+# @admin_routes.route('/payments/<modify>', methods=['GET', 'POST'])
 # def modify_payment(modify):
 #     if not session.get('admin_logged_in'):
 #         return redirect(url_for('admin_routes.login'))
@@ -955,36 +955,36 @@ async def exams():
 
 #     mode = modify
 #     user_id = request.args.get('user_id')
-#     payment = None
+#     payments = None
 #     if user_id:
 #         conn = connect_to_db()
 #         try:
 #             with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-#                 cursor.execute("SELECT * FROM payment WHERE id = %s", (user_id,))
+#                 cursor.execute("SELECT * FROM payments WHERE user_id = %s", (user_id,))
 #                 payment = cursor.fetchone()
 #         finally:
 #             await conn.close()
 
 #     if request.method == 'POST':
-#         id_val = request.form.get('id')
+#         id_val = request.form.get('user_id')
 #         food = 1 if request.form.get('food') else 0
 #         special_food = 1 if request.form.get('special_food') else 0
-#         reduce_fee = request.form.get('reduce_fee') or 0
+#         reduced_fee = request.form.get('reduced_fee') or 0
 #         due_months = request.form.get('due_months') or 0
 #         conn = connect_to_db()
 #         try:
 #             with conn.cursor() as cursor:
 #                 if mode == 'edit':
 #                     cursor.execute(
-#                         "UPDATE payment SET food=%s, special_food=%s, reduce_fee=%s, due_months=%s WHERE id=%s",
-#                         (food, special_food, reduce_fee, due_months, id_val)
+#                         "UPDATE payments SET food=%s, special_food=%s, reduced_fee=%s, due_months=%s WHERE payment_id=%s",
+#                         (food, special_food, reduced_fee, due_months, id_val)
 #                     )
 #                     conn.commit()
 #                     flash("Payment info updated.", "success")
 #                 else:  # add
 #                     cursor.execute(
-#                         "INSERT INTO payment (id, food, special_food, reduce_fee, due_months) VALUES (%s, %s, %s, %s, %s)",
-#                         (id_val, food, special_food, reduce_fee, due_months)
+#                         "INSERT INTO payments (payment_id, food, special_food, reduced_fee, due_months) VALUES (%s, %s, %s, %s, %s)",
+#                         (id_val, food, special_food, reduced_fee, due_months)
 #                     )
 #                     conn.commit()
 #                     flash("Payment info added.", "success")

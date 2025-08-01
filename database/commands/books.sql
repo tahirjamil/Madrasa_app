@@ -1,5 +1,5 @@
 -- hadith
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Al-Wajeez fi Mustalahil Hadith', 'আল-ওয়াজীজ ফি মুস্তালাহিল হাদীস', 'الوجيز في مصطلح الحديث', 'hadith'),
 ('Al-Imam Ibn Majah wa Manhaj an-Naqd', 'আল-ইমাম ইবনে মাজাহ ওয়া মানহাজ আন-নাকদ', 'الإمام ابن ماجه ومنهج النقد', 'hadith'),
 ('Al-Madkhal ila Ulum al-Hadith', 'আল-মাদখাল ইলা উলুমিল হাদীস', 'المدخل إلى علوم الحديث', 'hadith'),
@@ -12,7 +12,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('Al-Muhadara', 'আল-মুহাদারাহ', 'المحاضرة', 'hadith');
 
 -- ifta
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Qawa‘id al-Fiqh wa al-Ashbah wa an-Nazair', 'কাওয়ায়েদুল ফিকহ ও আশবাহ ও নাজায়ের', 'قواعد الفقه والأشباه والنظائر', 'ifta'),
 ('As-Siraji fi al-Miras', 'আস-সিরাজী ফিল মিরাস', 'السراجى في الميراث', 'ifta'),
 ('Kitab al-Waqf min ad-Durr al-Mukhtar', 'কিতাবুল ওয়াক্ফ মিন আদ-দুররুল মুখতার', 'كتاب الوقف من الدر المختار', 'ifta'),
@@ -25,7 +25,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('Al-Ufuq al-Mu‘asir', 'আল-উফুক আল-মু''আসির', 'المعاصر', 'ifta');
 
 -- hidayatun_nahu
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Bangla wa an-Nahw', 'বাংলা ও নাহু', 'বাংলা ও ব্যাকরণ ', 'hidayatun_nahu'),
 ('English wa an-Nahw', 'ইংলিশ ও নাহু', 'ইংলিশ এন্ড গ্রামর ', 'hidayatun_nahu'),
 ('Riyadiyyat', 'রিয়াদিয়্যাত', 'মাধ্যমিক গণিত ', 'hidayatun_nahu'),
@@ -38,7 +38,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('Hidayatun Nahw', 'হিদায়াতুন নাহু', 'هداية النحو', 'hidayatun_nahu');
 
 -- nahwemeer
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Bangla wa an-Nahw', 'বাংলা ও নাহু', 'বাংলা ও ব্যাকরণ', 'nahwemeer'),
 ('English wa an-Nahw', 'ইংলিশ ও নাহু', 'ইংলিশ এন্ড গ্রামর', 'nahwemeer'),
 ('Riyadiyyat', 'রিয়াদিয়্যাত', 'মাধ্যমিক গণিত', 'nahwemeer'),
@@ -50,7 +50,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('‘Ilm as-Sarf', 'ইলমুস-সারফ', 'علم الصرف', 'nahwemeer');
 
 -- taeseer_meejan
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Karimah', 'কারিমা', 'كريمة', 'taeseer_meejan'),
 ('Farsi Kitab Awwal', 'ফারসি কিতাব আওয়াল', 'الكتاب الفارسي ١', 'taeseer_meejan'),
 ('Taysir al-Mubtadi', 'তাইসীরুল মুপ্তাদি', 'تيسير المبتدئ ', 'taeseer_meejan'),
@@ -69,7 +69,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('Urdu Awwal wa Thani', 'উর্দু কি প্রথম ও দ্বিতীয়', 'উর্দু কী প্রথম ও দ্বিতীয়', 'taeseer_meejan');
 
 -- daora
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Sunan at-Tirmidhi Jild 1', 'সুনানুত তিরমিজি খন্ড ১', 'السنن للإمام الترمذي ج١', 'daora'),
 ('Sunan Abi Dawud Jild 1', 'সুনানে আবু দাউদ খন্ড ১', 'السنن للإمام أبي داود ج١', 'daora'),
 ('Sahih al-Bukhari Jild 1', 'সহীহ বুখারী খন্ড ১', 'الصحيح للإمام البخاري ج١', 'daora'),
@@ -87,7 +87,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('Sunan at-Tirmidhi Jild 2', 'সুনানে তিরমিজি খন্ড ২', 'السنن للإمام الترمذي ج٢', 'daora');
 
 -- meshkat
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Mishkat al-Masabih Jild 1', 'মিশকাতুল মাসাবিহ খন্ড ১', 'مشكاة المصابيح ج١', 'meshkat'),
 ('al-Hidayah Jild 4', 'আল-হিদায়াহ খন্ড ৪', 'الهداية ج٤', 'meshkat'),
 ('Mishkat al-Masabih Jild 2', 'মিশকাতুল মাসাবিহ খন্ড ২', 'مشكاة المصابيح ج٢', 'meshkat'),
@@ -98,7 +98,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('Harkat Deoband wa al-Firaq al-Batilah', 'হরকাত দেইবন্দ ওল ফিরাকুল বাতিলা', 'حركة ديوبند والفرق الباطلة', 'meshkat');
 
 -- jalalain
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Nur al-Anwar wa Kitab al-Amyan wa ash-Shirkah', 'নূরুল আনওয়ার ও কিতাবুল আমিয়ান ওয়াল শির্কা', 'نور الأنوار وكتاب الأميان والشركة', 'jalalain'),
 ('Kitab al-Waqf min al-Hidayah', 'কিতাবুল ওয়াক্ফ মিন আল-হিদায়াহ', 'الوقف من الهداية', 'jalalain'),
 ('al-Hidayah Jild 2', 'আল-হিদায়াহ খন্ড ২', 'الهداية ج٢', 'jalalain'),
@@ -111,7 +111,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('al-Hidayah Jild 1', 'আল-হিদায়াহ খন্ড ১', 'الهداية ج١', 'jalalain');
 
 -- sharhe_yakiya
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('At-Tariq ila al-Insha Jild 3', 'আত-তারীক ইলা আল-ইনশা খন্ড ৩', 'الطريق إلى الإنشاء ٣', 'sharhe_yakiya'),
 ('Nur al-Anwar (Kitabullah)', 'নূরুল আনওয়ার (কিতাবুল্লাহ)', 'نور الأنوار (كتاب الله)', 'sharhe_yakiya'),
 ('Tarjamat al-Qur’an 1-10', 'তারজামাতুল কুরআন ১-১০', 'ترجمة القرآن (١٥-١)', 'sharhe_yakiya'),
@@ -122,7 +122,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 ('al-Maqamat al-Hurriyah', 'আল-মাকামাতুল হুররিয়্যাহ', 'المقامات الحريرية', 'sharhe_yakiya');
 
 -- kafiya
-INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
+INSERT INTO books (name_en, name_bn, name_ar, class) VALUES
 ('Nafhat al-Adab', 'নাফহাতুল আদাব', 'نفحة الأدب', 'kafiya'),
 ('Mu‘allim al-Insha Jild 1', 'মুয়াল্লিমুল ইনশা খন্ড ১', 'معلم الإنشاء جـ١', 'kafiya'),
 ('Kafiyah (Ism)', 'কাফিয়াহ (ইসম)', 'كافية (الاسم)', 'kafiya'),
@@ -137,7 +137,7 @@ INSERT INTO book (name_en, name_bn, name_ar, class) VALUES
 
 
 -- nurani1
-INSERT INTO book (name_en, name_bn,           name_ar,                              class) VALUES
+INSERT INTO books (name_en, name_bn,           name_ar,                              class) VALUES
 ('Bangla',                'বাংলা',           'البنغالية',                          'nurani1'),
 ('Poetry',                'কবিতা',          'الشعر',                              'nurani1'),
 ('Handwriting',           'হাতের লেখা',     'خط اليد',                            'nurani1'),
@@ -149,7 +149,7 @@ INSERT INTO book (name_en, name_bn,           name_ar,                          
 ('General Knowledge & Drawing','সাধারণ জ্ঞান ও অঙ্কন','المعرفة العامة والرسم','nurani1');
 
 -- nurani2
-INSERT INTO book (name_en, name_bn,           name_ar,                              class) VALUES
+INSERT INTO books (name_en, name_bn,           name_ar,                              class) VALUES
 ('Bangla & Social Studies','বাংলা ও সমাজ',  'البنغالية والدراسات الاجتماعية',     'nurani2'),
 ('Mathematics',           'গণিত',          'الرياضيات',                          'nurani2'),
 ('General Knowledge & Drawing','সাধারণ জ্ঞান ও অঙ্কন','المعرفة العامة والرسم','nurani2'),
@@ -160,7 +160,7 @@ INSERT INTO book (name_en, name_bn,           name_ar,                          
 ('Handwriting',           'হাতের লেখা',     'خط اليد',                            'nurani2');
 
 -- nurani3
-INSERT INTO book (name_en, name_bn,           name_ar,                              class) VALUES
+INSERT INTO books (name_en, name_bn,           name_ar,                              class) VALUES
 ('Mathematics',           'গণিত',          'الرياضيات',                          'nurani3'),
 ('Geography',             'ভূগোল',          'الجغرافيا',                          'nurani3'),
 ('Social & General Knowledge','সমাজ ও সাধারণ জ্ঞান','المعرفة العامة والاجتماعية','nurani3'),
@@ -170,7 +170,7 @@ INSERT INTO book (name_en, name_bn,           name_ar,                          
 ('Bangla & Grammar',      'বাংলা ও ব্যাকরণ','البنغالية والنحو',                   'nurani3');
 
 -- madani_nesab
-INSERT INTO book (name_en, name_bn,           name_ar,                              class) VALUES
+INSERT INTO books (name_en, name_bn,           name_ar,                              class) VALUES
 ('Aso Arabi Shikhi (Vol 1–3)',    'এসো আরবি শিখি (১ম, ২য় ও ৩য় খণ্ড)', 'تعلم العربية (الأجزاء ١–٣)',     'madani_nesab'),
 ('Aso Arabi Shikhi (Oral)',       'এসো আরবি শিখি (মৌখিক)',            'تعلم العربية (شفهياً)',           'madani_nesab'),
 ('Aso Fiqh Shikhi & Qasas',       'এসো ফিক্হ শিখি ও কাসাস',            'تعلم الفقه والقصص',                'madani_nesab'),

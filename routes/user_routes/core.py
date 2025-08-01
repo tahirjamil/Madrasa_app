@@ -85,7 +85,7 @@ async def madrasa_pictures_classes_file(folder, filename):
 async def add_person():
 
     if is_test_mode():
-        return jsonify({"success": True, "message": "App in test mode", "id": None, "info": None}), 201
+        return jsonify({"success": True, "message": "App in test mode", "user_id": None, "info": None}), 201
     
     conn = await get_db_connection()
     BASE_URL = current_app.config['BASE_URL']
@@ -115,7 +115,7 @@ async def add_person():
         return jsonify({"message": _("ID not found")}), 404
 
     fields = {
-        "id": person_id,
+        "user_id": person_id,
         "acc_type": acc_type
     }
 
@@ -212,13 +212,13 @@ async def add_person():
         async with conn.cursor() as cursor:
             await insert_person(fields, acc_type, phone)
             await conn.commit()
-            await cursor.execute("SELECT image_path from people WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+            await cursor.execute("SELECT image_path from peoples WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
             row = await cursor.fetchone()
             img_path = row["image_path"] if row else None
             return jsonify({
                 "success": True, 
                 "message": _("%(type)s profile added successfully") % {"type": acc_type}, 
-                "id": person_id, 
+                "user_id": person_id, 
                 "info": img_path
                 }), 201
             
@@ -246,7 +246,7 @@ async def get_info():
                     blood_group,
                     phone, image_path AS picUrl, member_id, acc_type AS role,
                     COALESCE(title1, title2, class) AS title
-                    FROM people WHERE member_id IS NOT NULL"""
+                    FROM peoples WHERE member_id IS NOT NULL"""
             params = []
 
             if lastfetched:
@@ -264,7 +264,7 @@ async def get_info():
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
         
 
-@user_routes.route("/routine", methods=["POST"])
+@user_routes.route("/routines", methods=["POST"])
 async def get_routine():
     conn = await get_db_connection()
     data = await request.get_json()
@@ -273,7 +273,7 @@ async def get_routine():
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            sql = "SELECT * FROM routine"
+            sql = "SELECT * FROM routines"
             params = []
             
             if lastfetched:
@@ -286,7 +286,7 @@ async def get_routine():
             result = await cursor.fetchall()
 
             return jsonify({
-            "routine": result,
+            "routines": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
             }), 200
     except Exception as e:
@@ -357,7 +357,7 @@ async def events():
                              .isoformat().replace("+00:00","Z")
     }), 200
 
-@user_routes.route('/exam', methods=['POST'])
+@user_routes.route('/exams', methods=['POST'])
 async def get_exams():
     conn = await get_db_connection()
     data = await request.get_json()

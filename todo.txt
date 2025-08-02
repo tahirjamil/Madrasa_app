@@ -1,32 +1,12 @@
-initialize_application
-
-get_client_ip
-
-is_safe_filename
-
 hash_sensitive_data
-
-generate_secure_token
 
 handle_async_errors @wraps
 
 cache_with_invalidation @wraps
 
-validate_file_upload (already using extension though)
-
-validate_phone_international
-
-validate_email
-
 PerformanceMonitor (CLASS)
 
 SecurityManager (CLASS)
-
-get_system_health
-
-maintenance_mode_check @wraps
-
-require_api_key @wraps
 
 get_db_context
 

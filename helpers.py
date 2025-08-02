@@ -2,13 +2,11 @@
 Advanced Helper Functions for Madrasha Application
 
 """
-
-import asyncio, re
-import json
-import os
-import random
-import smtplib
-import time
+import asyncio, re, secrets
+import json, os, random, smtplib, time, hashlib
+from secrets import compare_digest
+from cryptography.fernet import Fernet
+import base64
 from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
@@ -24,6 +22,7 @@ from dotenv import load_dotenv
 from phonenumbers.phonenumberutil import NumberParseException
 from quart import jsonify, request
 from quart_babel import gettext as _
+from werkzeug.datastructures import FileStorage
 
 from config import Config
 from database.database_utils import get_db_connection
@@ -201,29 +200,20 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 # ─── Security Functions ───────────────────────────────────────────────────────
+from secrets import compare_digest
+from quart import request
+from config import Config
 
 def is_valid_api_key(api_key: str) -> bool:
-    """Validate API key with enhanced security"""
-    default_api = os.getenv("API_KEY") or os.getenv("MADRASA_API_KEY")
-    
+    """Validate API key securely based on request method"""
+
     if is_test_mode():
         return True
-    
-    if not default_api:
-        return True
-    
+
     if not api_key:
         return False
-    
-    # Use constant-time comparison to prevent timing attacks
-    if len(api_key) != len(default_api):
-        return False
-    
-    result = 0
-    for a, b in zip(api_key, default_api):
-        result |= ord(a) ^ ord(b)
-    
-    return result == 0
+
+    return any(compare_digest(api_key, key) for key in Config.API_KEYS)
 
 def is_maintenance_mode() -> bool:
     """Check if application is in maintenance mode"""
@@ -495,32 +485,36 @@ async def delete_code() -> None:
 
 # ─── Validation Functions ────────────────────────────────────────────────────
 
-def format_phone_number(phone: str) -> Optional[str]:
-    """Enhanced phone number formatting with validation"""
+def format_phone_number(phone: str) -> Tuple[Optional[str], str]:
+    """Format and validate phone number to international E.164 format"""
     if is_test_mode():
         phone = os.getenv("DUMMY_PHONE")
 
     if not phone:
-        return None
-
-    
+        return None, "Phone number is required"
     phone = phone.strip().replace(" ", "").replace("-", "")
-    
-    # Handle different formats
+
+    # Normalize BD formats
     if phone.startswith("8801") and len(phone) == 13:
         phone = "+" + phone
     elif phone.startswith("01") and len(phone) == 11:
         phone = "+88" + phone
     elif not phone.startswith("+"):
-        return None
-    
+        return None, "Phone number must start with + or be a valid local format"
+
     try:
         number = phonenumbers.parse(phone, None)
         if not phonenumbers.is_valid_number(number):
-            return None
-        return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)
+            return None, "Invalid phone number"
+
+        number_type = phonenumbers.number_type(number)
+        if number_type not in [phonenumbers.PhoneNumberType.MOBILE, phonenumbers.PhoneNumberType.FIXED_LINE_OR_MOBILE]:
+            return None, "Phone number must be a mobile or landline number"
+        formatted = phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)
+        return formatted, ""
+
     except NumberParseException:
-        return None
+        return None, "Invalid phone number format"
 
 def validate_password(pwd: str) -> Tuple[bool, str]:
     """Enhanced password validation with security requirements"""
@@ -844,15 +838,6 @@ def require_api_key(func):
         return await func(*args, **kwargs)
     return wrapper
 
-def maintenance_mode_check(func):
-    """Decorator to check maintenance mode"""
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        if is_maintenance_mode():
-            return jsonify({"error": "Service temporarily unavailable"}), 503
-        return await func(*args, **kwargs)
-    return wrapper
-
 # ─── Health Check Functions ─────────────────────────────────────────────────
 
 async def check_database_health() -> Dict[str, Any]:
@@ -869,7 +854,7 @@ async def check_file_system_health() -> Dict[str, Any]:
     """Check file system health and permissions"""
     try:
         # Check if directories exist and are writable
-        for directory in [config.exam_dir, config.notices_dir]:
+        for directory in [config.exam_dir, config.notices_dir]: # TODO: Add more directories to check
             if not os.path.exists(directory):
                 os.makedirs(directory, exist_ok=True)
             
@@ -886,8 +871,16 @@ async def get_system_health() -> Dict[str, Any]:
     """Get comprehensive system health status"""
     db_health = await check_database_health()
     fs_health = await check_file_system_health()
+
+    status = "healthy"
+    if db_health["status"] == "unhealthy" and fs_health["status"] == "unhealthy":
+        status = "critical"
+    elif db_health["status"] == "unhealthy" or fs_health["status"] == "unhealthy":
+        status = "unhealthy"
     
     return {
+        "status": status,
+        "version": Config.SERVER_VERSION,
         "timestamp": datetime.now().isoformat(),
         "database": db_health,
         "file_system": fs_health,
@@ -1041,27 +1034,8 @@ def validate_email(email: str) -> Tuple[bool, str]:
     
     return True, ""
 
-def validate_phone_international(phone: str) -> Tuple[bool, str]:
-    """Validate international phone number format"""
-    if not phone:
-        return False, "Phone number is required"
-    
-    try:
-        number = phonenumbers.parse(phone, None)
-        if not phonenumbers.is_valid_number(number):
-            return False, "Invalid phone number"
-        
-        # Check if it's a mobile number
-        number_type = phonenumbers.number_type(number)
-        if number_type not in [phonenumbers.PhoneNumberType.MOBILE, phonenumbers.PhoneNumberType.FIXED_LINE_OR_MOBILE]:
-            return False, "Phone number must be a mobile or landline number"
-        
-        return True, ""
-    except NumberParseException:
-        return False, "Invalid phone number format"
-
-def validate_file_upload(filename: str, allowed_extensions: List[str], max_size_mb: int = 10) -> Tuple[bool, str]:
-    """Validate file upload with security checks"""
+async def validate_file_upload(filename: str, allowed_extensions: List[str], file_size: int) -> Tuple[bool, str]:
+    """Validate uploaded file with extension, name, and size checks"""
     if not filename:
         return False, "No file selected"
     
@@ -1073,17 +1047,17 @@ def validate_file_upload(filename: str, allowed_extensions: List[str], max_size_
     if extension not in allowed_extensions:
         return False, f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
     
-    # Check for suspicious file names
+    # Suspicious filename patterns
     suspicious_patterns = [
-        r'\.\./',  # Directory traversal
-        r'\.\.\\',  # Windows directory traversal
-        r'[<>:"|?*]',  # Invalid characters
-        r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)',  # Reserved names (allow extension after)
+        r'\.\./', r'\.\.\\', r'[<>:"|?*]',
+        r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)',
     ]
-    
     for pattern in suspicious_patterns:
         if re.search(pattern, filename, re.IGNORECASE):
             return False, "Invalid filename"
+
+    if file_size > Config.MAX_CONTENT_LENGTH:
+        return False, f"File size exceeds {Config.MAX_CONTENT_LENGTH / 1024 / 1024} MB"
     
     return True, ""
 
@@ -1196,34 +1170,77 @@ class MetricsCollector: # TODO: Implement this
 metrics_collector = MetricsCollector()
 
 # ─── Utility Functions ─────────────────────────────────────────────────────
-
-def generate_secure_token(length: int = 32) -> str:
-    """Generate a cryptographically secure token"""
-    import secrets
-    return secrets.token_urlsafe(length)
-
 def hash_sensitive_data(data: str) -> str:
     """Hash sensitive data for logging"""
-    import hashlib
     return hashlib.sha256(data.encode()).hexdigest()[:8]
 
-def is_safe_filename(filename: str) -> bool:
-    """Check if filename is safe for file system operations"""
-    dangerous_chars = ['<', '>', ':', '"', '|', '?', '*', '\\', '/']
-    return not any(char in filename for char in dangerous_chars)
+def get_encryption_key() -> bytes:
+    """Get the encryption key from config"""
+    key = Config.ENCRYPTION_KEY
+    if isinstance(key, str):
+        return key.encode()
+    return key
 
-def get_client_ip() -> str:
-    """Get client IP address with proxy support"""
-    # Check for forwarded headers
+def encrypt_sensitive_data(data: str) -> str:
+    """Encrypt sensitive data using Fernet encryption"""
+    if not data:
+        return data
+    
+    try:
+        fernet = Fernet(get_encryption_key())
+        encrypted_data = fernet.encrypt(data.encode())
+        return base64.urlsafe_b64encode(encrypted_data).decode()
+    except Exception as e:
+        log_event("encryption_error", "system", f"Failed to encrypt data: {str(e)}")
+        # In case of encryption failure, return original data (not recommended for production)
+        return data
+
+def decrypt_sensitive_data(encrypted_data: str) -> str:
+    """Decrypt sensitive data using Fernet encryption"""
+    if not encrypted_data:
+        return encrypted_data
+    
+    try:
+        fernet = Fernet(get_encryption_key())
+        decoded_data = base64.urlsafe_b64decode(encrypted_data.encode())
+        decrypted_data = fernet.decrypt(decoded_data)
+        return decrypted_data.decode()
+    except Exception as e:
+        log_event("decryption_error", "system", f"Failed to decrypt data: {str(e)}")
+        # In case of decryption failure, return original data (might be unencrypted legacy data)
+        return encrypted_data
+
+def encrypt_if_needed(data: str, should_encrypt: bool = True) -> str:
+    """Conditionally encrypt data based on should_encrypt flag"""
+    if should_encrypt and data:
+        return encrypt_sensitive_data(data)
+    return data
+
+def decrypt_if_needed(data: str, is_encrypted: bool = True) -> str:
+    """Conditionally decrypt data based on is_encrypted flag"""
+    if is_encrypted and data:
+        return decrypt_sensitive_data(data)
+    return data
+
+def get_client_info() -> Dict[str, Any]:
+    """Get client IP address and device metadata with fallback and proxy support."""
     forwarded_for = request.headers.get('X-Forwarded-For')
-    if forwarded_for:
-        return forwarded_for.split(',')[0].strip()
-    
     real_ip = request.headers.get('X-Real-IP')
+
     if real_ip:
-        return real_ip
-    
-    return request.remote_addr
+        ip_address = real_ip
+    elif forwarded_for:
+        ip_address = forwarded_for.split(',')[0].strip()
+    else:
+        ip_address = request.remote_addr
+
+    return {
+        "ip_address": ip_address,
+        "device_id": request.headers.get('X-Device-ID'),
+        "device_brand": request.headers.get('X-Device-Brand'),
+        "device_model": request.headers.get('X-Device-Model'),
+        "device_os": request.headers.get('X-Device-OS'),
+    }
 
 # ─── Configuration Validation ───────────────────────────────────────────────
 

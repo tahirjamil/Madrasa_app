@@ -15,7 +15,7 @@ from database import create_tables
 from database.database_utils import connect_to_db
 
 # API & Web Blueprints
-from helpers import is_maintenance_mode
+from helpers import is_maintenance_mode, get_system_health, initialize_application
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
@@ -89,10 +89,9 @@ async def create_tables_async():
 async def before_serving():
     # Set app start time for health checks
     app.start_time = time.time()
-    
-    # Create database tables if they don't exist
+
+    await initialize_application()
     await create_tables_async()
-    
     # Create single database connection for server lifetime
     app.db = await connect_to_db()
     if app.db is None:
@@ -193,35 +192,20 @@ async def favicon():
 async def health_check():
     """Health check endpoint for monitoring"""
     try:
-        # Basic health check
-        health_status = {
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
-            "version": "1.0.0",
+        # Advanced health check
+        health_status = await get_system_health()
+
+        # Extra health check
+        health_status.update({
             "uptime": time.time() - app.start_time if hasattr(app, 'start_time') else 0
-        }
-        
-        # Check database connection
-        try:
-            from database.database_utils import get_db_connection
-            conn = await get_db_connection()
-            if conn:
-                health_status["database"] = "connected"
-                conn.close()
-            else:
-                health_status["database"] = "disconnected"
-        except Exception as e:
-            health_status["database"] = f"error: {str(e)}"
-        
-        # Check maintenance mode
-        health_status["maintenance_mode"] = is_maintenance_mode()
-        
+        })
+
         return jsonify(health_status), 200
         
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({
-            "status": "unhealthy",
+            "status": "unknown",
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }), 500

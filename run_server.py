@@ -339,8 +339,11 @@ class HealthChecker:
             self.logger.warning(f"Health check failed: {e}")
             return False
     
-    def wait_for_server(self, timeout: int = 120) -> bool:
+    def wait_for_server(self, timeout: int = None) -> bool:
         """Wait for server to become available"""
+        if timeout is None:
+            timeout = self.config.config["monitoring"]["health_check_interval"]
+        
         start_time = time.time()
         attempts = 0
         max_attempts = timeout // 5  # Check every 5 seconds

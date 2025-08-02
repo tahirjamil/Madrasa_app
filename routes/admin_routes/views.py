@@ -12,8 +12,8 @@ from helpers import is_test_mode
 #  DIRS
 EXAM_DIR     = Config.EXAM_DIR
 NOTICES_DIR = Config.NOTICES_DIR
-MADRASA_IMG_DIR = Config.MADRASA_IMG_DIR
-PIC_INDEX_PATH       = os.path.join(MADRASA_IMG_DIR, 'index.json')
+GALLERY_DIR = Config.GALLERY_DIR
+PIC_INDEX_PATH       = os.path.join(GALLERY_DIR, 'index.json')
 
 # RE
 _FORBIDDEN_RE = re.compile(
@@ -736,7 +736,7 @@ async def events():
 # ------------------- Madrasa Pictures ------------------------
 
 # Ensure the folder & index exist
-os.makedirs(MADRASA_IMG_DIR, exist_ok=True)
+os.makedirs(GALLERY_DIR, exist_ok=True)
 if not os.path.exists(PIC_INDEX_PATH):
     with open(PIC_INDEX_PATH, 'w') as f:
         json.dump([], f)
@@ -770,7 +770,7 @@ async def madrasa_pictures():
     #         return redirect(url_for('admin_routes.madrasa_pictures'))
 
     #     filename = secure_filename(file.filename)
-    #     save_path = os.path.join(MADRASA_IMG_DIR, filename)
+    #     save_path = os.path.join(GALLERY_DIR, filename)
     #     file.save(save_path)
 
     #     # 3) Update index.json
@@ -820,7 +820,7 @@ async def madrasa_pictures():
 #         return redirect(url_for('admin_routes.madrasa_pictures'))
 
 #     # 2) Remove file
-#     pic_path = os.path.join(MADRASA_IMG_DIR, filename)
+#     pic_path = os.path.join(GALLERY_DIR, filename)
 #     if os.path.exists(pic_path):
 #         os.remove(pic_path)
 

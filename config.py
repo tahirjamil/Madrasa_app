@@ -1,4 +1,5 @@
 import os, secrets
+from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,8 +14,12 @@ class Config:
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
     
-    # Advanced Info
-    API_KEY = os.getenv("API_KEY")
+    # Private Keys
+    MOBILE_CLIENT_KEY = os.getenv("MOBILE_CLIENT_KEY")
+    WEB_CLIENT_KEY = os.getenv("WEB_CLIENT_KEY")
+    ADMIN_KEY = os.getenv("ADMIN_KEY")
+
+    API_KEYS = [MOBILE_CLIENT_KEY, WEB_CLIENT_KEY, ADMIN_KEY]
     
     # Session Security - Improved
     SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
@@ -28,6 +33,10 @@ class Config:
     
     RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
     RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
+    
+    # Data Encryption Key
+    # key = Fernet.generate_key() TODO: fix this
+    ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 
     # Upload Folders
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max
@@ -37,11 +46,12 @@ class Config:
     PROFILE_IMG_UPLOAD_FOLDER = os.path.join(STATIC_FOLDER, 'user_profile_img')
     EXAM_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
     NOTICES_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
-    MADRASA_IMG_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'madrasa_img')
+    GALLERY_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'gallery')
 
     # Extensions
     ALLOWED_NOTICE_EXTENSIONS = {'pdf', 'docx', 'png', 'jpg', 'jpeg'}
     ALLOWED_EXAM_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
+    ALLOWED_PROFILE_IMG_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'HEIC'}
 
     # MySQL Connection - Improved warnings
     MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
@@ -59,6 +69,8 @@ class Config:
     DUMMY_EMAIL = os.getenv("DUMMY_EMAIL")
     DUMMY_PASSWORD = os.getenv("DUMMY_PASSWORD")
 
+    # Server Version
+    SERVER_VERSION = "1.0.0"
     
     # Warn about default database credentials
     if not MYSQL_USER or MYSQL_USER == "admin":

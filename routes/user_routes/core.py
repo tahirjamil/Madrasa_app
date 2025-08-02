@@ -7,23 +7,16 @@ from PIL import Image
 from werkzeug.utils import secure_filename
 from database.database_utils import get_db_connection
 from config import Config
-from helpers import get_id, insert_person, format_phone_number, is_test_mode
+from helpers import (get_id, insert_person, format_phone_number, is_test_mode, validate_file_upload,
+    encrypt_sensitive_data, decrypt_sensitive_data, hash_sensitive_data)
 from quart_babel import gettext as _
 from logger import log_event_async as log_event
 
 # ========== Config ==========
-PROFILE_IMG_UPLOAD_FOLDER = Config.PROFILE_IMG_UPLOAD_FOLDER
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'HEIC'}
-
-os.makedirs(PROFILE_IMG_UPLOAD_FOLDER, exist_ok=True)
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 @user_routes.route('/static/user_profile_img/<filename>') # TODO fix in app
 async def uploaded_file(filename):
-    filename = secure_filename(filename)  # ✅ sanitize again during fetch
-    upload_folder = os.path.join(PROFILE_IMG_UPLOAD_FOLDER)
+    filename = secure_filename(filename)
+    upload_folder = os.path.join(Config.PROFILE_IMG_UPLOAD_FOLDER)
     file_path = os.path.join(upload_folder, filename)
 
     if not os.path.isfile(file_path):
@@ -51,31 +44,31 @@ async def exam_results_file(filename):
         
     return await send_from_directory(upload_folder, filename), 200
 
-@user_routes.route('/uploads/madrasa_pictures/<gender>/<folder>/<path:filename>')
-async def madrasa_pictures_file(gender, folder, filename):
+@user_routes.route('/uploads/gallery/<gender>/<folder>/<path:filename>')
+async def gallery_file(gender, folder, filename):
     folders = ['garden', 'library', 'office', 'roof_and_kitchen', 'mosque', 'studio', 'other']
     genders = ['male', 'female', 'both']
     filename = secure_filename(filename)
     if folder not in folders or gender not in genders:
         return jsonify({"message": "Invalid folder name"}), 404
     
-    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', gender, folder, filename)
+    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', gender, folder, filename)
     if os.path.isfile(file_path):
-        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', gender, folder), filename), 200
+        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', gender, folder), filename), 200
     else:
         return jsonify({"message": "File not found"}), 404
     
 
-@user_routes.route('/uploads/madrasa_pictures/classes/<folder>/<path:filename>')
-async def madrasa_pictures_classes_file(folder, filename):
+@user_routes.route('/uploads/gallery/classes/<folder>/<path:filename>')
+async def gallery_classes_file(folder, filename):
     folders = ['hifz', 'moktob', 'meshkat', 'daora', 'ulumul_hadith', 'ifta', 'madani_nesab', 'other']
     filename = secure_filename(filename)
     if folder not in folders:
         return jsonify({"message": "Invalid folder name"}), 404
     
-    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', 'classes', folder, filename)
+    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', 'classes', folder, filename)
     if os.path.isfile(file_path):
-        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'madrasa_pictures', 'classes', folder), filename), 200
+        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', 'classes', folder), filename), 200
     else:
         return jsonify({"message": "File not found"}), 404
 
@@ -92,11 +85,11 @@ async def add_person():
 
     data = await request.form
     image = (await request.files).get('image')
-    
+
     fullname = data.get('name_en')
     phone = data.get('phone')
-    formatted_phone = format_phone_number(phone)
-    get_acc_type = data.get('acc_type') or ""
+    
+    get_acc_type = data.get('acc_type', '')
 
     if not get_acc_type.endswith('s'):
         get_acc_type = (f"{get_acc_type}s")
@@ -105,8 +98,13 @@ async def add_person():
         get_acc_type = 'others'
 
     if not fullname or not phone or not get_acc_type:
-        log_event("add_people_missing", phone, "Missing fields")
+        log_event("add_people_missing", hash_sensitive_data(phone or "unknown"), "Missing fields")
         return jsonify({"message": _("fullname, phone and acc_type are required")}), 400
+
+    fullname = fullname.strip().lower()
+    formatted_phone, msg = format_phone_number(phone)
+    if not formatted_phone:
+        return jsonify({"message": msg}), 400
 
     person_id = get_id(formatted_phone, fullname)
     acc_type = get_acc_type.lower()
@@ -121,26 +119,29 @@ async def add_person():
 
     # Handle image upload
     if image and image.filename:
-        if allowed_file(image.filename):
-            filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
-            filename = filename_base + ".webp"  # save as .webp
-            upload_folder = os.path.join(Config.PROFILE_IMG_UPLOAD_FOLDER)
-            image_path = os.path.join(upload_folder, filename)
+        ok, msg = validate_file_upload(filename=image.filename, allowed_extensions=Config.ALLOWED_PROFILE_IMG_EXTENSIONS, file_size=image.content_length)
+        if not ok:
+            return jsonify({"message": msg}), 400
+
+        filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
+        filename = filename_base + ".webp"  # save as .webp
+        upload_folder = os.path.join(Config.PROFILE_IMG_UPLOAD_FOLDER)
+        image_path = os.path.join(upload_folder, filename)
         
-            try:
-                img = Image.open(image.stream)
-                img.verify()
-                image.stream.seek(0)
-                img = Image.open(image.stream)
-                img.save(image_path, "WEBP")
+        try:
+            img = Image.open(image.stream)
+            img.verify()
+            image.stream.seek(0)
+            img = Image.open(image.stream)
+            img.save(image_path, "WEBP")
 
                 
-            except Exception as e:
-                return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
+        except Exception as e:
+            return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
             
-            fields["image_path"] = BASE_URL + 'static/user_people_img/' + filename
-        else:
-            return jsonify({"message": "Invalid image file format"}), 400
+        fields["image_path"] = BASE_URL + 'static/user_people_img/' + filename
+    else:
+        return jsonify({"message": "Invalid image file format"}), 400
 
 
     def f(k): 
@@ -225,7 +226,7 @@ async def add_person():
     except aiomysql.IntegrityError:
         return jsonify({"message": _("User already exists with this ID")}), 409
     except Exception as e:
-        log_event("add_people_failed", phone, str(e))
+        log_event("add_people_failed", hash_sensitive_data(phone or "unknown"), str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
 
 @user_routes.route('/members', methods=['POST'])
@@ -267,7 +268,7 @@ async def get_info():
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
             }), 200
     except Exception as e:
-        log_event("get_members_failed", "NULL", str(e))
+        log_event("get_members_failed", "system", str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
         
 
@@ -303,7 +304,7 @@ async def get_routine():
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
             }), 200
     except Exception as e:
-        log_event("get_routine_failed", "NULL", str(e))
+        log_event("get_routine_failed", "system", str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
         
 
@@ -325,7 +326,7 @@ async def events():
             sql += " WHERE created_at > %s"
             params.append(cutoff)
         except ValueError:
-            log_event("get_events_failed", "NULL", f"Invalid timestamp: {lastfetched}")
+            log_event("get_events_failed", "system", f"Invalid timestamp: {lastfetched}")
             return jsonify({"error": "Invalid updatedSince format"}), 400
 
     sql += " ORDER BY event_id DESC"
@@ -336,7 +337,7 @@ async def events():
             await cursor.execute(sql, params)
             rows = await cursor.fetchall()
     except Exception as e:
-        log_event("get_events_failed", "NULL", str(e))
+        log_event("get_events_failed", "system", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
         
     now_dhaka = datetime.now(DHAKA)
@@ -392,7 +393,7 @@ async def get_exams():
             params.append(cutoff)
 
         except ValueError:
-            log_event("get_exams_failed", "NULL", f"Invalid timestamp: {lastfetched}")
+            log_event("get_exams_failed", "system", f"Invalid timestamp: {lastfetched}")
             return jsonify({"error": "Invalid updatedSince format"}), 400
     
     sql += " ORDER BY exam_id"
@@ -408,5 +409,5 @@ async def get_exams():
                 })
         
     except Exception as e:
-        log_event("get_events_failed", "NULL", str(e))
+        log_event("get_exams_failed", "system", str(e))
         return jsonify({"message": f"Database error: {e}"}), 500

@@ -9,25 +9,67 @@ INSERT INTO users (
 INSERT INTO peoples (
     person_id, user_id, member_id, student_id, name, date_of_birth, birth_certificate, national_id, 
     blood_group, gender, title1, present_address, address, permanent_address, father_or_spouse, father_name, 
-    mother_name, class, phone, guardian_number, degree, image_path
+    mother_name, class, phone, guardian_number, degree, image_path, acc_type
 ) VALUES (
-    9999, 9999, 'M9999', 'S9999', 'Dummy Name', '2000-01-01', '1234567890', '9876543210', 
+    9999, 9999, '9999', '9999', 'Dummy', '2000-01-01', '1234567890', '9876543210', 
     'O+', 'Male', 'Mawlana.', '123 Dummy Street', '123 Dummy Street', '456 Fake Avenue', 'Father Dummy', 'Father Dummy', 
-    'Mother Dummy', 'Daora', '+8801000000000', '+8801999999999', 'Mawlana', 'user_profile_img/dummy.webp'
+    'Mother Dummy', 'Daora', '+8801000000000', '+8801999999999', 'Mawlana', 'user_profile_img/dummy.webp', 'teacher'
 );
 
 -- Insert into translations table
 INSERT INTO translations (
     translation_text, en_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Name', 'Dummy Name', 'ডামি নাম', 'اسم وهمي',
-    'Dummy Address', 'ডামি ঠিকানা', 'اسم وهمي',
-    'Dummy Father', 'ডামি পিতা', 'اسم وهمي',
-    'Dummy Mother', 'ডামি মা', 'اسم وهمي',
-    'Dummy Class', 'ডামি ক্লাস', 'اسم وهمي',
-    'Dummy Degree', 'ডামি ডিগ্রি', 'اسم وهمي',
-    'Dummy Guardian Number', 'ডামি গার্ডিয়ন নম্বর', 'اسم وهمي',
-    'Dummy Image Path', 'ডামি ছবি পথ', 'اسم وهمي'
+    'Dummy', 'Dummy', 'ডামি', 'اسم'
+);
+
+
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Address', 'Dummy Address', 'ডামি ঠিকানা', 'اسم وهمي'
+);
+
+
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Father', 'Dummy Father', 'ডামি পিতা', 'اسم وهمي'
+);
+
+
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Mother', 'Dummy Mother', 'ডামি মা', 'اسم وهمي'
+);
+
+
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Class', 'Dummy Class', 'ডামি ক্লাস', 'اسم وهمي'
+);
+
+
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Degree', 'Dummy Degree', 'ডামি ডিগ্রি', 'اسم وهمي'
+);
+
+
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Guardian Number', 'Dummy Guardian Number', 'ডামি গার্ডিয়ন নম্বর', 'اسم وهمي'
+);
+
+
+INSERT INTO translations (
+    translation_text, en_text, bn_text, ar_text
+) VALUES (
+    'Dummy Image Path', 'Dummy Image Path', 'ডামি ছবি পথ', 'اسم وهمي'
 );
 
 
@@ -35,19 +77,19 @@ INSERT INTO translations (
 INSERT INTO transactions (
     transaction_id, user_id, type, month, amount, date
 ) VALUES (
-    9999, 'donation', 9, 9999, '2009-09-09'
+    9999, 9999, 'donations', 9, 9999, '2009-09-09'
 );
 
 -- Insert into transactions table (generic transaction)
 INSERT INTO transactions (
     transaction_id, user_id, type, amount, date
 ) VALUES (
-    9999, 'transaction', 9999, '2009-09-09'
+    999, 9999, 'fees', 9999, '2009-09-09'
 );
 
 -- Insert into payments table
 INSERT INTO payments (
     payment_id, user_id, food, special_food, reduced_fee, due_months
 ) VALUES (
-    9999, 1, 1, 9
+    9999, 9999, 1, 1, 99, 9
 );

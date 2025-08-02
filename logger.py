@@ -7,16 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 # Enhanced logger with better error handling and performance
-async def log_event(action, phone, message, level="INFO", metadata=None):
+async def log_event(action, phone_hash, phone_encrypted, additional_info, message, level="INFO", metadata=None):
     """
     Enhanced logging function with better error handling and metadata support
     
-    Args:
-        action (str): The action being logged
-        phone (str): The phone number or identifier
-        message (str): The log message
-        level (str): Log level (INFO, WARNING, ERROR, CRITICAL)
-        metadata (dict): Additional metadata to log
     """
     try:
         conn = await get_db_connection()
@@ -27,14 +21,16 @@ async def log_event(action, phone, message, level="INFO", metadata=None):
                 "timestamp": datetime.now().isoformat(),
                 "level": level,
                 "action": action,
-                "phone": phone,
+                "phone_hash": phone_hash,
+                "phone_encrypted": phone_encrypted,
+                "additional_info": additional_info,
                 "message": message
             })
             
             # Insert log with enhanced data
             await cursor.execute(
-                "INSERT INTO logs (action, phone, message, metadata) VALUES (%s, %s, %s, %s)",
-                (action, phone, message, json.dumps(log_metadata))
+                "INSERT INTO logs (action, phone_hash, phone_encrypted, additional_info, message, level, metadata) VALUES (%s, %s, %s, %s, %s, %s)",
+                (action, phone_hash, phone_encrypted, additional_info, message, json.dumps(log_metadata))
             )
 
             # Enhanced auto-prune with better performance
@@ -58,15 +54,13 @@ async def log_event(action, phone, message, level="INFO", metadata=None):
 
             await conn.commit()
             
-            # Also log to file for backup
-            await _log_to_file(action, phone, message, level, metadata)
             
     except Exception as e:
         # Fallback to file logging if database fails
         print(f"Database logging failed: {e}")
-        await _log_to_file(action, phone, message, level, metadata, error=True)
+        await _log_to_file(action, phone_hash, phone_encrypted, additional_info, message, level, metadata, error=True)
 
-async def _log_to_file(action, phone, message, level, metadata=None, error=False):
+async def _log_to_file(action, phone_hash, phone_encrypted, additional_info, message, level, metadata=None, error=False):
     """Log to file as backup when database logging fails"""
     try:
         log_dir = Path("logs")
@@ -78,7 +72,9 @@ async def _log_to_file(action, phone, message, level, metadata=None, error=False
             "timestamp": datetime.now().isoformat(),
             "level": level,
             "action": action,
-            "phone": phone,
+            "phone_hash": phone_hash,
+            "phone_encrypted": phone_encrypted,
+            "additional_info": additional_info,
             "message": message,
             "metadata": metadata or {},
             "source": "file_backup" if error else "database"
@@ -90,10 +86,11 @@ async def _log_to_file(action, phone, message, level, metadata=None, error=False
     except Exception as e:
         print(f"File logging also failed: {e}")
 
-def log_event_async(action, phone, message, level="INFO", metadata=None):
+def log_event_async(action, phone_hash, phone_encrypted, additional_info, message, level="INFO", metadata=None):
     """
     Enhanced non-blocking wrapper for log_event that schedules logging in the background.
     Can be called without await to avoid blocking the main flow.
+    
     """
     try:
         # Get current event loop, create one if none exists
@@ -105,76 +102,40 @@ def log_event_async(action, phone, message, level="INFO", metadata=None):
         
         # Schedule the task without waiting for it
         if loop.is_running():
-            asyncio.create_task(log_event(action, phone, message, level, metadata))
+            asyncio.create_task(log_event(action, phone_hash, phone_encrypted, additional_info, message, level, metadata))
         else:
             # If no loop is running, just print and skip logging
-            print(f"[{level}] Skipping log: {action} - {phone} - {message}")
+            print(f"[{level}] Skipping log: {action} - {phone_hash} - {phone_encrypted} - {additional_info} - {message}")
     except Exception as e:
         print(f"Failed to schedule log task: {e}")
 
-def log_event_sync(action, phone, message, level="INFO", metadata=None):
+def log_event_sync(action, phone_hash, phone_encrypted, additional_info, message, level="INFO", metadata=None):
     """
     Enhanced synchronous wrapper that runs the logging operation and waits for completion.
     Use sparingly as it will block the calling thread.
+
     """
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(log_event(action, phone, message, level, metadata))
+        loop.run_until_complete(log_event(action, phone_hash, phone_encrypted, additional_info, message, level, metadata))
         loop.close()
     except Exception as e:
         print(f"Sync logging failed: {e}")
 
-# New utility functions for different log levels
-def log_info(action, phone, message, metadata=None):
+# Utility functions for different log levels with backward compatibility
+def log_info(action, phone_hash, phone_encrypted, additional_info, message, metadata=None):
     """Log info level message"""
-    log_event_async(action, phone, message, "INFO", metadata)
+    log_event_async(action, phone_hash, phone_encrypted, additional_info, message, "INFO", metadata)
 
-def log_warning(action, phone, message, metadata=None):
+def log_warning(action, phone_hash, phone_encrypted, additional_info, message, metadata=None):
     """Log warning level message"""
-    log_event_async(action, phone, message, "WARNING", metadata)
+    log_event_async(action, phone_hash, phone_encrypted, additional_info, message, "WARNING", metadata)
 
-def log_error(action, phone, message, metadata=None):
+def log_error(action, phone_hash, phone_encrypted, additional_info, message, metadata=None):
     """Log error level message"""
-    log_event_async(action, phone, message, "ERROR", metadata)
+    log_event_async(action, phone_hash, phone_encrypted, additional_info, message, "ERROR", metadata)
 
-def log_critical(action, phone, message, metadata=None):
+def log_critical(action, phone_hash, phone_encrypted, additional_info, message, metadata=None):
     """Log critical level message"""
-    log_event_async(action, phone, message, "CRITICAL", metadata)
-
-# Non-blocking wrapper that can be called without await
-def log_event_async(action, phone, message):
-    """
-    Non-blocking wrapper for log_event that schedules logging in the background.
-    Can be called without await to avoid blocking the main flow.
-    """
-    try:
-        # Get current event loop, create one if none exists
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        # Schedule the task without waiting for it
-        if loop.is_running():
-            asyncio.create_task(log_event(action, phone, message))
-        else:
-            # If no loop is running, just print and skip logging
-            print(f"Skipping log: {action} - {phone} - {message}")
-    except Exception as e:
-        print(f"Failed to schedule log task: {e}")
-
-# Synchronous wrapper for cases where we want to ensure logging completes
-def log_event_sync(action, phone, message):
-    """
-    Synchronous wrapper that runs the logging operation and waits for completion.
-    Use sparingly as it will block the calling thread.
-    """
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(log_event(action, phone, message))
-        loop.close()
-    except Exception as e:
-        print(f"Sync logging failed: {e}")
+    log_event_async(action, phone_hash, phone_encrypted, additional_info, message, "CRITICAL", metadata)

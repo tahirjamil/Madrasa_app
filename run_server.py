@@ -344,6 +344,10 @@ class HealthChecker:
         if timeout is None:
             timeout = self.config.config["monitoring"]["health_check_interval"]
         
+        # Add initial delay to allow server to start up
+        self.logger.info("Waiting for server to initialize...")
+        time.sleep(10)  # Wait 10 seconds before first health check
+        
         start_time = time.time()
         attempts = 0
         max_attempts = timeout // 5  # Check every 5 seconds

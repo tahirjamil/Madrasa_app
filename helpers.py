@@ -26,7 +26,7 @@ from werkzeug.datastructures import FileStorage
 
 from config import Config
 from database.database_utils import get_db_connection
-from logger import log_event
+from logger import log_event_async as log_event
 
 # Load environment variables
 load_dotenv()

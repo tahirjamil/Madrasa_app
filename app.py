@@ -90,7 +90,7 @@ async def before_serving():
     # Set app start time for health checks
     app.start_time = time.time()
 
-    await initialize_application()
+    initialize_application()
     await create_tables_async()
     # Create single database connection for server lifetime
     app.db = await connect_to_db()

@@ -1,3 +1,4 @@
+-- global tables
 CREATE TABLE IF NOT EXISTS translations (
                 translation_id      INT AUTO_INCREMENT PRIMARY KEY,
                 translation_text    VARCHAR(255)   UNIQUE    NOT NULL,
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS payments (
                 special_food BOOLEAN       NOT NULL,
                 reduced_fee   INT           DEFAULT 0    CHECK (reduced_fee >= 0),
                 due_months   INT           NOT NULL     CHECK (due_months >= 0),
+                tax           INT           NOT NULL     CHECK (due_months >= 0),
 
                 updated_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,

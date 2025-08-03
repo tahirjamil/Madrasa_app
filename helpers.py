@@ -613,7 +613,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
             log_event("get_id_error", phone, str(e))
             return None
 
-def check_required_fields(data: dict, required_keys: list) -> Optional[str]:
+def check_required_fields(data: dict, required_keys: list) -> Optional[str]: # TODO: Implement this on add_people
     for key in required_keys:
         if not data.get(key):
             return key  # Return the first missing key

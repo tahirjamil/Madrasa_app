@@ -17,8 +17,8 @@ async def payments():
     fullname = (data.get('fullname') or 'guest').strip()
 
     if is_test_mode():
-        fullname = Config.dummy_fullname
-        phone = Config.dummy_phone
+        fullname = Config.DUMMY_FULLNAME
+        phone = Config.DUMMY_PHONE
 
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
@@ -69,8 +69,8 @@ async def get_transactions():
     lastfetched      = data.get('updatedSince')
     
     if is_test_mode():
-        fullname = Config.dummy_fullname
-        phone = Config.dummy_phone
+        fullname = Config.DUMMY_FULLNAME
+        phone = Config.DUMMY_PHONE
 
     if not phone or not fullname or not transaction_type:
         log_event("payment_missing_fields", hash_sensitive_data(phone or "unknown"),
@@ -154,7 +154,7 @@ async def pay_sslcommerz():
 
     # fallback dummy email .
     if not email:
-       email = "user@no-reply.annurmadrasa.com"
+       email = Config.DUMMY_EMAIL
 
     if not transaction_type or amount is None:
         log_event("payment_missing_fields", hash_sensitive_data(phone), "Missing payment info")

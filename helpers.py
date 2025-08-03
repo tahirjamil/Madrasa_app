@@ -613,10 +613,18 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
             log_event("get_id_error", phone, str(e))
             return None
 
+def check_required_fields(data: dict, required_keys: list) -> Optional[str]:
+    for key in required_keys:
+        if not data.get(key):
+            return key  # Return the first missing key
+    return None
+
 async def insert_person(fields: Dict[str, Any], acc_type: str, phone: str) -> None:
     """Enhanced person insertion with error handling"""
     if is_test_mode():
         return None
+
+    fields = {k: v.strip() if isinstance(v, str) else v for k, v in fields.items()}
     
     async with get_db_context() as conn:
         try:
@@ -634,7 +642,7 @@ async def insert_person(fields: Dict[str, Any], acc_type: str, phone: str) -> No
                 # UPSERT for peoples
                 sql = f"""
                     INSERT INTO peoples ({columns}) 
-                    VALUES ({placeholders}) 
+                    VALUES ({placeholders}) AS new
                     ON DUPLICATE KEY UPDATE {updates}
                 """
                 await cursor.execute(sql, list(fields.values()))

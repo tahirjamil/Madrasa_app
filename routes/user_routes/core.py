@@ -8,9 +8,9 @@ from werkzeug.utils import secure_filename
 from database.database_utils import get_db_connection
 from config import Config
 from helpers import (get_id, insert_person, format_phone_number, is_test_mode, validate_file_upload,
-    encrypt_sensitive_data, decrypt_sensitive_data, hash_sensitive_data)
+    encrypt_sensitive_data, hash_sensitive_data)
 from quart_babel import gettext as _
-from logger import log_event_async as log_event
+from logger import log_critical, log_error
 
 # ========== Config ==========
 @user_routes.route('/static/user_profile_img/<filename>') # TODO fix in app
@@ -94,11 +94,12 @@ async def add_person():
     if not get_acc_type.endswith('s'):
         get_acc_type = (f"{get_acc_type}s")
 
-    if not get_acc_type in ['admins','students','teachers', 'staffs','others','badri_members', 'donors']:
+    VALID_ACCOUNT_TYPES = ['admins', 'students', 'teachers', 'staffs', 'others', 'badri_members', 'donors']
+    if not get_acc_type in VALID_ACCOUNT_TYPES:
         get_acc_type = 'others'
 
     if not fullname or not phone or not get_acc_type:
-        log_event("add_people_missing", hash_sensitive_data(phone or "unknown"), "Missing fields")
+        log_error(action="add_people_missing", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Missing fields")
         return jsonify({"message": _("fullname, phone and acc_type are required")}), 400
 
     fullname = fullname.strip().lower()
@@ -139,7 +140,7 @@ async def add_person():
         except Exception as e:
             return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
             
-        fields["image_path"] = BASE_URL + 'static/user_people_img/' + filename
+        fields["image_path"] = BASE_URL + '/uploads/profile_pics/' + filename
     else:
         return jsonify({"message": "Invalid image file format"}), 400
 
@@ -152,7 +153,8 @@ async def add_person():
         required = [
             'name_en', 'name_bn', 'name_ar', 'date_of_birth',
             'birth_certificate', 'blood_group', 'gender',
-            'source', 'present_address', 'permanent_address',
+            'source', 'present_address', 'present_address_hash', 'present_address_encrypted', 
+            'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
             'father_en', 'father_bn', 'father_ar',
             'mother_en', 'mother_bn', 'mother_ar',
             'class', 'phone', 'student_id', 'guardian_number'
@@ -167,7 +169,8 @@ async def add_person():
         required = [
             'name_en', 'name_bn', 'name_ar', 'date_of_birth',
             'national_id', 'blood_group', 'gender',
-            'title1', 'present_address', 'permanent_address',
+            'title1', 'present_address', 'present_address_hash', 'present_address_encrypted',
+            'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
             'father_en', 'father_bn', 'father_ar',
             'mother_en', 'mother_bn', 'mother_ar',
             'phone'
@@ -183,7 +186,8 @@ async def add_person():
         required = [
             'name_en', 'name_bn', 'name_ar', 'date_of_birth',
             'national_id', 'blood_group',
-            'title2', 'present_address', 'permanent_address',
+            'title2', 'present_address', 'present_address_hash', 'present_address_encrypted',
+            'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
             'father_en', 'father_bn', 'father_ar',
             'mother_en', 'mother_bn', 'mother_ar',
             'phone'
@@ -203,11 +207,21 @@ async def add_person():
         fields["date_of_birth"] = f("date_of_birth")
 
         optional = [
-            "source", "present_address",
+            "source", "present_address", "present_address_hash", "present_address_encrypted",
             "blood_group", "gender", "degree"
         ]
         fields.update({k: f(k) for k in optional if f(k)})
 
+    ENCRYPTED_FIELDS = ["present_address_encrypted", "permanent_address_encrypted", "national_id_encrypted", "birth_certificate_encrypted"]
+    HASH_FIELDS = ["present_address_hash", "permanent_address_hash", "national_id_hash", "birth_certificate_hash"]
+
+    for ef in ENCRYPTED_FIELDS:
+        if ef in fields and fields[ef]:
+            fields[ef] = encrypt_sensitive_data(fields[ef])
+
+    for hf in HASH_FIELDS:
+        if hf in fields and fields[hf]:
+            fields[hf] = hash_sensitive_data(fields[hf])
 
     try:
         async with conn.cursor() as cursor:
@@ -226,7 +240,7 @@ async def add_person():
     except aiomysql.IntegrityError:
         return jsonify({"message": _("User already exists with this ID")}), 409
     except Exception as e:
-        log_event("add_people_failed", hash_sensitive_data(phone or "unknown"), str(e))
+        log_critical(action="add_people_failed", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message=str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
 
 @user_routes.route('/members', methods=['POST'])
@@ -268,7 +282,7 @@ async def get_info():
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
             }), 200
     except Exception as e:
-        log_event("get_members_failed", "system", str(e))
+        log_critical(action="get_members_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
         
 
@@ -304,7 +318,7 @@ async def get_routine():
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
             }), 200
     except Exception as e:
-        log_event("get_routine_failed", "system", str(e))
+        log_critical(action="get_routine_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=str(e))
         return jsonify({"message": _("Database error: %(error)s") % {"error": str(e)}}), 500
         
 
@@ -326,7 +340,7 @@ async def events():
             sql += " WHERE created_at > %s"
             params.append(cutoff)
         except ValueError:
-            log_event("get_events_failed", "system", f"Invalid timestamp: {lastfetched}")
+            log_error(action="get_events_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=f"Invalid timestamp: {lastfetched}")
             return jsonify({"error": "Invalid updatedSince format"}), 400
 
     sql += " ORDER BY event_id DESC"
@@ -337,7 +351,7 @@ async def events():
             await cursor.execute(sql, params)
             rows = await cursor.fetchall()
     except Exception as e:
-        log_event("get_events_failed", "system", str(e))
+        log_critical(action="get_events_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=str(e))
         return jsonify({"message": f"Database error: {e}"}), 500
         
     now_dhaka = datetime.now(DHAKA)
@@ -393,7 +407,7 @@ async def get_exams():
             params.append(cutoff)
 
         except ValueError:
-            log_event("get_exams_failed", "system", f"Invalid timestamp: {lastfetched}")
+            log_error(action="get_exams_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=f"Invalid timestamp: {lastfetched}")
             return jsonify({"error": "Invalid updatedSince format"}), 400
     
     sql += " ORDER BY exam_id"
@@ -409,5 +423,5 @@ async def get_exams():
                 })
         
     except Exception as e:
-        log_event("get_exams_failed", "system", str(e))
+        log_critical(action="get_exams_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=str(e))
         return jsonify({"message": f"Database error: {e}"}), 500

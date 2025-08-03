@@ -3,15 +3,21 @@ from . import user_routes
 from werkzeug.security import generate_password_hash, check_password_hash
 from aiomysql import IntegrityError
 from database.database_utils import get_db_connection
-from logger import log_event_async as log_event
+from logger import log_error, log_info, log_warning, log_critical
 from helpers import (validate_fullname, validate_password, validate_email,
     send_sms, format_phone_number, is_device_unsafe, is_test_mode, get_client_info,
-    generate_code, check_code, send_email, get_email, require_api_key,
-    encrypt_sensitive_data, decrypt_sensitive_data, hash_sensitive_data)
+    generate_code, check_code, send_email, get_email,
+    encrypt_sensitive_data, hash_sensitive_data)
 from quart_babel import gettext as _
 import datetime, os, aiomysql
 from datetime import timedelta, datetime as dt
 from config import Config
+
+# Configuration constants
+SMS_LIMIT_PER_HOUR = int(os.getenv("SMS_LIMIT_PER_HOUR", "5"))
+EMAIL_LIMIT_PER_HOUR = int(os.getenv("EMAIL_LIMIT_PER_HOUR", "15"))
+ACCOUNT_DELETION_DAYS = int(os.getenv("ACCOUNT_DELETION_DAYS", "30"))
+ACCOUNT_REACTIVATION_DAYS = int(os.getenv("ACCOUNT_REACTIVATION_DAYS", "14"))
 
 
 # ========== Routes ==========
@@ -33,7 +39,7 @@ async def register():
             }), 201
     
     # Device Verify
-    client_info = get_client_info() # TODO: fix this
+    # client_info = get_client_info() # TODO: fix this
     device_id = data.get("device_id")
     ip_address = data.get("ip_address")
 
@@ -41,7 +47,7 @@ async def register():
         return jsonify({"message": _("Unknown device detected")}), 400
 
     if not fullname or not phone or not password or not user_code:
-        log_event("auth_missing_fields", hash_sensitive_data(phone or "unknown"), "Phone or fullname missing")
+        log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields including code are required")}), 400
 
     fullname = fullname.strip().lower()
@@ -55,13 +61,19 @@ async def register():
     if validate_code:
         return validate_code
 
+    # Hash and encrypt sensitive data
     hashed_password = generate_password_hash(password)
+    hashed_phone = hash_sensitive_data(formatted_phone)
+    encrypted_phone = encrypt_sensitive_data(formatted_phone)
     encrypted_email = encrypt_sensitive_data(email) if email else None
+    hashed_email = hash_sensitive_data(email) if email else None
+
+    # Insert user into database
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         try:
             await cursor.execute(
-                "INSERT INTO users (fullname, phone, password, email, ip_address) VALUES (%s, %s, %s, %s, %s)",
-                (fullname, formatted_phone, hashed_password, encrypted_email, ip_address)
+                "INSERT INTO users (fullname, phone, phone_hash, phone_encrypted, password_hash, email, email_hash, email_encrypted, ip_address) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (fullname, formatted_phone, hashed_phone, encrypted_phone, hashed_password, email, hashed_email, encrypted_email, ip_address)
             )
             await conn.commit()
 
@@ -108,7 +120,8 @@ async def register():
         except IntegrityError:
             return jsonify({"message": _("User with this fullname and phone already registered")}), 400
         except Exception as e:
-            return jsonify({"message": _("Internal server error"), "error": str(e)}), 500
+            log_critical(action="auth_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
+            return jsonify({"message": _("Internal server error")}), 500
 
 
 @user_routes.route("/login", methods=["POST"])
@@ -121,12 +134,12 @@ async def login():
     password = data.get("password")
 
     if is_test_mode():
-        fullname = Config.dummy_fullname
-        phone = Config.dummy_phone
-        password = Config.dummy_password
+        fullname = Config.DUMMY_FULLNAME
+        phone = Config.DUMMY_PHONE
+        password = Config.DUMMY_PASSWORD
 
     # Device Verify
-    client_info = get_client_info() # TODO: fix this
+    # client_info = get_client_info() # TODO: fix this
     device_id = data.get("device_id")
     ip_address = data.get("ip_address")
 
@@ -134,38 +147,39 @@ async def login():
         return jsonify({"message": _("Unknown device detected")}), 400
 
     if not fullname or not phone or not password:
-        log_event("auth_missing_fields", hash_sensitive_data(phone or "unknown"), "Phone or fullname missing")
+        log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields are required")}), 400
 
     fullname = fullname.strip().lower()
     password = password.strip()
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
-        log_event("auth_invalid_phone", hash_sensitive_data(phone or "unknown"), "Invalid phone format")
+        log_error(action="auth_invalid_phone", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Invalid phone format")
         return jsonify({"message": msg}), 400
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
-                "SELECT user_id, deactivated_at, password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                "SELECT user_id, deactivated_at, password_hash FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                 (formatted_phone, fullname)
             )
             user = await cursor.fetchone()
 
             if not user:
-                log_event("auth_user_not_found", hash_sensitive_data(formatted_phone), f"User {hash_sensitive_data(fullname)} not found")
+                log_error(action="auth_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} not found")
                 return jsonify({"message": _("User not found")}), 404
             
-            if not check_password_hash(user["password"], password):
-                log_event("auth_incorrect_password", hash_sensitive_data(formatted_phone), "Incorrect password")
+            if not check_password_hash(user["password_hash"], password):
+                log_warning(action="auth_incorrect_password", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Incorrect password")
                 return jsonify({"message": _("Incorrect password")}), 401
             
             if user["deactivated_at"] is not None:
-                return jsonify({"action": "deactivate", "message": _("Account is deactivated")}), 403 #TODO: in app
+                log_warning(action="auth_account_deactivated", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Account is deactivated")
+                return jsonify({"action": "deactivate", "message": _("Account is deactivated")}), 403 # TODO: setup in app
             
             await cursor.execute(
                 """
-                SELECT u.user_id, u.fullname, u.phone, p.acc_type AS userType, p.*
+                SELECT u.user_id, u.fullname, u.phone, p.acc_type AS userType, p.*,
 
                 tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
                 taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
@@ -186,7 +200,7 @@ async def login():
             info = await cursor.fetchone()
 
             if not info or not info.get("phone") or not info.get("user_id"):
-                log_event("auth_additional_info_required", hash_sensitive_data(formatted_phone), "Missing profile info")
+                log_warning(action="auth_additional_info_required", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Missing profile info")
                 return jsonify({
                     "error": "incomplete_profile", 
                     "message": _("Additional info required")
@@ -200,29 +214,27 @@ async def login():
             return jsonify({"success": True, "message": _("Login successful"), "info": info}), 200
             
     except Exception as e:
-        log_event("auth_error", hash_sensitive_data(formatted_phone or "unknown"), str(e))
+        log_critical(action="auth_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
         return jsonify({"message": _("Internal server error")}), 500
 
 @user_routes.route("/send_code", methods=["POST"])
 async def send_verification_code():
 
     conn = await get_db_connection()
-    SMS_LIMIT_PER_HOUR = 5
-    EMAIL_LIMIT_PER_HOUR = 15
-
+    
     data = await request.get_json()
     phone = data.get("phone")
-    fullname = data.get("fullname").strip().lower()
+    fullname = data.get("fullname")
     password = data.get("password")
     lang = data.get("language") or "en"
     signature = data.get("app_signature")
     email = data.get("email")
 
-    if is_test_mode() or code == "123456":
-        return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": Config.dummy_email}}), 200
+    if is_test_mode():
+        return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": Config.DUMMY_EMAIL}}), 200
 
     # Device Verify
-    client_info = get_client_info() # TODO: fix this
+    # client_info = get_client_info() # TODO: fix this
     device_id = data.get("device_id")
     ip_address = data.get("ip_address")
 
@@ -230,14 +242,22 @@ async def send_verification_code():
         return jsonify({"message": _("Unknown device detected")}), 400
 
     if not phone or not fullname:
+        log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("Phone number and fullname required")}), 400
     
+    # Hash and encrypt sensitive data
     fullname = fullname.strip().lower()
     email = email.strip() if email else None
     password = password.strip() if password else None
+
+    # Format phone number
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
+        log_error(action="auth_invalid_phone", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Invalid phone format")
         return jsonify({"message": msg}), 400
+
+    encrypted_phone = encrypt_sensitive_data(phone)
+    hashed_phone = hash_sensitive_data(phone)
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -273,15 +293,13 @@ async def send_verification_code():
             
             # Check if rate limit exceeded for all methods
             if count >= max(SMS_LIMIT_PER_HOUR, EMAIL_LIMIT_PER_HOUR):
-                log_event("rate_limit_blocked", hash_sensitive_data(phone), "All verification methods limit exceeded")
+                log_warning(action="rate_limit_blocked", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="All verification methods limit exceeded")
                 return jsonify({"message": _("Limit reached. Try again later.")}), 429
 
             # Send verification code
             code = generate_code()
-            sql = "INSERT INTO verifications (phone, code, ip_address) VALUES (%s, %s, %s)"
-            params = (formatted_phone, code, ip_address)
-            
-            verification_sent = False
+            sql = "INSERT INTO verifications (phone, phone_hash, phone_encrypted, code, ip_address) VALUES (%s, %s, %s, %s, %s)"
+            params = (formatted_phone, hashed_phone, encrypted_phone, code, ip_address)
             
             # Try SMS first if under SMS limit
             if count < SMS_LIMIT_PER_HOUR:
@@ -298,12 +316,12 @@ async def send_verification_code():
                     return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": email}}), 200
 
             # If we get here, both methods failed or no email provided
-            log_event("verification_failed", hash_sensitive_data(phone), f"count={count}")
+            log_critical(action="verification_failed", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=f"count={count}")
             return jsonify({"message": _("Failed to send verification code")}), 500
 
     except Exception as e:
-        log_event("internal_error", hash_sensitive_data(formatted_phone or "unknown"), str(e))
-        return jsonify({"message": _("Internal error: %(error)s") % {"error": str(e)}}), 500
+        log_critical(action="internal_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
+        return jsonify({"message": _("Internal server error")}), 500
     
 
 @user_routes.route("/reset_password", methods=["POST"])
@@ -326,7 +344,7 @@ async def reset_password():
             return jsonify({"success": True, "message": "App in test mode"}), 201
         
     # Device Verify
-    client_info = get_client_info() # TODO: fix this
+    # client_info = get_client_info() # TODO: fix this
     device_id = data.get("device_id")
     ip_address = data.get("ip_address")
 
@@ -335,7 +353,7 @@ async def reset_password():
     
     # Check required fields (except old_password and code, because one of them must be present)
     if not all([phone, fullname]):
-        log_event("auth_missing_fields", hash_sensitive_data(phone or "unknown"), "Phone or fullname missing")
+        log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("Phone, Fullname, and New Password are required")}), 400
 
     fullname = fullname.strip().lower()
@@ -343,6 +361,7 @@ async def reset_password():
     new_password = new_password.strip() if new_password else None
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
+        log_error(action="auth_invalid_phone", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Invalid phone format")
         return jsonify({"message": msg}), 400
 
     # If old password is not provided, use code verification instead
@@ -356,7 +375,7 @@ async def reset_password():
     # Fetch the user
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         await cursor.execute(
-            "SELECT password FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+            "SELECT password_hash FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
             (formatted_phone, fullname)
         )
         result = await cursor.fetchone()
@@ -366,17 +385,17 @@ async def reset_password():
 
         # If old_password is given, check it
         if old_password:
-            if not check_password_hash(result['password'], old_password):
+            if not check_password_hash(result['password_hash'], old_password):
                 return jsonify({"message": _("Incorrect old password")}), 401
             
         hashed_password = generate_password_hash(new_password)
 
-        if check_password_hash(result['password'], new_password):
+        if check_password_hash(result['password_hash'], new_password):
             return jsonify({"message": _("New password cannot be the same as the current password.")}), 400
         
         # Update the password
         await cursor.execute(
-            "UPDATE users SET password = %s, ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+            "UPDATE users SET password_hash = %s, ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
             (hashed_password, ip_address, fullname, formatted_phone)
         )
         await conn.commit()
@@ -385,7 +404,7 @@ async def reset_password():
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"]) # TODO: remove GET
 async def manage_account(page_type):
 
-    if page_type not in ("remove", "deactivate"):
+    if page_type not in ("remove", "deactivate", "delete"):
         return jsonify({"message": _("Invalid page type")}), 400
 
     if request.method == "GET":
@@ -397,18 +416,19 @@ async def manage_account(page_type):
 
     # POST: gather input
     data     = request.get_json() if request.method == "POST" else request.form
-    phone    = data.get("phone", "").strip()
-    fullname = (data.get("fullname") or "").strip().lower()
-    password = data.get("password", "")
-    email    = data.get("email", "")
+    phone    = data.get("phone")
+    fullname = data.get("fullname")
+    password = data.get("password")
+    email    = data.get("email")
 
     if is_test_mode():
-        fullname = Config.dummy_fullname
-        phone = Config.dummy_phone
-        password = Config.dummy_password
+        fullname = Config.DUMMY_FULLNAME
+        phone = Config.DUMMY_PHONE
+        password = Config.DUMMY_PASSWORD
 
 
     if not phone or not fullname or not password:
+        log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields are required")}), 400
 
     fullname = fullname.strip().lower()
@@ -416,6 +436,7 @@ async def manage_account(page_type):
     email = email.strip() if email else None
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
+        log_error(action="auth_invalid_phone", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Invalid phone format")
         return jsonify({"message": msg}), 400
 
     # lookup user
@@ -423,18 +444,18 @@ async def manage_account(page_type):
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
-                "SELECT user_id, password FROM users "
+                "SELECT user_id, password_hash FROM users "
                 "WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (formatted_phone, fullname)
             )
             user = await cursor.fetchone()
 
-            if not user or not check_password_hash(user["password"], password):
-                log_event("delete_invalid_credentials", hash_sensitive_data(formatted_phone), "Invalid credentials")
+            if not user or not check_password_hash(user["password_hash"], password):
+                log_error(action="delete_invalid_credentials", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Invalid credentials")
                 return jsonify({"message": _("Invalid login details")}), 401
 
             # prepare confirmation message
-            deletion_days = 30
+            deletion_days = ACCOUNT_DELETION_DAYS
             msg     = _("Your account has been successfully put for deletion.\nIt will take %(days)d days to fully delete your account.\nIf it wasn't you, please contact us for account recovery.\n\n@An-Nur.app") % {"days": deletion_days}
             subject = _("Account Deletion Confirmation")
             if page_type == "Deactivate":
@@ -449,15 +470,14 @@ async def manage_account(page_type):
                     return jsonify({"message": msg}), 400
                 if not send_email(to_email=email, subject=subject, body=msg):
                     errors += 1
-                    log_event("notify_email_failed", hash_sensitive_data(formatted_phone), "Email send failed")
             else:
                 errors += 1
 
             if not send_sms(phone=formatted_phone, msg=msg):
                 errors += 1
-                log_event("notify_sms_failed", hash_sensitive_data(formatted_phone), "SMS send failed")
 
             if errors > 1:
+                log_critical(action="notify_failed", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Could not send confirmation. Try again later.")
                 return jsonify({"message": _("Could not send confirmation. Try again later.")}), 500
 
             # schedule deactivation/deletion
@@ -465,7 +485,7 @@ async def manage_account(page_type):
             scheduled = now + timedelta(days=deletion_days)
             sql = "UPDATE users SET deactivated_at=%s"
             params = [now]
-            if page_type == "remove":
+            if page_type == "remove" or page_type == "delete":
                 sql += ", scheduled_deletion_at=%s"
                 params.append(scheduled)
             sql += " WHERE user_id=%s"
@@ -475,16 +495,16 @@ async def manage_account(page_type):
             await conn.commit()
 
         # success response
-        if page_type == "remove":
-            log_event("deletion_scheduled", hash_sensitive_data(formatted_phone), f"User {hash_sensitive_data(fullname)} scheduled for deletion")
+        if page_type == "remove" or page_type == "delete":
+            log_warning(action="deletion_scheduled", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} scheduled for deletion")
             return jsonify({"success": True, "message": _("Account deletion initiated. Check your messages.")}), 200
 
-        log_event("account_deactivated", hash_sensitive_data(formatted_phone), f"User {hash_sensitive_data(fullname)} deactivated")
+        log_warning(action="account_deactivated", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} deactivated")
         return jsonify({"success": True, "message": _("Account deactivated successfully.")}), 200
 
     except Exception as e:
-        log_event("manage_account_error", hash_sensitive_data(phone or "unknown"), str(e))
-        return jsonify({"message": _("An error occurred")}), 500
+        log_critical(action="manage_account_error", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message=str(e))
+        return jsonify({"message": _("Internal server error")}), 500
 
 @user_routes.route("/account/reactivate", methods=['POST'])
 async def undo_remove():
@@ -494,14 +514,16 @@ async def undo_remove():
     
     data = await request.get_json()
     phone = data.get("phone")
-    fullname = data.get("fullname", "").strip().lower()
+    fullname = data.get("fullname")
 
     if not phone or not fullname:
+        log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields are required")}), 400
 
     fullname = fullname.strip().lower()
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
+        log_error(action="auth_invalid_phone", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Invalid phone format")
         return jsonify({"message": msg}), 400
 
     conn = await get_db_connection()
@@ -517,7 +539,7 @@ async def undo_remove():
                 return jsonify({"message": "No deactivated account found"}), 404
 
             deactivated_at = user["deactivated_at"]
-            if (datetime.datetime.now() - deactivated_at).days > 14 and user["scheduled_deletion_at"]:
+            if (datetime.datetime.now() - deactivated_at).days > ACCOUNT_REACTIVATION_DAYS and user["scheduled_deletion_at"]:
                 return jsonify({"message": "Undo period expired"}), 403
 
             await cursor.execute("""
@@ -529,20 +551,20 @@ async def undo_remove():
             await conn.commit()
         return jsonify({"success": True, "message": _("Account reactivated.")}), 200
     except Exception as e:
-        log_event("account_reactivation_failed", hash_sensitive_data(formatted_phone or "unknown"), str(e))
-        return jsonify({"message": _("Account reactivation failed.")}), 500
+        log_critical(action="account_reactivation_failed", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
+        return jsonify({"message": _("Internal server error")}), 500
 
 @user_routes.route("/account/check", methods=['POST'])
 async def get_account_status():
     data = await request.get_json()
 
     if is_test_mode():
-        return jsonify({"success": True, "message": "App in test mode."}), 200
+        return jsonify({"success": True, "message": "App in test mode"}), 200
 
     LOGOUT_MSG = _("Session invalidated. Please log in again.")
     DEACTIVATE_MSG = _("Account is deactivated")
 
-    client_info = get_client_info() # TODO: fix this
+    # client_info = get_client_info() # TODO: fix this
     device_id = data.get("device_id")
     device_brand = data.get("device_brand")
     ip_address = data.get("ip_address")
@@ -552,14 +574,17 @@ async def get_account_status():
     fullname     = data.get("name_en")
 
     if not ip_address and not device_id and not device_brand:
+        log_critical(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Unknown device detected")
         return jsonify({"action": "block", "message": _("Unknown device detected")}), 400
 
     if not phone or not fullname:
+        log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="No account information provided")
         return jsonify({"success": True, "message": _("No account information provided.")}), 200
 
     fullname = fullname.strip().lower()
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
+        log_error(action="auth_invalid_phone", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Invalid phone format")
         return jsonify({"message": msg}), 400
 
     checks = {
@@ -602,7 +627,7 @@ async def get_account_status():
 
     for c in checks:
         if checks[c] is None or checks[c] == "":
-            log_event("account_check_missing_field", hash_sensitive_data(ip_address or "unknown"), f"Field {c} is missing")
+            log_info(action="account_check_missing_field", trace_info=ip_address or "unknown", trace_info_hash=hash_sensitive_data(ip_address or "unknown"), trace_info_encrypted=encrypt_sensitive_data(ip_address or "unknown"), message=f"Field {c} is missing")
             return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
 
     conn = await get_db_connection()
@@ -624,17 +649,17 @@ async def get_account_status():
                     LEFT JOIN translations tfather ON tfather.translation_text = p.father_name
                     LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
 
-                    WHERE u.phone = %s and LOWER(u.fullname) = LOWER(%s)
+                    WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
             """, (formatted_phone, fullname))
             record = await cursor.fetchone()
 
         if not record:
-            log_event("account_check_not_found", hash_sensitive_data(ip_address or user_id or "unknown"), "No matching user")
+            log_error(action="account_check_not_found", trace_info=ip_address or user_id or "unknown", trace_info_hash=hash_sensitive_data(ip_address or user_id or "unknown"), trace_info_encrypted=encrypt_sensitive_data(ip_address or user_id or "unknown"), message="No matching user")
             return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
         # Check deactivation
         if record.get("deactivated_at"):
-            log_event("account_check_deactivated", record["user_id"], "Account deactivated")
+            log_warning(action="account_check_deactivated", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message="Account deactivated")
             return jsonify({"action": "deactivate", "message": DEACTIVATE_MSG}), 401
 
         # Compare fields
@@ -647,17 +672,17 @@ async def get_account_status():
                 try:
                     provided_date = dt.fromisoformat(provided).date()
                 except Exception:
-                    log_event("account_check_bad_date", record["user_id"], f"Bad date: {provided}")
+                    log_error(action="account_check_bad_date", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Bad date: {provided}")
                     return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
                 if db_val:
                     db_date = db_val.date() if isinstance(db_val, datetime.datetime) else db_val
                     if db_date != provided_date:
-                        log_event("account_check_mismatch", record["user_id"], f"Mismatch: {col}: {provided_date} != {db_date}, so {hash_sensitive_data(fullname)} logged out")
+                        log_warning(action="account_check_mismatch", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Mismatch: {col}: {provided_date} != {db_date}, so {hash_sensitive_data(fullname)} logged out")
                         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
             else:
                 # cast both to strings for comparison
                 if str(provided).strip() != str(db_val).strip():
-                    log_event("account_check_mismatch", record["user_id"], f"Mismatch: {col}: {hash_sensitive_data(str(provided))} != {hash_sensitive_data(str(db_val))}, so {hash_sensitive_data(fullname)} logged out")
+                    log_warning(action="account_check_mismatch", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Mismatch: {col}: {hash_sensitive_data(str(provided))} != {hash_sensitive_data(str(db_val))}, so {hash_sensitive_data(fullname)} logged out")
                     return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
         await cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND user_id = %s LIMIT 1", (device_id, device_brand, record["user_id"]))
@@ -680,11 +705,12 @@ async def get_account_status():
             await conn.commit()
         except Exception as e:
             await conn.rollback()
-            log_event("Saving interactions failed", hash_sensitive_data(formatted_phone or "unknown"), str(e))
+            log_critical(action="Saving interactions failed", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
+            # Continue execution even if interactions fail - don't block the main flow
                 
-            # all checks passed
+        # all checks passed
         return jsonify({"success": True, "message": _("Account is valid"), "user_id": record["user_id"]}), 200
 
     except Exception as e:
-        log_event("account_check_error", hash_sensitive_data(formatted_phone or "unknown"), str(e))
-        return jsonify({"message": _("Internal error")}), 500
+        log_critical(action="account_check_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
+        return jsonify({"message": _("Internal server error")}), 500

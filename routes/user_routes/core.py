@@ -212,8 +212,10 @@ async def add_person():
         ]
         fields.update({k: f(k) for k in optional if f(k)})
 
-    ENCRYPTED_FIELDS = ["present_address_encrypted", "permanent_address_encrypted", "national_id_encrypted", "birth_certificate_encrypted"]
-    HASH_FIELDS = ["present_address_hash", "permanent_address_hash", "national_id_hash", "birth_certificate_hash"]
+    madrasa_name = os.getenv("MADRASA_NAME")
+
+    ENCRYPTED_FIELDS = ["national_id_encrypted", "birth_certificate_encrypted"]
+    HASH_FIELDS = ["present_address_hash", "permanent_address_hash", "address_hash"]
 
     for ef in ENCRYPTED_FIELDS:
         if ef in fields and fields[ef]:
@@ -225,9 +227,9 @@ async def add_person():
 
     try:
         async with conn.cursor() as cursor:
-            await insert_person(fields, acc_type, phone)
+            await insert_person(madrasa_name, fields, acc_type, phone)
             await conn.commit()
-            await cursor.execute("SELECT image_path from peoples WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
+            await cursor.execute(f"SELECT image_path from {madrasa_name}.peoples WHERE LOWER(name_en) = %s AND phone = %s", (fullname, formatted_phone))
             row = await cursor.fetchone()
             img_path = row["image_path"] if row else None
             return jsonify({
@@ -252,21 +254,29 @@ async def get_info():
     # member_id_list = data.get('member_id')
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
+    madrasa_name = os.getenv("MADRASA_NAME")
+
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            sql = """SELECT tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+            sql = f"""SELECT tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
                     taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
-                    p.degree, p.gender,
                     tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+
+                    p.degree, p.gender,
                     p.blood_group,
                     p.phone, p.image_path AS picUrl, p.member_id, p.acc_type AS role,
-                    COALESCE(p.title1, p.title2, p.class) AS title
-                    FROM peoples p
+                    COALESCE(p.title1, p.title2, p.class) AS title,
+
+                    a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
+
+                    FROM {madrasa_name}.peoples p
+
+                    JOIN global.acc_types a ON a.user_id = p.user_id
                     
-                    JOIN translations tname ON tname.translation_text = p.name
-                    LEFT JOIN translations taddress ON taddress.translation_text = p.address
-                    LEFT JOIN translations tfather ON tfather.translation_text = p.father_name
-                    LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+                    JOIN global.translations tname ON tname.translation_text = p.name
+                    LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+                    LEFT JOIN global.translations tfather ON tfather.translation_text = p.father_name
+                    LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
 
                     WHERE p.member_id IS NOT NULL"""
             params = []
@@ -293,15 +303,17 @@ async def get_routine():
     lastfetched = data.get("updatedSince")
     corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
+    madrasa_name = os.getenv("MADRASA_NAME")
+
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            sql = """SELECT r.gender, r.class_group, r.class_level, r.weekday, r.serial,
+            sql = f"""SELECT r.gender, r.class_group, r.class_level, r.weekday, r.serial,
             tsubject.en_text AS subject_en, tsubject.bn_text AS subject_bn, tsubject.ar_text AS subject_ar, 
             tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar 
-            FROM routines r
+            FROM {madrasa_name}.routines r
 
-            JOIN translations tsubject ON tsubject.translation_text = r.subject 
-            JOIN translations tname ON tname.translation_text = r.name"""
+            JOIN global.translations tsubject ON tsubject.translation_text = r.subject 
+            JOIN global.translations tname ON tname.translation_text = r.name"""
             params = []
             
             if lastfetched:
@@ -328,10 +340,12 @@ async def events():
     lastfetched = data.get('updatedSince')
     DHAKA = ZoneInfo("Asia/Dhaka")
 
-    sql = """SELECT e.type, e.time, e.date, e.function_url,
+    madrasa_name = os.getenv("MADRASA_NAME")
+
+    sql = f"""SELECT e.type, e.time, e.date, e.function_url,
             ttitle.en_text AS title_en, ttitle.bn_text AS title_bn, ttitle.ar_text AS title_ar
-            FROM events e
-            JOIN translations ttitle ON ttitle.translation_text = e.title"""
+            FROM {madrasa_name}.events e
+            JOIN global.translations ttitle ON ttitle.translation_text = e.title"""
     params = []
 
     if lastfetched:
@@ -395,10 +409,12 @@ async def get_exams():
     lastfetched = data.get("updatedSince")
     cutoff = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
 
-    sql = """SELECT e.class, e.gender, e.start_time, e.end_time, e.date, e.weekday, e.sec_start_time, e.sec_end_time,
+    madrasa_name = os.getenv("MADRASA_NAME")
+
+    sql = f"""SELECT e.class, e.gender, e.start_time, e.end_time, e.date, e.weekday, e.sec_start_time, e.sec_end_time,
             tbook.en_text AS book_en, tbook.bn_text AS book_bn, tbook.ar_text AS book_ar
-            FROM exams e
-            JOIN translations tbook ON tbook.translation_text = e.book"""
+            FROM {madrasa_name}.exams e
+            JOIN global.translations tbook ON tbook.translation_text = e.book"""
     params = []
 
     if lastfetched:

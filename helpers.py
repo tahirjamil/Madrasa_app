@@ -26,7 +26,7 @@ from werkzeug.datastructures import FileStorage
 
 from config import Config
 from database.database_utils import get_db_connection
-from logger import log_event_async as log_event
+from logger import log_error, log_critical, log_warning, log_info
 
 # Load environment variables
 load_dotenv()
@@ -247,23 +247,23 @@ async def check_rate_limit(identifier: str, max_requests: int = None, window: in
     
     return rate_limiter.is_allowed(identifier, max_requests, window)
 
-async def blocker(info: str) -> Optional[bool]:
+async def block_check(info: str) -> Optional[bool]:
     """Check if IP/device is blocked with enhanced security"""
     conn = await get_db_connection()
     try:
         async with conn.cursor() as cursor:
             await cursor.execute(
-                "SELECT COUNT(*) AS blocked FROM blocklist WHERE need_check = 1"
+                "SELECT COUNT(*) AS blocked FROM global.blocklist WHERE threat_level = 'high'"
             )
             result = await cursor.fetchone()
             need_check = result["blocked"] if result else 0
             
             return need_check > 3
     except IntegrityError as e:
-        log_event("check_blocklist_failed", info, f"IntegrityError: {e}")
+        log_critical(action="check_blocklist_failed", trace_info=info, message=f"IntegrityError: {e}")
         return None
     except Exception as e:
-        log_event("check_blocklist_failed", info, f"Error: {e}")
+        log_critical(action="check_blocklist_failed", trace_info=info, message=f"Error: {e}")
         return None
 
 async def is_device_unsafe(ip_address: str, device_id: str, info: str = None) -> bool:
@@ -273,7 +273,7 @@ async def is_device_unsafe(ip_address: str, device_id: str, info: str = None) ->
     
     # Validate inputs
     if not ip_address or not device_id:
-        log_event("security_breach", ip_address or device_id or info, "Missing device information")
+        log_critical(action="security_breach", trace_info=ip_address or device_id or info, message="Missing device information")
         
         # Send notifications
         await _send_security_notifications(ip_address, device_id, info)
@@ -338,12 +338,12 @@ async def _update_blocklist(ip_address: str, device_id: str, info: str) -> None:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute(
-                "INSERT INTO blocklist (basic_info, additional_info) VALUES (%s, %s)",
+                "INSERT INTO global.blocklist (basic_info, additional_info) VALUES (%s, %s)",
                 (basic_info, additional_info)
             )
             await conn.commit()
     except Exception as e:
-        log_event("update_blocklist_failed", info, f"Failed to update blocklist: {e}")
+        log_critical(action="update_blocklist_failed", trace_info=info, message=f"Failed to update blocklist: {e}")
 
 # ─── Communication Functions ──────────────────────────────────────────────────
 
@@ -360,7 +360,7 @@ async def _send_async_email(to_email: str, subject: str, body: str) -> bool:
         await loop.run_in_executor(None, _send_smtp_email, msg, to_email)
         return True
     except Exception as e:
-        log_event("email_error", to_email, str(e))
+        log_critical(action="email_error", trace_info=to_email, message=str(e))
         return False
 
 def _send_smtp_email(msg: MIMEText, to_email: str) -> None:
@@ -393,7 +393,7 @@ async def _send_async_sms(phone: str, msg: str) -> bool:
         result = await loop.run_in_executor(None, _send_sms_request, phone, msg)
         return result
     except Exception as e:
-        log_event("sms_error", phone, str(e))
+        log_critical(action="sms_error", trace_info=phone, message=str(e))
         return False
 
 def _send_sms_request(phone: str, msg: str) -> bool:
@@ -408,7 +408,7 @@ def _send_sms_request(phone: str, msg: str) -> bool:
         result = response.json()
         return result.get("success", False)
     except Exception as e:
-        log_event("sms_parse_error", phone, str(e))
+        log_critical(action="sms_parse_error", trace_info=phone, message=str(e))
         return False
 
 def send_sms(phone: str, signature: str = None, code: str = None, 
@@ -440,7 +440,7 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Dict, int]]:
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
-                SELECT code, created_at FROM verifications
+                SELECT code, created_at FROM global.verifications
                 WHERE phone = %s
                 ORDER BY created_at DESC
                 LIMIT 1
@@ -463,11 +463,11 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Dict, int]]:
                 await delete_code()
                 return None
             else:
-                log_event("verification_failed", phone, "Code mismatch")
+                log_warning(action="verification_failed", trace_info=phone, message="Code mismatch")
                 return jsonify({"message": "Verification code mismatch"}), 400
     
     except Exception as e:
-        log_event("verification_error", phone, str(e))
+        log_critical(action="verification_error", trace_info=phone, message=str(e))
         return jsonify({"message": f"Error: {str(e)}"}), 500
 
 async def delete_code() -> None:
@@ -476,12 +476,12 @@ async def delete_code() -> None:
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
-                DELETE FROM verifications
+                DELETE FROM global.verifications
                 WHERE created_at < NOW() - INTERVAL 1 DAY
             """)
         await conn.commit()
     except Exception as e:
-        log_event("failed_to_delete_verifications", "Null", f"Database Error {str(e)}")
+        log_critical(action="failed_to_delete_verifications", trace_info="Null", message=f"Database Error {str(e)}")
 
 # ─── Validation Functions ────────────────────────────────────────────────────
 
@@ -572,7 +572,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute(
-                    "SELECT email FROM users WHERE fullname = %s AND phone = %s",
+                    "SELECT email FROM global.users WHERE fullname = %s AND phone = %s",
                     (fullname, phone)
                 )
                 result = await cursor.fetchone()
@@ -582,7 +582,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
                     cache.set(cache_key, email, ttl=3600)  # Cache for 1 hour
                 return email
         except Exception as e:
-            log_event("db_error", phone, str(e))
+            log_critical(action="db_error with get_email", trace_info=email,trace_info_hash=hash_sensitive_data(email),trace_info_encrypted=encrypt_sensitive_data(email), message=str(e))
             return None
 
 async def get_id(phone: str, fullname: str) -> Optional[int]:
@@ -600,7 +600,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute(
-                    "SELECT user_id FROM users WHERE phone = %s AND fullname = %s",
+                    "SELECT user_id FROM global.users WHERE phone = %s AND fullname = %s",
                     (phone, fullname)
                 )
                 result = await cursor.fetchone()
@@ -610,7 +610,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
                     cache.set(cache_key, user_id, ttl=3600)  # Cache for 1 hour
                 return user_id
         except Exception as e:
-            log_event("get_id_error", phone, str(e))
+            log_critical(action="get_id_error", trace_info=phone,trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
             return None
 
 def check_required_fields(data: dict, required_keys: list) -> Optional[str]: # TODO: Implement this on add_people
@@ -619,8 +619,48 @@ def check_required_fields(data: dict, required_keys: list) -> Optional[str]: # T
             return key  # Return the first missing key
     return None
 
-async def insert_person(fields: Dict[str, Any], acc_type: str, phone: str) -> None:
-    """Enhanced person insertion with error handling"""
+async def upsert_translation(conn, translation_text: str, en_text: str = None, bn_text: str = None, ar_text: str = None, context: str = None) -> str:
+    """
+    Insert or update a translation entry in the global.translations table
+    Returns the translation_text that should be used as foreign key reference
+    """
+    if not translation_text or not translation_text.strip():
+        return None
+        
+    translation_text = translation_text.strip()
+    
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        # Upsert translation entry
+        sql = """
+            INSERT INTO global.translations (translation_text, en_text, bn_text, ar_text, context)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                en_text = COALESCE(VALUES(en_text), en_text),
+                bn_text = COALESCE(VALUES(bn_text), bn_text),
+                ar_text = COALESCE(VALUES(ar_text), ar_text),
+                context = COALESCE(VALUES(context), context)
+        """
+        await cursor.execute(sql, (translation_text, en_text, bn_text, ar_text, context))
+        return translation_text
+
+async def process_multilingual_field(conn, field_base: str, data: dict) -> str:
+    """
+    Process multilingual field data and insert into translations table
+    Returns the translation_text to use as foreign key reference
+    """
+    en_text = data.get(f"{field_base}_en")
+    bn_text = data.get(f"{field_base}_bn") 
+    ar_text = data.get(f"{field_base}_ar")
+    
+    # Use English text as the primary translation_text key
+    if not en_text or not en_text.strip():
+        return None
+        
+    translation_text = en_text.strip().lower()
+    return await upsert_translation(conn, translation_text, en_text, bn_text, ar_text)
+
+async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str, phone: str) -> None:
+    """Enhanced person insertion with translation handling and error handling"""
     if is_test_mode():
         return None
 
@@ -628,6 +668,57 @@ async def insert_person(fields: Dict[str, Any], acc_type: str, phone: str) -> No
     
     async with get_db_context() as conn:
         try:
+            # Handle translations first for foreign key fields
+            translation_fields = {}
+            
+            # Process name translations
+            if any(k.startswith('name_') for k in fields.keys()):
+                name_translation = await process_multilingual_field(conn, 'name', fields)
+                if name_translation:
+                    translation_fields['name'] = name_translation
+                    # Remove individual language fields
+                    fields = {k: v for k, v in fields.items() if not k.startswith('name_')}
+            
+            # Process father name translations  
+            if any(k.startswith('father_') for k in fields.keys()):
+                father_translation = await process_multilingual_field(conn, 'father', fields)
+                if father_translation:
+                    translation_fields['father_name'] = father_translation
+                    # Remove individual language fields
+                    fields = {k: v for k, v in fields.items() if not k.startswith('father_')}
+            
+            # Process mother name translations
+            if any(k.startswith('mother_') for k in fields.keys()):
+                mother_translation = await process_multilingual_field(conn, 'mother', fields)
+                if mother_translation:
+                    translation_fields['mother_name'] = mother_translation
+                    # Remove individual language fields
+                    fields = {k: v for k, v in fields.items() if not k.startswith('mother_')}
+            
+            # Handle address field - use present_address as the main address
+            if 'present_address' in fields and fields['present_address']:
+                address_text = fields['present_address'].strip().lower()
+                address_translation = await upsert_translation(conn, address_text, fields['present_address'])
+                if address_translation:
+                    translation_fields['address'] = address_translation
+
+            # Handle address field - use present_address as the main address
+            if 'permanent_address' in fields and fields['permanent_address']:
+                address_text = fields['permanent_address'].strip().lower()
+                address_translation = await upsert_translation(conn, address_text, fields['present_address'])
+                if address_translation:
+                    translation_fields['address'] = address_translation
+
+            # Handle address field - use present_address as the main address
+            if 'address' in fields and fields['address']:
+                address_text = fields['address'].strip().lower()
+                address_translation = await upsert_translation(conn, address_text, fields['address'])
+                if address_translation:
+                    translation_fields['address'] = address_translation
+            
+            # Merge translation fields with other fields
+            fields.update(translation_fields)
+            
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 columns = ', '.join(fields.keys())
                 placeholders = ', '.join(['%s'] * len(fields))
@@ -641,37 +732,28 @@ async def insert_person(fields: Dict[str, Any], acc_type: str, phone: str) -> No
                 
                 # UPSERT for peoples
                 sql = f"""
-                    INSERT INTO peoples ({columns}) 
+                    INSERT IGNORE INTO {madrasa_name}.peoples ({columns}) 
                     VALUES ({placeholders}) AS new
                     ON DUPLICATE KEY UPDATE {updates}
                 """
                 await cursor.execute(sql, list(fields.values()))
-                
-                # Conditional insert for verify_people
-                if acc_type in ['students', 'teachers', 'staffs', 'admins']:
-                    verify_sql = f"""
-                        INSERT IGNORE INTO verify_people ({columns}) 
-                        VALUES ({placeholders})
-                    """
-                    await cursor.execute(verify_sql, list(fields.values()))
-            
             await conn.commit()
-            log_event("insert_success", phone, "Upserted into peoples and conditionally inserted into verify_people")
+            log_info(action="insert_success", trace_info=phone, trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message="Upserted into peoples with translations")
         except Exception as e:
             await conn.rollback()
-            log_event("db_insert_error", phone, str(e))
+            log_critical(action="db_insert_error", trace_info=phone,trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
             raise
 
-async def delete_users(uid: int = None, acc_type: str = None) -> bool:
+async def delete_users(madrasa_name: str, uid: int = None, acc_type: str = None) -> bool:
     """Enhanced user deletion with comprehensive cleanup"""
     async with get_db_context() as conn:
         try:
             if not uid and not acc_type:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
-                    await cursor.execute("""
+                    await cursor.execute(f"""
                         SELECT u.user_id, p.acc_type 
-                        FROM users u
-                        JOIN peoples p ON u.user_id = p.user_id
+                        FROM global.users u
+                        JOIN {madrasa_name}.peoples p ON u.user_id = p.user_id
                         WHERE u.scheduled_deletion_at IS NOT NULL
                         AND u.scheduled_deletion_at < NOW()
                     """)
@@ -684,10 +766,10 @@ async def delete_users(uid: int = None, acc_type: str = None) -> bool:
                 acc_type = user["acc_type"]
                 
                 if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
-                    await cursor.execute("DELETE FROM peoples WHERE user_id = %s", (uid,))
+                    await cursor.execute(f"DELETE FROM {madrasa_name}.peoples WHERE user_id = %s", (uid,))
                 else:
-                    await cursor.execute("""
-                        UPDATE peoples SET 
+                    await cursor.execute(f"""
+                        UPDATE {madrasa_name}.peoples SET 
                             date_of_birth = NULL,
                             birth_certificate = NULL,
                             national_id = NULL,
@@ -706,18 +788,18 @@ async def delete_users(uid: int = None, acc_type: str = None) -> bool:
                         WHERE user_id = %s
                     """, (uid,))
                 
-                await cursor.execute("DELETE FROM transactions WHERE user_id = %s", (uid,))
-                await cursor.execute("DELETE FROM verifications WHERE user_id = %s", (uid,))
-                await cursor.execute("DELETE FROM users WHERE user_id = %s", (uid,))
+                await cursor.execute(f"DELETE FROM global.transactions WHERE user_id = %s", (uid,))
+                await cursor.execute(f"DELETE FROM global.verifications WHERE user_id = %s", (uid,))
+                await cursor.execute(f"DELETE FROM global.users WHERE user_id = %s", (uid,))
             
             await conn.commit()
             return True
             
         except IntegrityError as e:
-            log_event("auto_delete_error", "Null", f"IntegrityError: {e}")
+            log_critical(action="auto_delete_error", trace_info="Null", message=f"IntegrityError: {e}")
             return True
         except Exception as e:
-            log_event("auto_delete_error", "Null", str(e))
+            log_critical(action="auto_delete_error", trace_info="Null", message=str(e))
             return True
 
 # ─── Business Logic Functions ────────────────────────────────────────────────
@@ -781,7 +863,7 @@ def save_results(data: List[Dict[str, Any]]) -> None:
             json.dump(data, f, indent=2)
         os.replace(temp_file, config.exam_result_index_file)
     except Exception as e:
-        log_event("save_results_error", "file_ops", str(e))
+        log_critical(action="save_results_error", trace_info="file_ops", message=str(e))
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
@@ -810,7 +892,7 @@ def save_notices(data: List[Dict[str, Any]]) -> None:
             json.dump(data, f, indent=2)
         os.replace(temp_file, config.notices_index_file)
     except Exception as e:
-        log_event("save_notices_error", "file_ops", str(e))
+        log_critical(action="save_notices_error", trace_info="file_ops", message=str(e))
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
@@ -968,7 +1050,7 @@ class SecurityManager:
         # If too many suspicious activities, block IP
         if len(self.suspicious_activities[ip_address]) > 10:
             self.blocked_ips.add(ip_address)
-            log_event("ip_blocked", ip_address, f"Too many suspicious activities: {activity}")
+            log_critical(action="ip_blocked", trace_info=ip_address, trace_info_hash=hash_sensitive_data(ip_address), trace_info_encrypted=encrypt_sensitive_data(ip_address), message=f"Too many suspicious activities: {activity}")
 
 # Global security manager
 security_manager = SecurityManager()
@@ -1126,14 +1208,14 @@ def handle_async_errors(func: Callable) -> Callable:
         try:
             return await func(*args, **kwargs)
         except AppError as e:
-            log_event("app_error", "error_handler", f"{e.error_code}: {e.message}")
+            log_critical(action="app_error", trace_info="error_handler", message=f"{e.error_code}: {e.message}")
             return jsonify({
                 "error": e.message,
                 "error_code": e.error_code,
                 "details": e.details
             }), 400
         except Exception as e:
-            log_event("unexpected_error", "error_handler", str(e))
+            log_critical(action="unexpected_error", trace_info="error_handler", message=str(e))
             performance_monitor.record_error("unexpected", str(e))
             return jsonify({
                 "error": "An unexpected error occurred",
@@ -1199,7 +1281,7 @@ def encrypt_sensitive_data(data: str) -> str:
         encrypted_data = fernet.encrypt(data.encode())
         return base64.urlsafe_b64encode(encrypted_data).decode()
     except Exception as e:
-        log_event("encryption_error", "system", f"Failed to encrypt data: {str(e)}")
+        log_critical(action="encryption_error", trace_info="system", message=f"Failed to encrypt data: {str(e)}")
         # In case of encryption failure, return original data (not recommended for production)
         return data
 
@@ -1214,7 +1296,7 @@ def decrypt_sensitive_data(encrypted_data: str) -> str:
         decrypted_data = fernet.decrypt(decoded_data)
         return decrypted_data.decode()
     except Exception as e:
-        log_event("decryption_error", "system", f"Failed to decrypt data: {str(e)}")
+        log_critical(action="decryption_error", trace_info="system", message=f"Failed to decrypt data: {str(e)}")
         # In case of decryption failure, return original data (might be unencrypted legacy data)
         return encrypted_data
 
@@ -1286,7 +1368,7 @@ def initialize_application() -> bool:
         config_issues = validate_app_config()
         if config_issues:
             for issue in config_issues:
-                log_event("config_error", "init", issue, level="ERROR")
+                log_critical(action="config_error", trace_info="init", message=issue)
             return False
         
         # Initialize cache
@@ -1296,11 +1378,11 @@ def initialize_application() -> bool:
         rate_limiter._requests.clear()
         
         # Log successful initialization
-        log_event("app_initialized", "init", "Application initialized successfully")
+        log_info(action="app_initialized", trace_info="init", message="Application initialized successfully")
         return True
         
     except Exception as e:
-        log_event("init_error", "init", str(e), level="ERROR")
+        log_critical(action="init_error", trace_info="init", message=str(e))
         return False
 
 

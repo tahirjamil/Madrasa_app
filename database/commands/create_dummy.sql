@@ -9,11 +9,11 @@ INSERT INTO users (
 INSERT INTO peoples (
     person_id, user_id, member_id, student_id, name, date_of_birth, birth_certificate, national_id, 
     blood_group, gender, title1, present_address, address, permanent_address, father_or_spouse, father_name, 
-    mother_name, class, phone, guardian_number, degree, image_path, acc_type
+    mother_name, class, phone, guardian_number, degree, image_path
 ) VALUES (
     9999, 9999, '9999', '9999', 'Dummy', '2000-01-01', '1234567890', '9876543210', 
     'O+', 'Male', 'Mawlana.', '123 Dummy Street', '123 Dummy Street', '456 Fake Avenue', 'Father Dummy', 'Father Dummy', 
-    'Mother Dummy', 'Daora', '+8801000000000', '+8801999999999', 'Mawlana', 'user_profile_img/dummy.webp', 'teacher'
+    'Mother Dummy', 'Daora', '+8801000000000', '+8801999999999', 'Mawlana', 'user_profile_img/dummy.webp'
 );
 
 -- Insert into translations table

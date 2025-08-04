@@ -25,6 +25,7 @@ ACCOUNT_REACTIVATION_DAYS = int(os.getenv("ACCOUNT_REACTIVATION_DAYS", "14"))
 async def register():
     conn = await get_db_connection()
 
+
     data = await request.get_json()
     fullname = data.get("fullname")
     email = data.get("email")
@@ -50,6 +51,8 @@ async def register():
         log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields including code are required")}), 400
 
+    madrasa_name = os.getenv("MADRASA_NAME")
+
     fullname = fullname.strip().lower()
     password = password.strip()
     email = email.strip() if email else None
@@ -72,13 +75,13 @@ async def register():
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         try:
             await cursor.execute(
-                "INSERT INTO users (fullname, phone, phone_hash, phone_encrypted, password_hash, email, email_hash, email_encrypted, ip_address) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                f"INSERT INTO global.users (fullname, phone, phone_hash, phone_encrypted, password_hash, email, email_hash, email_encrypted, ip_address) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (fullname, formatted_phone, hashed_phone, encrypted_phone, hashed_password, email, hashed_email, encrypted_email, ip_address)
             )
             await conn.commit()
 
             await cursor.execute(
-                "SELECT user_id FROM users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+                f"SELECT user_id FROM global.users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
                 (fullname, formatted_phone)
             )
             result = await cursor.fetchone()
@@ -86,20 +89,24 @@ async def register():
             await conn.commit()
 
             await cursor.execute(
-                """SELECT 
+                f"""SELECT 
                     p.*,
+
+                    a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
 
                     tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
                     taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
                     tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
                     tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
 
-                    FROM peoples p
+                    FROM {madrasa_name}.peoples p
 
-                    JOIN translations tname ON tname.translation_text = p.name
-                    LEFT JOIN translations taddress ON taddress.translation_text = p.address
-                    JOIN translations tfather ON tfather.translation_text = p.father_name
-                    LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+                    JOIN global.acc_types a ON a.user_id = p.user_id
+
+                    JOIN global.translations tname ON tname.translation_text = p.name
+                    LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+                    JOIN global.translations tfather ON tfather.translation_text = p.father_name
+                    LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
 
                     WHERE LOWER(p.name) = LOWER(%s) AND p.phone = %s""",
                 (fullname, formatted_phone))
@@ -150,6 +157,8 @@ async def login():
         log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields are required")}), 400
 
+    madrasa_name = os.getenv("MADRASA_NAME")
+
     fullname = fullname.strip().lower()
     password = password.strip()
     formatted_phone, msg = format_phone_number(phone)
@@ -160,7 +169,7 @@ async def login():
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
-                "SELECT user_id, deactivated_at, password_hash FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                f"SELECT user_id, deactivated_at, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                 (formatted_phone, fullname)
             )
             user = await cursor.fetchone()
@@ -178,20 +187,26 @@ async def login():
                 return jsonify({"action": "deactivate", "message": _("Account is deactivated")}), 403 # TODO: setup in app
             
             await cursor.execute(
-                """
+                f"""
                 SELECT u.user_id, u.fullname, u.phone, p.acc_type AS userType, p.*,
+
+                a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
 
                 tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
                 taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
                 tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
                 tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
 
-                FROM users u
-                JOIN peoples p ON p.user_id = u.user_id
-                JOIN translations tname ON tname.translation_text = p.name
-                LEFT JOIN translations taddress ON taddress.translation_text = p.address
-                JOIN translations tfather ON tfather.translation_text = p.father_name
-                LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+                FROM global.users u
+
+                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+
+                JOIN global.acc_types a ON a.user_id = u.user_id
+
+                JOIN global.translations tname ON tname.translation_text = p.name
+                LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+                JOIN global.translations tfather ON tfather.translation_text = p.father_name
+                LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
 
                 WHERE u.user_id = %s AND p.phone = %s AND p.name = %s
                 """,
@@ -271,7 +286,7 @@ async def send_verification_code():
                 if not ok:
                     return jsonify({"message": _(msg)}), 400
                 
-                await cursor.execute("SELECT * FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
+                await cursor.execute(f"SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
                 if await cursor.fetchone():
                     return jsonify({"message": _("User with this fullname and phone already registered")}), 409
 
@@ -285,7 +300,7 @@ async def send_verification_code():
             # Rate limit check - Combined limit for both SMS and email
             await cursor.execute("""
                 SELECT COUNT(*) AS recent_count 
-                FROM verifications 
+                FROM global.verifications 
                 WHERE phone = %s AND created_at > NOW() - INTERVAL 1 HOUR
             """, (formatted_phone,))
             result = await cursor.fetchone()
@@ -298,7 +313,7 @@ async def send_verification_code():
 
             # Send verification code
             code = generate_code()
-            sql = "INSERT INTO verifications (phone, phone_hash, phone_encrypted, code, ip_address) VALUES (%s, %s, %s, %s, %s)"
+            sql = f"INSERT INTO global.verifications (phone, phone_hash, phone_encrypted, code, ip_address) VALUES (%s, %s, %s, %s, %s)"
             params = (formatted_phone, hashed_phone, encrypted_phone, code, ip_address)
             
             # Try SMS first if under SMS limit
@@ -375,7 +390,7 @@ async def reset_password():
     # Fetch the user
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         await cursor.execute(
-            "SELECT password_hash FROM users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+            f"SELECT password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
             (formatted_phone, fullname)
         )
         result = await cursor.fetchone()
@@ -395,7 +410,7 @@ async def reset_password():
         
         # Update the password
         await cursor.execute(
-            "UPDATE users SET password_hash = %s, ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+            f"UPDATE global.users SET password_hash = %s, ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
             (hashed_password, ip_address, fullname, formatted_phone)
         )
         await conn.commit()
@@ -444,7 +459,7 @@ async def manage_account(page_type):
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
-                "SELECT user_id, password_hash FROM users "
+                f"SELECT user_id, password_hash FROM global.users "
                 "WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (formatted_phone, fullname)
             )
@@ -483,7 +498,7 @@ async def manage_account(page_type):
             # schedule deactivation/deletion
             now = datetime.datetime.now(datetime.timezone.utc)
             scheduled = now + timedelta(days=deletion_days)
-            sql = "UPDATE users SET deactivated_at=%s"
+            sql = f"UPDATE global.users SET deactivated_at=%s"
             params = [now]
             if page_type == "remove" or page_type == "delete":
                 sql += ", scheduled_deletion_at=%s"
@@ -530,7 +545,7 @@ async def undo_remove():
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("""
-                SELECT user_id, deactivated_at FROM users
+                SELECT user_id, deactivated_at FROM global.users
                 WHERE phone = %s AND LOWER(fullname) = LOWER(%s)
             """, (formatted_phone, fullname))
             user = await cursor.fetchone()
@@ -543,7 +558,7 @@ async def undo_remove():
                 return jsonify({"message": "Undo period expired"}), 403
 
             await cursor.execute("""
-                UPDATE users
+                UPDATE global.users
                 SET deactivated_at = NULL,
                     scheduled_deletion_at = NULL
                 WHERE user_id = %s
@@ -616,13 +631,8 @@ async def get_account_status():
         "mother_ar":     data.get("mother_ar"),
         "class":         data.get("class_name"),
         "guardian_number": data.get("guardian_number"),
-        "available":     data.get("available"),
         "degree":        data.get("degree"),
         "image_path":    data.get("image_path"),
-        "acc_type":      data.get("acc_type"),
-        "is_donor":      data.get("is_donor"),
-        "is_badri_member": data.get("is_badri_member"),
-        "is_foundation_member": data.get("is_foundation_member"),
     }
 
     for c in checks:
@@ -630,24 +640,27 @@ async def get_account_status():
             log_info(action="account_check_missing_field", trace_info=ip_address or "unknown", trace_info_hash=hash_sensitive_data(ip_address or "unknown"), trace_info_encrypted=encrypt_sensitive_data(ip_address or "unknown"), message=f"Field {c} is missing")
             return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
 
+    madrasa_name = os.getenv("MADRASA_NAME")
     conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
 
-            await cursor.execute("""
-                    SELECT u.deactivated_at, u.email, p.*,
+            await cursor.execute(f"""
+                    SELECT u.deactivated_at, u.email, p.*, 
 
                     tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
                     taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
                     tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
                     tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
 
-                    FROM users u
-                    JOIN peoples p ON p.user_id = u.user_id
-                    JOIN translations tname ON tname.translation_text = p.name
-                    LEFT JOIN translations taddress ON taddress.translation_text = p.address
-                    LEFT JOIN translations tfather ON tfather.translation_text = p.father_name
-                    LEFT JOIN translations tmother ON tmother.translation_text = p.mother_name
+                    FROM global.users u
+
+                    JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+
+                    JOIN global.translations tname ON tname.translation_text = p.name
+                    LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+                    LEFT JOIN global.translations tfather ON tfather.translation_text = p.father_name
+                    LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
 
                     WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
             """, (formatted_phone, fullname))
@@ -685,12 +698,12 @@ async def get_account_status():
                     log_warning(action="account_check_mismatch", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Mismatch: {col}: {hash_sensitive_data(str(provided))} != {hash_sensitive_data(str(db_val))}, so {hash_sensitive_data(fullname)} logged out")
                     return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
-        await cursor.execute("SELECT open_times FROM interactions WHERE device_id = %s AND device_brand = %s AND user_id = %s LIMIT 1", (device_id, device_brand, record["user_id"]))
+        await cursor.execute(f"SELECT open_times FROM global.interactions WHERE device_id = %s AND device_brand = %s AND user_id = %s LIMIT 1", (device_id, device_brand, record["user_id"]))
         open_times = await cursor.fetchone()
 
         try:
             if not open_times:
-                await cursor.execute("""INSERT INTO interactions 
+                await cursor.execute(f"""INSERT INTO global.interactions 
                             (device_id, ip_address, device_brand, user_id)
                             VALUES
                             (%s, %s, %s, %s)
@@ -699,7 +712,7 @@ async def get_account_status():
                 opened = open_times['open_times'] if open_times else 0
                 
                 opened += 1
-                await cursor.execute("""UPDATE interactions SET open_times = %s
+                await cursor.execute(f"""UPDATE global.interactions SET open_times = %s
                             WHERE device_id = %s AND device_brand = %s AND user_id = %s
                             """, (opened, device_id, device_brand, user_id))
             await conn.commit()

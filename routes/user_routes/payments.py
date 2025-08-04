@@ -3,8 +3,9 @@ from . import user_routes
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from database.database_utils import get_db_connection
-from helpers import calculate_fees, format_phone_number, log_event, is_test_mode, hash_sensitive_data
+from helpers import calculate_fees, encrypt_sensitive_data, format_phone_number, is_test_mode, hash_sensitive_data
 from config import Config
+from logger import log_error, log_critical, log_warning, log_info
 from quart_babel import gettext as _
 
 # ====== Payment Fee Info ======
@@ -24,24 +25,26 @@ async def payments():
     if not formatted_phone:
         return await jsonify({"error": msg}), 400
 
+    madrasa_name = os.getenv("MADRASA_NAME")
+
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-                SELECT peoples.class, peoples.gender, payments.special_food, payments.reduced_fee,
-                    payments.food, payments.due_months AS month, users.phone, users.fullname
-                FROM users
-                JOIN peoples ON peoples.user_id = users.user_id
-                JOIN payments ON payments.user_id = users.user_id
-                WHERE users.phone = %s AND LOWER(users.fullname) = LOWER(%s)
+            await cursor.execute(f"""
+                SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
+                    pay.food, pay.due_months AS month, u.phone, u.fullname
+                FROM global.users u
+                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+                JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
+                WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
             """, (formatted_phone, fullname))
             result = await cursor.fetchone()
 
         if not result:
-            log_event("payments_user_not_found", hash_sensitive_data(formatted_phone), f"User {hash_sensitive_data(fullname)} not found")
+            log_error(action="payments_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} not found")
             return await jsonify({"message": _("User not found for payments")}), 404
     except Exception as e:
         await conn.rollback()
-        log_event("get_payments_failed", hash_sensitive_data(formatted_phone), f"DB Error: {str(e)}")
+        log_error(action="get_payments_failed", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"DB Error: {str(e)}")
         return await jsonify({"error": _("Transaction failed")}), 500
 
 
@@ -73,14 +76,13 @@ async def get_transactions():
         phone = Config.DUMMY_PHONE
 
     if not phone or not fullname or not transaction_type:
-        log_event("payment_missing_fields", hash_sensitive_data(phone or "unknown"),
-                  "Phone, fullname or transaction type missing")
+        log_error(action="payment_missing_fields", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Phone, fullname or transaction type missing")
         return await jsonify({"error": _("Phone, fullname and payment type required")}), 400
 
     fullname = fullname.strip().lower()
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
-        log_event("payment_invalid_phone", hash_sensitive_data(phone or "unknown"), "Invalid phone format")
+        log_error(action="payment_invalid_phone", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Invalid phone format")
         return await jsonify({"error": _("Invalid phone number")}), 400
 
     # Build base query and params
@@ -90,8 +92,8 @@ async def get_transactions():
         t.month     AS details,
         t.amount,
         t.date
-      FROM transactions t
-      JOIN users        u ON t.user_id = u.user_id
+      FROM global.transactions t
+      JOIN global.users        u ON t.user_id = u.user_id
       WHERE u.phone = %s
         AND LOWER(u.fullname) = LOWER(%s)
         AND t.type = %s
@@ -107,7 +109,7 @@ async def get_transactions():
             sql += " AND t.updated_at > %s"
             params.append(cutoff)
         except ValueError:
-            log_event("payment_invalid_timestamp", hash_sensitive_data(formatted_phone), lastfetched)
+            log_error(action="payment_invalid_timestamp", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=lastfetched)
             return await jsonify({"error": _("Invalid updatedSince format")}), 400
 
     # Final ordering
@@ -121,7 +123,7 @@ async def get_transactions():
             transactions = await cursor.fetchall()
     except Exception as e:
         await conn.rollback()
-        log_event("payment_transaction_error", hash_sensitive_data(formatted_phone), str(e))
+        log_critical(action="payment_transaction_error", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=str(e))
         return await jsonify({"error": _("Internal server error during payments processing")}), 500
 
     # Handle no‐results
@@ -157,14 +159,14 @@ async def pay_sslcommerz():
        email = Config.DUMMY_EMAIL
 
     if not transaction_type or amount is None:
-        log_event("payment_missing_fields", hash_sensitive_data(phone), "Missing payment info")
+        log_error(action="payment_missing_fields", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Missing payment info")
         return await jsonify({"error": _("Amount and payment type are required")}), 400
 
     tran_id    = f"ssl_{int(time.time())}"
     store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
     store_pass = os.getenv("SSLCOMMERZ_STORE_PASS")
     if not store_id or not store_pass:
-        log_event("sslcommerz_config_missing", hash_sensitive_data(phone), "SSLCommerz credentials not set")
+        log_warning(action="sslcommerz_config_missing", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="SSLCommerz credentials not set")
         return await jsonify({"error": _("Payment gateway is not properly configured")}), 500
 
     payload = {
@@ -211,7 +213,7 @@ async def pay_sslcommerz():
     }
 
     try:
-        log_event("sslcommerz_request", hash_sensitive_data(phone), f"Initiating {tran_id} for {amount}")
+        log_info(action="sslcommerz_request", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=f"Initiating {tran_id} for {amount}")
         r   = requests.post(
             'https://sandbox.sslcommerz.com/gwprocess/v4/api.php',
             data=payload,
@@ -219,17 +221,13 @@ async def pay_sslcommerz():
         )
         res = r.json()
     except Exception as e:
-        log_event("sslcommerz_request_error", hash_sensitive_data(phone), str(e))
+        log_critical(action="sslcommerz_request_error", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
         return await jsonify({"error": _("Payment gateway is currently unreachable")}), 502
 
     if res.get('status') == 'SUCCESS':
         return await jsonify({"GatewayPageURL": res.get('GatewayPageURL')}), 200
     else:
-        log_event(
-            "sslcommerz_initiation_failed",
-            hash_sensitive_data(phone),
-            f"{res.get('status')} – {res.get('failedreason')}"
-        )
+        log_critical(action="sslcommerz_initiation_failed", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=f"{res.get('status')} – {res.get('failedreason')}")
         return await jsonify({
             "error":  _("Payment initiation failed"),
             "reason": res.get('failedreason')
@@ -256,7 +254,7 @@ async def payments_success_ssl(return_type):
 
     # Ensure we received our transaction identifier back
     if not tran_id:
-        log_event("sslcommerz_callback_no_tranid", hash_sensitive_data(phone or "unknown"), "Missing value_e")
+        log_error(action="sslcommerz_callback_no_tranid", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Missing value_e")
         return await jsonify({"error": _("Missing transaction identifier")}), 400
         
     formatted_phone, msg = format_phone_number(phone)
@@ -277,10 +275,10 @@ async def payments_success_ssl(return_type):
             timeout=10
         ).json()
         if validation.get('status') != 'VALID':
-            log_event("sslcommerz_validation_failed", hash_sensitive_data(formatted_phone), validation.get('status'))
+            log_warning(action="sslcommerz_validation_failed", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=validation.get('status'))
             return await jsonify({"error": _("Payment validation failed")}), 400
     except Exception as e:
-        log_event("sslcommerz_validation_error", hash_sensitive_data(formatted_phone), str(e))
+        log_critical(action="sslcommerz_validation_error", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=str(e))
         return await jsonify({"error": _("Error during payments validation")}), 502
 
         
@@ -294,17 +292,17 @@ async def payments_success_ssl(return_type):
             
             # Fetch the user's internal ID
             await cursor.execute(
-                "SELECT user_id FROM users WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
+                "SELECT user_id FROM global.users WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
                 (formatted_phone, fullname)
             )
             user = await cursor.fetchone()
             if not user:
-                log_event("transaction_user_not_found", hash_sensitive_data(formatted_phone), hash_sensitive_data(fullname))
+                log_error(action="transaction_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=hash_sensitive_data(fullname))
                 return await jsonify({"error": _("User not found for payments")}), 404
                 
             # Insert the new transaction
             await cursor.execute(
-                "INSERT INTO transactions (user_id, type, month, amount, date) "
+                "INSERT INTO global.transactions (user_id, type, month, amount, date) "
                 "VALUES (%s, %s, %s, %s, CURDATE())",
                 (user['user_id'], transaction_type, months or '', amount)
             )
@@ -313,7 +311,7 @@ async def payments_success_ssl(return_type):
     except Exception as e:
         if db:
             await db.rollback()
-        log_event("payment_insert_fail", hash_sensitive_data(formatted_phone), str(e))
+        log_critical(action="payment_insert_fail", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=str(e))
         return await jsonify({"error": _("Transaction failed")}), 500
             
     return await jsonify({"message": _("Payment recorded successfully")}), 200

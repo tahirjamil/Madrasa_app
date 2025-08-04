@@ -1,5 +1,3 @@
-hash_sensitive_data
-
 handle_async_errors @wraps
 
 cache_with_invalidation @wraps
@@ -15,5 +13,3 @@ _send_security_notifications
 CacheManager (CLASS)
 
 rate_limit @wraps
-
-log_event (blocking)

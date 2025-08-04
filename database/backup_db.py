@@ -1,6 +1,6 @@
 import os, subprocess, glob
 from datetime import datetime, timezone, timedelta
-from logger import log_event_async as log_event
+from logger import log_critical, log_info, log_error
 from config import Config
 
 # ======= Configuration ========
@@ -73,10 +73,10 @@ def cleanup_old_backups(backup_dir, max_backups, backup_type):
             try:
                 os.remove(file)
                 print(f"Deleted old {backup_type} backup: {os.path.basename(file)}")
-                log_event("backup_cleanup", "system", f"Deleted old {backup_type} backup: {file}")
+                log_info(action="backup_cleanup", trace_info="system", message=f"Deleted old {backup_type} backup: {file}")
             except Exception as e:
                 print(f"Error deleting {file}: {e}")
-                log_event("backup_cleanup_error", "system", f"Failed to delete {file}: {e}")
+                log_error(action="backup_cleanup_error", trace_info="system", message=f"Failed to delete {file}: {e}")
 
 def main():
     """Main backup function"""
@@ -105,13 +105,13 @@ def main():
         
         if create_backup(daily_backup_path):
             print(f"✅ Daily backup created successfully: {os.path.basename(daily_backup_path)}")
-            log_event("backup_success", "system", f"Daily backup created: {daily_backup_path}")
+            log_info(action="backup_success", trace_info="system", message=f"Daily backup created: {daily_backup_path}")
             
             # Cleanup old daily backups
             cleanup_old_backups(DAILY_BACKUP_DIR, MAX_DAILY_BACKUPS, "daily")
         else:
             print("❌ Daily backup failed!")
-            log_event("backup_failed", "system", "Daily backup failed")
+            log_error(action="backup_failed", trace_info="system", message="Daily backup failed")
     
     # Perform weekly backup
     if weekly_backup_needed:
@@ -120,17 +120,17 @@ def main():
         
         if create_backup(weekly_backup_path):
             print(f"✅ Weekly backup created successfully: {os.path.basename(weekly_backup_path)}")
-            log_event("backup_success", "system", f"Weekly backup created: {weekly_backup_path}")
+            log_info(action="backup_success", trace_info="system", message=f"Weekly backup created: {weekly_backup_path}")
             
             # Cleanup old weekly backups
             cleanup_old_backups(WEEKLY_BACKUP_DIR, MAX_WEEKLY_BACKUPS, "weekly")
         else:
             print("❌ Weekly backup failed!")
-            log_event("backup_failed", "system", "Weekly backup failed")
+            log_critical(action="backup_failed", trace_info="system", message="Weekly backup failed")
     
     if not daily_backup_needed and not weekly_backup_needed:
         print("ℹ️ No backups needed at this time")
-        log_event("backup_skipped", "system", "No backups needed")
+        log_info(action="backup_skipped", trace_info="system", message="No backups needed")
     
     print("✅ Backup process completed!")
 

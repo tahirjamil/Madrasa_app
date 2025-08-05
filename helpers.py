@@ -613,12 +613,6 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
             log_critical(action="get_id_error", trace_info=phone,trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
             return None
 
-def check_required_fields(data: dict, required_keys: list) -> Optional[str]: # TODO: Implement this on add_people
-    for key in required_keys:
-        if not data.get(key):
-            return key  # Return the first missing key
-    return None
-
 async def upsert_translation(conn, translation_text: str, en_text: str = None, bn_text: str = None, ar_text: str = None, context: str = None) -> str:
     """
     Insert or update a translation entry in the global.translations table

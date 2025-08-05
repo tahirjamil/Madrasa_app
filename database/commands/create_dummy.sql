@@ -18,58 +18,58 @@ INSERT INTO peoples (
 
 -- Insert into translations table
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy', 'Dummy', 'ডামি', 'اسم'
+    'Dummy', 'ডামি', 'اسم'
 );
 
 
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Address', 'Dummy Address', 'ডামি ঠিকানা', 'اسم وهمي'
+    'Dummy Address', 'ডামি ঠিকানা', 'اسم وهمي'
 );
 
 
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Father', 'Dummy Father', 'ডামি পিতা', 'اسم وهمي'
+    'Dummy Father', 'ডামি পিতা', 'اسم وهمي'
 );
 
 
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Mother', 'Dummy Mother', 'ডামি মা', 'اسم وهمي'
+    'Dummy Mother', 'ডামি মা', 'اسم وهمي'
 );
 
 
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Class', 'Dummy Class', 'ডামি ক্লাস', 'اسم وهمي'
+    'Dummy Class', 'ডামি ক্লাস', 'اسم وهمي'
 );
 
 
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Degree', 'Dummy Degree', 'ডামি ডিগ্রি', 'اسم وهمي'
+    'Dummy Degree', 'ডামি ডিগ্রি', 'اسم وهمي'
 );
 
 
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Guardian Number', 'Dummy Guardian Number', 'ডামি গার্ডিয়ন নম্বর', 'اسم وهمي'
+    'Dummy Guardian Number', 'ডামি গার্ডিয়ন নম্বর', 'اسم وهمي'
 );
 
 
 INSERT INTO translations (
-    translation_text, en_text, bn_text, ar_text
+    translation_text, bn_text, ar_text
 ) VALUES (
-    'Dummy Image Path', 'Dummy Image Path', 'ডামি ছবি পথ', 'اسم وهمي'
+    'Dummy Image Path', 'ডামি ছবি পথ', 'اسم وهمي'
 );
 
 

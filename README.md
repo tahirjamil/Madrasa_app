@@ -54,11 +54,11 @@ Madrasa_app/
    - Create a dedicated database and user for the application.
    - Run the app once to auto-create tables:
      ```bash
-     python app.py
+     python run_server.py
      ```
 6. **Run the app:**
    ```bash
-   python app.py
+   python run_server.py
    # or for production
    python run_server.py
    ```

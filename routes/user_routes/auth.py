@@ -6,8 +6,8 @@ from database.database_utils import get_db_connection
 from logger import log_error, log_info, log_warning, log_critical
 from helpers import (validate_fullname, validate_password, validate_email,
     send_sms, format_phone_number, is_device_unsafe, is_test_mode, get_client_info,
-    generate_code, check_code, send_email, get_email,
-    encrypt_sensitive_data, hash_sensitive_data)
+    generate_code, check_code, send_email, get_email, rate_limit,
+    encrypt_sensitive_data, hash_sensitive_data, handle_async_errors)
 from quart_babel import gettext as _
 import datetime, os, aiomysql
 from datetime import timedelta, datetime as dt
@@ -22,6 +22,8 @@ ACCOUNT_REACTIVATION_DAYS = int(os.getenv("ACCOUNT_REACTIVATION_DAYS", "14"))
 
 # ========== Routes ==========
 @user_routes.route("/register", methods=["POST"])
+@rate_limit(max_requests=10, window=60)
+@handle_async_errors
 async def register():
     conn = await get_db_connection()
 
@@ -32,6 +34,7 @@ async def register():
     phone = data.get("phone")
     password = data.get("password")
     user_code = data.get("code")
+    madrasa_name = os.getenv("MADRASA_NAME")
 
     if is_test_mode():
         return jsonify({
@@ -51,7 +54,6 @@ async def register():
         log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields including code are required")}), 400
 
-    madrasa_name = os.getenv("MADRASA_NAME")
 
     fullname = fullname.strip().lower()
     password = password.strip()
@@ -73,65 +75,60 @@ async def register():
 
     # Insert user into database
     async with conn.cursor(aiomysql.DictCursor) as cursor:
-        try:
+        await cursor.execute(
+            f"INSERT INTO global.users (fullname, phone, phone_hash, phone_encrypted, password_hash, email, email_hash, email_encrypted, ip_address) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (fullname, formatted_phone, hashed_phone, encrypted_phone, hashed_password, email, hashed_email, encrypted_email, ip_address)
+        )
+        await conn.commit()
+
+        await cursor.execute(
+            f"SELECT user_id FROM global.users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
+            (fullname, formatted_phone)
+        )
+        result = await cursor.fetchone()
+        user_id = result['user_id'] if result else None
+        await conn.commit()
+
+        await cursor.execute(
+            f"""SELECT 
+                p.*,
+
+                a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
+
+                tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+                taddress.translation_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+                tfather.translation_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+                tmother.translation_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
+
+                FROM {madrasa_name}.peoples p
+
+                JOIN global.acc_types a ON a.user_id = p.user_id
+
+                JOIN global.translations tname ON tname.translation_text = p.name
+                LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+                JOIN global.translations tfather ON tfather.translation_text = p.father_name
+                LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
+
+                WHERE LOWER(p.name) = LOWER(%s) AND p.phone = %s""",
+            (fullname, formatted_phone))
+        people_result = await cursor.fetchone()
+
+        if people_result:
             await cursor.execute(
-                f"INSERT INTO global.users (fullname, phone, phone_hash, phone_encrypted, password_hash, email, email_hash, email_encrypted, ip_address) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (fullname, formatted_phone, hashed_phone, encrypted_phone, hashed_password, email, hashed_email, encrypted_email, ip_address)
+                "UPDATE peoples SET user_id = %s WHERE LOWER(name) = LOWER(%s) AND phone = %s",
+                (user_id, fullname, formatted_phone)
             )
             await conn.commit()
 
-            await cursor.execute(
-                f"SELECT user_id FROM global.users WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
-                (fullname, formatted_phone)
-            )
-            result = await cursor.fetchone()
-            user_id = result['user_id'] if result else None
-            await conn.commit()
-
-            await cursor.execute(
-                f"""SELECT 
-                    p.*,
-
-                    a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
-
-                    tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
-                    taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
-                    tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
-                    tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
-
-                    FROM {madrasa_name}.peoples p
-
-                    JOIN global.acc_types a ON a.user_id = p.user_id
-
-                    JOIN global.translations tname ON tname.translation_text = p.name
-                    LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
-                    JOIN global.translations tfather ON tfather.translation_text = p.father_name
-                    LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
-
-                    WHERE LOWER(p.name) = LOWER(%s) AND p.phone = %s""",
-                (fullname, formatted_phone))
-            people_result = await cursor.fetchone()
-
-            if people_result:
-                await cursor.execute(
-                    "UPDATE peoples SET user_id = %s WHERE LOWER(name_en) = LOWER(%s) AND phone = %s",
-                    (user_id, fullname, formatted_phone)
-                )
-                await conn.commit()
-
-            return jsonify({
-                "success": True, "message": _("Registration successful"),
-                "info": people_result
-                }), 201
-
-        except IntegrityError:
-            return jsonify({"message": _("User with this fullname and phone already registered")}), 400
-        except Exception as e:
-            log_critical(action="auth_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
-            return jsonify({"message": _("Internal server error")}), 500
+        return jsonify({
+            "success": True, "message": _("Registration successful"),
+            "info": people_result
+            }), 201
 
 
 @user_routes.route("/login", methods=["POST"])
+@rate_limit(max_requests=10, window=60)
+@handle_async_errors
 async def login():
     conn = await get_db_connection()
 
@@ -139,6 +136,7 @@ async def login():
     fullname = data.get("fullname")
     phone = data.get("phone")
     password = data.get("password")
+    madrasa_name = os.getenv("MADRASA_NAME")
 
     if is_test_mode():
         fullname = Config.DUMMY_FULLNAME
@@ -157,7 +155,6 @@ async def login():
         log_error(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Phone or fullname missing")
         return jsonify({"message": _("All fields are required")}), 400
 
-    madrasa_name = os.getenv("MADRASA_NAME")
 
     fullname = fullname.strip().lower()
     password = password.strip()
@@ -166,73 +163,70 @@ async def login():
         log_error(action="auth_invalid_phone", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Invalid phone format")
         return jsonify({"message": msg}), 400
 
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute(
-                f"SELECT user_id, deactivated_at, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-                (formatted_phone, fullname)
-            )
-            user = await cursor.fetchone()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute(
+            f"SELECT user_id, deactivated_at, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+            (formatted_phone, fullname)
+        )
+        user = await cursor.fetchone()
 
-            if not user:
-                log_error(action="auth_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} not found")
-                return jsonify({"message": _("User not found")}), 404
-            
-            if not check_password_hash(user["password_hash"], password):
-                log_warning(action="auth_incorrect_password", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Incorrect password")
-                return jsonify({"message": _("Incorrect password")}), 401
-            
-            if user["deactivated_at"] is not None:
-                log_warning(action="auth_account_deactivated", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Account is deactivated")
-                return jsonify({"action": "deactivate", "message": _("Account is deactivated")}), 403 # TODO: setup in app
-            
-            await cursor.execute(
-                f"""
-                SELECT u.user_id, u.fullname, u.phone, p.acc_type AS userType, p.*,
+        if not user:
+            log_error(action="auth_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} not found")
+            return jsonify({"message": _("User not found")}), 404
+        
+        if not check_password_hash(user["password_hash"], password):
+            log_warning(action="auth_incorrect_password", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Incorrect password")
+            return jsonify({"message": _("Incorrect password")}), 401
+        
+        if user["deactivated_at"] is not None:
+            log_warning(action="auth_account_deactivated", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Account is deactivated")
+            return jsonify({"action": "deactivate", "message": _("Account is deactivated")}), 403 # TODO: setup in app
+        
+        await cursor.execute(
+            f"""
+            SELECT u.user_id, u.fullname, u.phone, p.acc_type AS userType, p.*,
 
-                a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
+            a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
 
-                tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
-                taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
-                tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
-                tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
+            tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+            taddress.translation_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+            tfather.translation_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+            tmother.translation_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
 
-                FROM global.users u
+            FROM global.users u
 
-                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+            JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
 
-                JOIN global.acc_types a ON a.user_id = u.user_id
+            JOIN global.acc_types a ON a.user_id = u.user_id
 
-                JOIN global.translations tname ON tname.translation_text = p.name
-                LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
-                JOIN global.translations tfather ON tfather.translation_text = p.father_name
-                LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
+            JOIN global.translations tname ON tname.translation_text = p.name
+            LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+            JOIN global.translations tfather ON tfather.translation_text = p.father_name
+            LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
 
-                WHERE u.user_id = %s AND p.phone = %s AND p.name = %s
-                """,
-                (user["user_id"], formatted_phone, fullname)
-            )
-            info = await cursor.fetchone()
+            WHERE u.user_id = %s AND p.phone = %s AND p.name = %s
+            """,
+            (user["user_id"], formatted_phone, fullname)
+        )
+        info = await cursor.fetchone()
 
-            if not info or not info.get("phone") or not info.get("user_id"):
-                log_warning(action="auth_additional_info_required", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Missing profile info")
-                return jsonify({
-                    "error": "incomplete_profile", 
-                    "message": _("Additional info required")
-                }), 422
-            
-            info.pop("password", None)
-            dob = info.get("date_of_birth")
-            if isinstance(dob, (datetime.date, datetime.datetime)):
-                info["date_of_birth"] = dob.strftime("%d/%m/%Y")
+        if not info or not info.get("phone") or not info.get("user_id"):
+            log_warning(action="auth_additional_info_required", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Missing profile info")
+            return jsonify({
+                "error": "incomplete_profile", 
+                "message": _("Additional info required")
+            }), 422
+        
+        info.pop("password", None)
+        dob = info.get("date_of_birth")
+        if isinstance(dob, (datetime.date, datetime.datetime)):
+            info["date_of_birth"] = dob.strftime("%d/%m/%Y")
 
-            return jsonify({"success": True, "message": _("Login successful"), "info": info}), 200
-            
-    except Exception as e:
-        log_critical(action="auth_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
-        return jsonify({"message": _("Internal server error")}), 500
+        return jsonify({"success": True, "message": _("Login successful"), "info": info}), 200
 
 @user_routes.route("/send_code", methods=["POST"])
+@rate_limit(max_requests=10, window=60)
+@handle_async_errors
 async def send_verification_code():
 
     conn = await get_db_connection()
@@ -274,72 +268,68 @@ async def send_verification_code():
     encrypted_phone = encrypt_sensitive_data(phone)
     hashed_phone = hash_sensitive_data(phone)
 
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            if fullname:
-                ok, msg = validate_fullname(fullname)
-                if not ok:
-                    return jsonify({"message": _(msg)}), 400
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        if fullname:
+            ok, msg = validate_fullname(fullname)
+            if not ok:
+                return jsonify({"message": _(msg)}), 400
 
-            if password:
-                ok, msg = validate_password(password)
-                if not ok:
-                    return jsonify({"message": _(msg)}), 400
-                
-                await cursor.execute(f"SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
-                if await cursor.fetchone():
-                    return jsonify({"message": _("User with this fullname and phone already registered")}), 409
-
-            if email:
-                ok, msg = validate_email(email)
-                if not ok:
-                    return jsonify({"message": msg}), 400
-            elif not email:
-                email = get_email(phone=formatted_phone, fullname=fullname)
-
-            # Rate limit check - Combined limit for both SMS and email
-            await cursor.execute("""
-                SELECT COUNT(*) AS recent_count 
-                FROM global.verifications 
-                WHERE phone = %s AND created_at > NOW() - INTERVAL 1 HOUR
-            """, (formatted_phone,))
-            result = await cursor.fetchone()
-            count = result["recent_count"] if result else 0
+        if password:
+            ok, msg = validate_password(password)
+            if not ok:
+                return jsonify({"message": _(msg)}), 400
             
-            # Check if rate limit exceeded for all methods
-            if count >= max(SMS_LIMIT_PER_HOUR, EMAIL_LIMIT_PER_HOUR):
-                log_warning(action="rate_limit_blocked", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="All verification methods limit exceeded")
-                return jsonify({"message": _("Limit reached. Try again later.")}), 429
+            await cursor.execute(f"SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)", (formatted_phone, fullname))
+            if await cursor.fetchone():
+                return jsonify({"message": _("User with this fullname and phone already registered")}), 409
 
-            # Send verification code
-            code = generate_code()
-            sql = f"INSERT INTO global.verifications (phone, phone_hash, phone_encrypted, code, ip_address) VALUES (%s, %s, %s, %s, %s)"
-            params = (formatted_phone, hashed_phone, encrypted_phone, code, ip_address)
-            
-            # Try SMS first if under SMS limit
-            if count < SMS_LIMIT_PER_HOUR:
-                if send_sms(phone=formatted_phone, signature=signature, code=code):
-                    await cursor.execute(sql, params)
-                    await conn.commit()
-                    return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": formatted_phone}}), 200
+        if email:
+            ok, msg = validate_email(email)
+            if not ok:
+                return jsonify({"message": msg}), 400
+        elif not email:
+            email = get_email(phone=formatted_phone, fullname=fullname)
 
-            # Try email if SMS failed or limit reached, but under email limit
-            if email and count < EMAIL_LIMIT_PER_HOUR:
-                if send_email(to_email=email, code=code, lang=lang):
-                    await cursor.execute(sql, params)
-                    await conn.commit()
-                    return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": email}}), 200
+        # Rate limit check - Combined limit for both SMS and email
+        await cursor.execute("""
+            SELECT COUNT(*) AS recent_count 
+            FROM global.verifications 
+            WHERE phone = %s AND created_at > NOW() - INTERVAL 1 HOUR
+        """, (formatted_phone,))
+        result = await cursor.fetchone()
+        count = result["recent_count"] if result else 0
+        
+        # Check if rate limit exceeded for all methods
+        if count >= max(SMS_LIMIT_PER_HOUR, EMAIL_LIMIT_PER_HOUR):
+            log_warning(action="rate_limit_blocked", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="All verification methods limit exceeded")
+            return jsonify({"message": _("Limit reached. Try again later.")}), 429
 
-            # If we get here, both methods failed or no email provided
-            log_critical(action="verification_failed", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=f"count={count}")
-            return jsonify({"message": _("Failed to send verification code")}), 500
+        # Send verification code
+        code = generate_code()
+        sql = f"INSERT INTO global.verifications (phone, phone_hash, phone_encrypted, code, ip_address) VALUES (%s, %s, %s, %s, %s)"
+        params = (formatted_phone, hashed_phone, encrypted_phone, code, ip_address)
+        
+        # Try SMS first if under SMS limit
+        if count < SMS_LIMIT_PER_HOUR:
+            if send_sms(phone=formatted_phone, signature=signature, code=code):
+                await cursor.execute(sql, params)
+                await conn.commit()
+                return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": formatted_phone}}), 200
 
-    except Exception as e:
-        log_critical(action="internal_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
-        return jsonify({"message": _("Internal server error")}), 500
+        # Try email if SMS failed or limit reached, but under email limit
+        if email and count < EMAIL_LIMIT_PER_HOUR:
+            if send_email(to_email=email, code=code, lang=lang):
+                await cursor.execute(sql, params)
+                await conn.commit()
+                return jsonify({"success": True, "message": _("Verification code sent to %(target)s") % {"target": email}}), 200
+
+        # If we get here, both methods failed or no email provided
+        log_critical(action="verification_failed", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=f"count={count}")
+        return jsonify({"message": _("Failed to send verification code")}), 500
     
 
 @user_routes.route("/reset_password", methods=["POST"])
+@handle_async_errors
 async def reset_password():
 
     conn = await get_db_connection()
@@ -417,6 +407,8 @@ async def reset_password():
         return jsonify({"success": True, "message": _("Password Reset Successful")}), 201
 
 @user_routes.route("/account/<page_type>", methods=["GET", "POST"]) # TODO: remove GET
+@rate_limit(max_requests=10, window=60)
+@handle_async_errors
 async def manage_account(page_type):
 
     if page_type not in ("remove", "deactivate", "delete"):
@@ -456,72 +448,69 @@ async def manage_account(page_type):
 
     # lookup user
     conn = await get_db_connection()
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute(
-                f"SELECT user_id, password_hash FROM global.users "
-                "WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
-                (formatted_phone, fullname)
-            )
-            user = await cursor.fetchone()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute(
+            f"SELECT user_id, password_hash FROM global.users "
+            "WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
+            (formatted_phone, fullname)
+        )
+        user = await cursor.fetchone()
 
-            if not user or not check_password_hash(user["password_hash"], password):
-                log_error(action="delete_invalid_credentials", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Invalid credentials")
-                return jsonify({"message": _("Invalid login details")}), 401
+        if not user or not check_password_hash(user["password_hash"], password):
+            log_error(action="delete_invalid_credentials", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Invalid credentials")
+            return jsonify({"message": _("Invalid login details")}), 401
 
-            # prepare confirmation message
-            deletion_days = ACCOUNT_DELETION_DAYS
-            msg     = _("Your account has been successfully put for deletion.\nIt will take %(days)d days to fully delete your account.\nIf it wasn't you, please contact us for account recovery.\n\n@An-Nur.app") % {"days": deletion_days}
-            subject = _("Account Deletion Confirmation")
-            if page_type == "Deactivate":
-                msg     = _("Your account has been successfully deactivated.\nYou can reactivate it within our app.\nIf it wasn't you, please contact us immediately.\n\n@An-Nur.app")
-                subject = _("Account Deactivation Confirmation")
+        # prepare confirmation message
+        deletion_days = ACCOUNT_DELETION_DAYS
+        msg     = _("Your account has been successfully put for deletion.\nIt will take %(days)d days to fully delete your account.\nIf it wasn't you, please contact us for account recovery.\n\n@An-Nur.app") % {"days": deletion_days}
+        subject = _("Account Deletion Confirmation")
+        if page_type == "Deactivate":
+            msg     = _("Your account has been successfully deactivated.\nYou can reactivate it within our app.\nIf it wasn't you, please contact us immediately.\n\n@An-Nur.app")
+            subject = _("Account Deactivation Confirmation")
 
-            # send notifications
-            errors = 0
-            if email:
-                ok, msg = validate_email(email)
-                if not ok:
-                    return jsonify({"message": msg}), 400
-                if not send_email(to_email=email, subject=subject, body=msg):
-                    errors += 1
-            else:
+        # send notifications
+        errors = 0
+        if email:
+            ok, msg = validate_email(email)
+            if not ok:
+                return jsonify({"message": msg}), 400
+            if not send_email(to_email=email, subject=subject, body=msg):
                 errors += 1
+        else:
+            errors += 1
 
-            if not send_sms(phone=formatted_phone, msg=msg):
-                errors += 1
+        if not send_sms(phone=formatted_phone, msg=msg):
+            errors += 1
 
-            if errors > 1:
-                log_critical(action="notify_failed", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Could not send confirmation. Try again later.")
-                return jsonify({"message": _("Could not send confirmation. Try again later.")}), 500
+        if errors > 1:
+            log_critical(action="notify_failed", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message="Could not send confirmation. Try again later.")
+            return jsonify({"message": _("Could not send confirmation. Try again later.")}), 500
 
-            # schedule deactivation/deletion
-            now = datetime.datetime.now(datetime.timezone.utc)
-            scheduled = now + timedelta(days=deletion_days)
-            sql = f"UPDATE global.users SET deactivated_at=%s"
-            params = [now]
-            if page_type == "remove" or page_type == "delete":
-                sql += ", scheduled_deletion_at=%s"
-                params.append(scheduled)
-            sql += " WHERE user_id=%s"
-            params.append(user["user_id"])
-
-            await cursor.execute(sql, params)
-            await conn.commit()
-
-        # success response
+        # schedule deactivation/deletion
+        now = datetime.datetime.now(datetime.timezone.utc)
+        scheduled = now + timedelta(days=deletion_days)
+        sql = f"UPDATE global.users SET deactivated_at=%s"
+        params = [now]
         if page_type == "remove" or page_type == "delete":
-            log_warning(action="deletion_scheduled", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} scheduled for deletion")
-            return jsonify({"success": True, "message": _("Account deletion initiated. Check your messages.")}), 200
+            sql += ", scheduled_deletion_at=%s"
+            params.append(scheduled)
+        sql += " WHERE user_id=%s"
+        params.append(user["user_id"])
 
-        log_warning(action="account_deactivated", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} deactivated")
-        return jsonify({"success": True, "message": _("Account deactivated successfully.")}), 200
+        await cursor.execute(sql, params)
+        await conn.commit()
 
-    except Exception as e:
-        log_critical(action="manage_account_error", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message=str(e))
-        return jsonify({"message": _("Internal server error")}), 500
+    # success response
+    if page_type == "remove" or page_type == "delete":
+        log_warning(action="deletion_scheduled", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} scheduled for deletion")
+        return jsonify({"success": True, "message": _("Account deletion initiated. Check your messages.")}), 200
+
+    log_warning(action="account_deactivated", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} deactivated")
+    return jsonify({"success": True, "message": _("Account deactivated successfully.")}), 200
 
 @user_routes.route("/account/reactivate", methods=['POST'])
+@rate_limit(max_requests=10, window=60)
+@handle_async_errors
 async def undo_remove():
 
     if is_test_mode():
@@ -542,34 +531,31 @@ async def undo_remove():
         return jsonify({"message": msg}), 400
 
     conn = await get_db_connection()
-    try:
-        async with conn.cursor() as cursor:
-            await cursor.execute("""
-                SELECT user_id, deactivated_at FROM global.users
-                WHERE phone = %s AND LOWER(fullname) = LOWER(%s)
-            """, (formatted_phone, fullname))
-            user = await cursor.fetchone()
+    async with conn.cursor() as cursor:
+        await cursor.execute("""
+            SELECT user_id, deactivated_at FROM global.users
+            WHERE phone = %s AND LOWER(fullname) = LOWER(%s)
+        """, (formatted_phone, fullname))
+        user = await cursor.fetchone()
 
-            if not user or not user["deactivated_at"]:
-                return jsonify({"message": "No deactivated account found"}), 404
+        if not user or not user["deactivated_at"]:
+            return jsonify({"message": "No deactivated account found"}), 404
 
-            deactivated_at = user["deactivated_at"]
-            if (datetime.datetime.now() - deactivated_at).days > ACCOUNT_REACTIVATION_DAYS and user["scheduled_deletion_at"]:
-                return jsonify({"message": "Undo period expired"}), 403
+        deactivated_at = user["deactivated_at"]
+        if (datetime.datetime.now() - deactivated_at).days > ACCOUNT_REACTIVATION_DAYS and user["scheduled_deletion_at"]:
+            return jsonify({"message": "Undo period expired"}), 403
 
-            await cursor.execute("""
-                UPDATE global.users
-                SET deactivated_at = NULL,
-                    scheduled_deletion_at = NULL
-                WHERE user_id = %s
-            """, (user["user_id"],))
-            await conn.commit()
-        return jsonify({"success": True, "message": _("Account reactivated.")}), 200
-    except Exception as e:
-        log_critical(action="account_reactivation_failed", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
-        return jsonify({"message": _("Internal server error")}), 500
+        await cursor.execute("""
+            UPDATE global.users
+            SET deactivated_at = NULL,
+                scheduled_deletion_at = NULL
+            WHERE user_id = %s
+        """, (user["user_id"],))
+        await conn.commit()
+    return jsonify({"success": True, "message": _("Account reactivated.")}), 200
 
 @user_routes.route("/account/check", methods=['POST'])
+@handle_async_errors
 async def get_account_status():
     data = await request.get_json()
 
@@ -587,6 +573,7 @@ async def get_account_status():
     phone        = data.get("phone")
     user_id      = data.get("user_id")
     fullname     = data.get("name_en")
+    madrasa_name = os.getenv("MADRASA_NAME")
 
     if not ip_address and not device_id and not device_brand:
         log_critical(action="auth_missing_fields", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Unknown device detected")
@@ -640,18 +627,16 @@ async def get_account_status():
             log_info(action="account_check_missing_field", trace_info=ip_address or "unknown", trace_info_hash=hash_sensitive_data(ip_address or "unknown"), trace_info_encrypted=encrypt_sensitive_data(ip_address or "unknown"), message=f"Field {c} is missing")
             return jsonify({"action": "logout", "message": LOGOUT_MSG}), 400
 
-    madrasa_name = os.getenv("MADRASA_NAME")
     conn = await get_db_connection()
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
 
             await cursor.execute(f"""
                     SELECT u.deactivated_at, u.email, p.*, 
 
-                    tname.en_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
-                    taddress.en_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
-                    tfather.en_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
-                    tmother.en_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
+                    tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+                    taddress.translation_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+                    tfather.translation_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+                    tmother.translation_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
 
                     FROM global.users u
 
@@ -666,42 +651,41 @@ async def get_account_status():
             """, (formatted_phone, fullname))
             record = await cursor.fetchone()
 
-        if not record:
-            log_error(action="account_check_not_found", trace_info=ip_address or user_id or "unknown", trace_info_hash=hash_sensitive_data(ip_address or user_id or "unknown"), trace_info_encrypted=encrypt_sensitive_data(ip_address or user_id or "unknown"), message="No matching user")
-            return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
+            if not record:
+                log_error(action="account_check_not_found", trace_info=ip_address or user_id or "unknown", trace_info_hash=hash_sensitive_data(ip_address or user_id or "unknown"), trace_info_encrypted=encrypt_sensitive_data(ip_address or user_id or "unknown"), message="No matching user")
+                return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
-        # Check deactivation
-        if record.get("deactivated_at"):
-            log_warning(action="account_check_deactivated", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message="Account deactivated")
-            return jsonify({"action": "deactivate", "message": DEACTIVATE_MSG}), 401
+            # Check deactivation
+            if record.get("deactivated_at"):
+                log_warning(action="account_check_deactivated", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message="Account deactivated")
+                return jsonify({"action": "deactivate", "message": DEACTIVATE_MSG}), 401
 
-        # Compare fields
-        for col, provided in checks.items():
-            if provided is None:
-                continue   # skip fields not sent by client
-            db_val = record.get(col)
-            # special handling for dates: compare only date part
-            if col == "date_of_birth" and isinstance(db_val, (datetime.datetime, datetime.date)):
-                try:
-                    provided_date = dt.fromisoformat(provided).date()
-                except Exception:
-                    log_error(action="account_check_bad_date", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Bad date: {provided}")
-                    return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
-                if db_val:
-                    db_date = db_val.date() if isinstance(db_val, datetime.datetime) else db_val
-                    if db_date != provided_date:
-                        log_warning(action="account_check_mismatch", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Mismatch: {col}: {provided_date} != {db_date}, so {hash_sensitive_data(fullname)} logged out")
+            # Compare fields
+            for col, provided in checks.items():
+                if provided is None:
+                    continue   # skip fields not sent by client
+                db_val = record.get(col)
+                # special handling for dates: compare only date part
+                if col == "date_of_birth" and isinstance(db_val, (datetime.datetime, datetime.date)):
+                    try:
+                        provided_date = dt.fromisoformat(provided).date()
+                    except Exception:
+                        log_error(action="account_check_bad_date", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Bad date: {provided}")
                         return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
-            else:
-                # cast both to strings for comparison
-                if str(provided).strip() != str(db_val).strip():
-                    log_warning(action="account_check_mismatch", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Mismatch: {col}: {hash_sensitive_data(str(provided))} != {hash_sensitive_data(str(db_val))}, so {hash_sensitive_data(fullname)} logged out")
-                    return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
+                    if db_val:
+                        db_date = db_val.date() if isinstance(db_val, datetime.datetime) else db_val
+                        if db_date != provided_date:
+                            log_warning(action="account_check_mismatch", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Mismatch: {col}: {provided_date} != {db_date}, so {hash_sensitive_data(fullname)} logged out")
+                            return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
+                else:
+                    # cast both to strings for comparison
+                    if str(provided).strip() != str(db_val).strip():
+                        log_warning(action="account_check_mismatch", trace_info=record["user_id"], trace_info_hash=hash_sensitive_data(record["user_id"]), trace_info_encrypted=encrypt_sensitive_data(record["user_id"]), message=f"Mismatch: {col}: {hash_sensitive_data(str(provided))} != {hash_sensitive_data(str(db_val))}, so {hash_sensitive_data(fullname)} logged out")
+                        return jsonify({"action": "logout", "message": LOGOUT_MSG}), 401
 
-        await cursor.execute(f"SELECT open_times FROM global.interactions WHERE device_id = %s AND device_brand = %s AND user_id = %s LIMIT 1", (device_id, device_brand, record["user_id"]))
-        open_times = await cursor.fetchone()
+            await cursor.execute(f"SELECT open_times FROM global.interactions WHERE device_id = %s AND device_brand = %s AND user_id = %s LIMIT 1", (device_id, device_brand, record["user_id"]))
+            open_times = await cursor.fetchone()
 
-        try:
             if not open_times:
                 await cursor.execute(f"""INSERT INTO global.interactions 
                             (device_id, ip_address, device_brand, user_id)
@@ -716,14 +700,6 @@ async def get_account_status():
                             WHERE device_id = %s AND device_brand = %s AND user_id = %s
                             """, (opened, device_id, device_brand, user_id))
             await conn.commit()
-        except Exception as e:
-            await conn.rollback()
-            log_critical(action="Saving interactions failed", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
-            # Continue execution even if interactions fail - don't block the main flow
-                
+        
         # all checks passed
-        return jsonify({"success": True, "message": _("Account is valid"), "user_id": record["user_id"]}), 200
-
-    except Exception as e:
-        log_critical(action="account_check_error", trace_info=formatted_phone or "unknown", trace_info_hash=hash_sensitive_data(formatted_phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(formatted_phone or "unknown"), message=str(e))
-        return jsonify({"message": _("Internal server error")}), 500
+            return jsonify({"success": True, "message": _("Account is valid"), "user_id": record["user_id"]}), 200

@@ -3,19 +3,22 @@ from . import user_routes
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from database.database_utils import get_db_connection
-from helpers import calculate_fees, encrypt_sensitive_data, format_phone_number, is_test_mode, hash_sensitive_data
+from helpers import calculate_fees, encrypt_sensitive_data, format_phone_number, is_test_mode, hash_sensitive_data, handle_async_errors, cache_with_invalidation
 from config import Config
 from logger import log_error, log_critical, log_warning, log_info
 from quart_babel import gettext as _
 
 # ====== Payment Fee Info ======
 @user_routes.route('/due_payments', methods=['POST'])
+@cache_with_invalidation
+@handle_async_errors
 async def payments():
     conn = await get_db_connection()
 
     data = await request.get_json()
     phone = data.get('phone') or ""
     fullname = (data.get('fullname') or 'guest').strip()
+    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
 
     if is_test_mode():
         fullname = Config.DUMMY_FULLNAME
@@ -25,27 +28,21 @@ async def payments():
     if not formatted_phone:
         return await jsonify({"error": msg}), 400
 
-    madrasa_name = os.getenv("MADRASA_NAME")
 
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute(f"""
-                SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
-                    pay.food, pay.due_months AS month, u.phone, u.fullname
-                FROM global.users u
-                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
-                JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
-                WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
-            """, (formatted_phone, fullname))
-            result = await cursor.fetchone()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute(f"""
+        SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
+            pay.food, pay.due_months AS month, u.phone, u.fullname
+            FROM global.users u
+            JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+            JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
+            WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
+        """, (formatted_phone, fullname))
+        result = await cursor.fetchone()
 
         if not result:
             log_error(action="payments_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} not found")
             return await jsonify({"message": _("User not found for payments")}), 404
-    except Exception as e:
-        await conn.rollback()
-        log_error(action="get_payments_failed", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"DB Error: {str(e)}")
-        return await jsonify({"error": _("Transaction failed")}), 500
 
 
     # Extract data
@@ -57,13 +54,15 @@ async def payments():
     due_months = result['month']
 
     # Calculate fees
-    fees = await calculate_fees(class_name, gender, special_food, reduced_fee, food)
+    fees = calculate_fees(class_name, gender, special_food, reduced_fee, food)
 
     return await jsonify({"amount": fees, "month": due_months}), 200
 
 
 # ====== Get Transaction History ======
 @user_routes.route('/get_transactions', methods=['POST'])
+@cache_with_invalidation
+@handle_async_errors
 async def get_transactions():
     data = await request.get_json() or {}
     phone            = data.get('phone')
@@ -145,6 +144,7 @@ async def get_transactions():
     }), 200
 
 @user_routes.route('/pay_sslcommerz', methods=['POST'])
+@handle_async_errors
 async def pay_sslcommerz():
     data = await request.get_json() or {}
     phone            = data.get('phone') or "01XXXXXXXXX"
@@ -235,6 +235,7 @@ async def pay_sslcommerz():
 
 
 @user_routes.route('/payments/<return_type>', methods=['POST'])
+@handle_async_errors
 async def payments_success_ssl(return_type):
     valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']
     if return_type not in valid_types:

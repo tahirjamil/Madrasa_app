@@ -260,10 +260,10 @@ async def block_check(info: str) -> Optional[bool]:
             
             return need_check > 3
     except IntegrityError as e:
-        log_critical(action="check_blocklist_failed", trace_info=info, message=f"IntegrityError: {e}")
+        log_critical(action="check_blocklist_failed", trace_info=info, trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"IntegrityError: {e}")
         return None
     except Exception as e:
-        log_critical(action="check_blocklist_failed", trace_info=info, message=f"Error: {e}")
+        log_critical(action="check_blocklist_failed", trace_info=info, trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Error: {e}")
         return None
 
 async def is_device_unsafe(ip_address: str, device_id: str, info: str = None) -> bool:
@@ -273,7 +273,7 @@ async def is_device_unsafe(ip_address: str, device_id: str, info: str = None) ->
     
     # Validate inputs
     if not ip_address or not device_id:
-        log_critical(action="security_breach", trace_info=ip_address or device_id or info, message="Missing device information")
+        log_critical(action="security_breach", trace_info=ip_address or device_id or info, trace_info_hash="N/A", trace_info_encrypted="N/A", message="Missing device information")
         
         # Send notifications
         await _send_security_notifications(ip_address, device_id, info)
@@ -343,7 +343,7 @@ async def _update_blocklist(ip_address: str, device_id: str, info: str) -> None:
             )
             await conn.commit()
     except Exception as e:
-        log_critical(action="update_blocklist_failed", trace_info=info, message=f"Failed to update blocklist: {e}")
+        log_critical(action="update_blocklist_failed", trace_info=info, trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Failed to update blocklist: {e}")
 
 # ─── Communication Functions ──────────────────────────────────────────────────
 
@@ -360,7 +360,7 @@ async def _send_async_email(to_email: str, subject: str, body: str) -> bool:
         await loop.run_in_executor(None, _send_smtp_email, msg, to_email)
         return True
     except Exception as e:
-        log_critical(action="email_error", trace_info=to_email, message=str(e))
+        log_critical(action="email_error", trace_info=to_email, trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         return False
 
 def _send_smtp_email(msg: MIMEText, to_email: str) -> None:
@@ -393,7 +393,7 @@ async def _send_async_sms(phone: str, msg: str) -> bool:
         result = await loop.run_in_executor(None, _send_sms_request, phone, msg)
         return result
     except Exception as e:
-        log_critical(action="sms_error", trace_info=phone, message=str(e))
+        log_critical(action="sms_error", trace_info=phone, trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         return False
 
 def _send_sms_request(phone: str, msg: str) -> bool:
@@ -408,7 +408,7 @@ def _send_sms_request(phone: str, msg: str) -> bool:
         result = response.json()
         return result.get("success", False)
     except Exception as e:
-        log_critical(action="sms_parse_error", trace_info=phone, message=str(e))
+        log_critical(action="sms_parse_error", trace_info=phone, trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         return False
 
 def send_sms(phone: str, signature: str = None, code: str = None, 
@@ -467,7 +467,7 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Dict, int]]:
                 return jsonify({"message": "Verification code mismatch"}), 400
     
     except Exception as e:
-        log_critical(action="verification_error", trace_info=phone, message=str(e))
+        log_critical(action="verification_error", trace_info=phone, trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         return jsonify({"message": f"Error: {str(e)}"}), 500
 
 async def delete_code() -> None:
@@ -481,7 +481,7 @@ async def delete_code() -> None:
             """)
         await conn.commit()
     except Exception as e:
-        log_critical(action="failed_to_delete_verifications", trace_info="Null", message=f"Database Error {str(e)}")
+        log_critical(action="failed_to_delete_verifications", trace_info="Null", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Database Error {str(e)}")
 
 # ─── Validation Functions ────────────────────────────────────────────────────
 
@@ -613,7 +613,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
             log_critical(action="get_id_error", trace_info=phone,trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
             return None
 
-async def upsert_translation(conn, translation_text: str, en_text: str = None, bn_text: str = None, ar_text: str = None, context: str = None) -> str:
+async def upsert_translation(conn, translation_text: str, bn_text: str = None, ar_text: str = None, context: str = None) -> str:
     """
     Insert or update a translation entry in the global.translations table
     Returns the translation_text that should be used as foreign key reference
@@ -626,15 +626,14 @@ async def upsert_translation(conn, translation_text: str, en_text: str = None, b
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         # Upsert translation entry
         sql = """
-            INSERT INTO global.translations (translation_text, en_text, bn_text, ar_text, context)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO global.translations (translation_text, bn_text, ar_text, context)
+            VALUES (%s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                en_text = COALESCE(VALUES(en_text), en_text),
                 bn_text = COALESCE(VALUES(bn_text), bn_text),
                 ar_text = COALESCE(VALUES(ar_text), ar_text),
                 context = COALESCE(VALUES(context), context)
         """
-        await cursor.execute(sql, (translation_text, en_text, bn_text, ar_text, context))
+        await cursor.execute(sql, (translation_text, bn_text, ar_text, context))
         return translation_text
 
 async def process_multilingual_field(conn, field_base: str, data: dict) -> str:
@@ -642,16 +641,16 @@ async def process_multilingual_field(conn, field_base: str, data: dict) -> str:
     Process multilingual field data and insert into translations table
     Returns the translation_text to use as foreign key reference
     """
-    en_text = data.get(f"{field_base}_en")
+    translation_text = data.get(f"{field_base}_en")
     bn_text = data.get(f"{field_base}_bn") 
     ar_text = data.get(f"{field_base}_ar")
     
     # Use English text as the primary translation_text key
-    if not en_text or not en_text.strip():
+    if not translation_text:
         return None
         
-    translation_text = en_text.strip().lower()
-    return await upsert_translation(conn, translation_text, en_text, bn_text, ar_text)
+    translation_text = translation_text.strip()
+    return await upsert_translation(conn, translation_text, bn_text, ar_text)
 
 async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str, phone: str) -> None:
     """Enhanced person insertion with translation handling and error handling"""
@@ -713,14 +712,53 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             # Merge translation fields with other fields
             fields.update(translation_fields)
             
+            # Separate acc_type fields from peoples fields
+            acc_type_fields = {}
+            peoples_fields = {}
+            
+            for key, value in fields.items():
+                if key in ['teacher', 'student', 'staff', 'donor', 'badri_member', 'special_member']:
+                    acc_type_fields[key] = value
+                else:
+                    peoples_fields[key] = value
+            
             async with conn.cursor(aiomysql.DictCursor) as cursor:
-                columns = ', '.join(fields.keys())
-                placeholders = ', '.join(['%s'] * len(fields))
+                # Insert into acc_types table FIRST if user_id exists
+                if 'user_id' in peoples_fields and peoples_fields['user_id']:
+                    user_id = peoples_fields['user_id']
+                    
+                    # Use boolean values from route (they already have correct defaults)
+                    acc_type_data = {
+                        'user_id': user_id,
+                        'main_type': acc_type,
+                        'teacher': int(acc_type_fields.get('teacher', False)),
+                        'student': int(acc_type_fields.get('student', False)),
+                        'staff': int(acc_type_fields.get('staff', False)),
+                        'donor': int(acc_type_fields.get('donor', False)),
+                        'badri_member': int(acc_type_fields.get('badri_member', False)),
+                        'special_member': int(acc_type_fields.get('special_member', False))
+                    }
+                    
+                    acc_columns = ', '.join(acc_type_data.keys())
+                    acc_placeholders = ', '.join(['%s'] * len(acc_type_data))
+                    acc_updates = ', '.join([f"{col} = VALUES({col})" for col in acc_type_data.keys() if col != 'user_id'])
+                    
+                    # UPSERT for acc_types
+                    acc_sql = f"""
+                        INSERT INTO global.acc_types ({acc_columns})
+                        VALUES ({acc_placeholders})
+                        ON DUPLICATE KEY UPDATE {acc_updates}
+                    """
+                    await cursor.execute(acc_sql, list(acc_type_data.values()))
+                
+                # Insert into peoples table AFTER acc_types
+                columns = ', '.join(peoples_fields.keys())
+                placeholders = ', '.join(['%s'] * len(peoples_fields))
                 
                 # Only update non-identity or safe fields
                 updatable_fields = [
-                    col for col in fields.keys() 
-                    if col not in ('user_id', 'created_at')
+                    col for col in peoples_fields.keys() 
+                    if col not in ('user_id', 'created_at', 'updated_at')
                 ]
                 updates = ', '.join([f"{col} = VALUES({col})" for col in updatable_fields])
                 
@@ -730,7 +768,8 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                     VALUES ({placeholders}) AS new
                     ON DUPLICATE KEY UPDATE {updates}
                 """
-                await cursor.execute(sql, list(fields.values()))
+                await cursor.execute(sql, list(peoples_fields.values()))
+                
             await conn.commit()
             log_info(action="insert_success", trace_info=phone, trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message="Upserted into peoples with translations")
         except Exception as e:
@@ -790,10 +829,10 @@ async def delete_users(madrasa_name: str, uid: int = None, acc_type: str = None)
             return True
             
         except IntegrityError as e:
-            log_critical(action="auto_delete_error", trace_info="Null", message=f"IntegrityError: {e}")
+            log_critical(action="auto_delete_error", trace_info="Null", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"IntegrityError: {e}")
             return True
         except Exception as e:
-            log_critical(action="auto_delete_error", trace_info="Null", message=str(e))
+            log_critical(action="auto_delete_error", trace_info="Null", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
             return True
 
 # ─── Business Logic Functions ────────────────────────────────────────────────
@@ -857,7 +896,7 @@ def save_results(data: List[Dict[str, Any]]) -> None:
             json.dump(data, f, indent=2)
         os.replace(temp_file, config.exam_result_index_file)
     except Exception as e:
-        log_critical(action="save_results_error", trace_info="file_ops", message=str(e))
+        log_critical(action="save_results_error", trace_info="file_ops", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
@@ -886,7 +925,7 @@ def save_notices(data: List[Dict[str, Any]]) -> None:
             json.dump(data, f, indent=2)
         os.replace(temp_file, config.notices_index_file)
     except Exception as e:
-        log_critical(action="save_notices_error", trace_info="file_ops", message=str(e))
+        log_critical(action="save_notices_error", trace_info="file_ops", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
@@ -1202,14 +1241,14 @@ def handle_async_errors(func: Callable) -> Callable:
         try:
             return await func(*args, **kwargs)
         except AppError as e:
-            log_critical(action="app_error", trace_info="error_handler", message=f"{e.error_code}: {e.message}")
+            log_critical(action="app_error", trace_info="error_handler", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"{e.error_code}: {e.message}")
             return jsonify({
                 "error": e.message,
                 "error_code": e.error_code,
                 "details": e.details
             }), 400
         except Exception as e:
-            log_critical(action="unexpected_error", trace_info="error_handler", message=str(e))
+            log_critical(action="unexpected_error", trace_info="error_handler", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
             performance_monitor.record_error("unexpected", str(e))
             return jsonify({
                 "error": "An unexpected error occurred",
@@ -1275,7 +1314,7 @@ def encrypt_sensitive_data(data: str) -> str:
         encrypted_data = fernet.encrypt(data.encode())
         return base64.urlsafe_b64encode(encrypted_data).decode()
     except Exception as e:
-        log_critical(action="encryption_error", trace_info="system", message=f"Failed to encrypt data: {str(e)}")
+        log_critical(action="encryption_error", trace_info="system", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Failed to encrypt data: {str(e)}")
         # In case of encryption failure, return original data (not recommended for production)
         return data
 
@@ -1290,7 +1329,7 @@ def decrypt_sensitive_data(encrypted_data: str) -> str:
         decrypted_data = fernet.decrypt(decoded_data)
         return decrypted_data.decode()
     except Exception as e:
-        log_critical(action="decryption_error", trace_info="system", message=f"Failed to decrypt data: {str(e)}")
+        log_critical(action="decryption_error", trace_info="system", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Failed to decrypt data: {str(e)}")
         # In case of decryption failure, return original data (might be unencrypted legacy data)
         return encrypted_data
 
@@ -1362,7 +1401,7 @@ def initialize_application() -> bool:
         config_issues = validate_app_config()
         if config_issues:
             for issue in config_issues:
-                log_critical(action="config_error", trace_info="init", message=issue)
+                log_critical(action="config_error", trace_info="init", trace_info_hash="N/A", trace_info_encrypted="N/A", message=issue)
             return False
         
         # Initialize cache
@@ -1371,12 +1410,12 @@ def initialize_application() -> bool:
         # Initialize rate limiter
         rate_limiter._requests.clear()
         
-        # Log successful initialization
-        log_info(action="app_initialized", trace_info="init", message="Application initialized successfully")
+        # Log successful initialization  
+        log_info(action="app_initialized", trace_info="init", trace_info_hash="N/A", trace_info_encrypted="N/A", message="Application initialized successfully")
         return True
         
     except Exception as e:
-        log_critical(action="init_error", trace_info="init", message=str(e))
+        log_critical(action="init_error", trace_info="init", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         return False
 
 

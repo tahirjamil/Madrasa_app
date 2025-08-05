@@ -1,8 +1,13 @@
 from quart import render_template, request, flash, session, redirect, url_for, current_app, jsonify
 from . import admin_routes
-from database.database_utils import get_db_connection
+from database.database_utils import connect_to_db
 from datetime import datetime, date
-from helpers import load_results, load_notices, save_notices, save_results, allowed_exam_file, allowed_notice_file
+from helpers import (
+    load_results, load_notices, save_notices, save_results, 
+    allowed_exam_file, allowed_notice_file, cache_with_invalidation, 
+    handle_async_errors, rate_limit, hash_sensitive_data, 
+    encrypt_sensitive_data, format_phone_number, get_db_context
+)
 from logger import log_event_async as log_event
 from config import Config
 import json, re, subprocess, os, aiomysql, asyncio
@@ -46,29 +51,20 @@ def require_csrf(f):
 
 @admin_routes.route('/', methods=['GET', 'POST'])
 @require_csrf
+@handle_async_errors
+# @rate_limit(max_requests=500, window=60)  # Temporarily disabled for testing
 async def admin_dashboard():
     # 1) Ensure admin is logged in
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    try:
-        conn = await get_db_connection()
-        if conn is None:
-            await flash("Database connection failed", "danger")
-            return await render_template("admin/dashboard.html", 
-                databases=[], tables={}, selected_db='madrasadb',
-                query_result=None, query_error="Database connection failed",
-                transactions=[], txn_limit='100', student_payments=[], student_class='all')
-    except Exception as e:
-        await flash(f"Database connection error: {str(e)}", "danger")
-        return await render_template("admin/dashboard.html", 
-            databases=[], tables={}, selected_db='madrasadb',
-            query_result=None, query_error=f"Database connection error: {str(e)}",
-            transactions=[], txn_limit='100', student_payments=[], student_class='all')
+    # Get database connection (handled by @handle_async_errors)
+    conn = await connect_to_db()
+    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
     
     databases = []
     tables = {}
-    selected_db = request.args.get('db', 'madrasadb')
+    selected_db = request.args.get('db', 'global')  # Default to global database
     query_result = None
     query_error = None
 
@@ -138,26 +134,27 @@ async def admin_dashboard():
                         log_event("query_error", username, f"{raw_sql} | {str(e)}")
 
             # --- Fetch transactions ---
-            txn_sql = "SELECT * FROM transactions ORDER BY date DESC"
+            txn_sql = "SELECT * FROM global.transactions ORDER BY date DESC"
             if txn_limit_val:
                 txn_sql += f" LIMIT {txn_limit_val}"
             await cursor.execute(txn_sql)
             transactions = await cursor.fetchall()
 
             # --- Fetch all students payment info ---
-            student_sql = '''
-                SELECT users.fullname, users.phone, peoples.class, peoples.gender, payments.special_food, payments.reduced_fee,
-                       payments.food, payments.due_months AS month, payments.payment_id, payments.user_id
-                FROM users
-                JOIN peoples ON peoples.user_id = users.user_id
-                JOIN payments ON payments.user_id = users.user_id
-                WHERE peoples.acc_type = 'students'
+            student_sql = f'''
+                SELECT u.fullname, u.phone, p.class, p.gender, pay.special_food, pay.reduced_fee,
+                       pay.food, pay.due_months AS month, pay.payment_id, pay.user_id
+                FROM global.users u
+                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+                JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
+                JOIN global.acc_types a ON a.user_id = u.user_id
+                WHERE a.main_type = 'students'
             '''
             params = []
             if student_class and student_class != 'all':
-                student_sql += " AND peoples.class = %s"
+                student_sql += " AND p.class = %s"
                 params.append(student_class)
-            student_sql += " ORDER BY peoples.class, users.fullname"
+            student_sql += " ORDER BY p.class, u.fullname"
             await cursor.execute(student_sql, params)
             student_payments = await cursor.fetchall()
 
@@ -182,6 +179,8 @@ async def admin_dashboard():
 
 
 @admin_routes.route('/logs')
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def view_logs():
     
     # Require admin login
@@ -189,11 +188,11 @@ async def view_logs():
         return redirect(url_for('admin_routes.login'))
     
     if is_test_mode():
-        await flash("Server is in test mode", "danger")
+        # await flash("Server is in test mode", "danger")  # Removed hardcoded test mode message
         return await render_template("admin/logs.html", logs=[])
     
     try:
-        conn = await get_db_connection()
+        conn = await connect_to_db()
         if conn is None:
             await flash("Database connection failed", "danger")
             return await render_template("admin/logs.html", logs=[])
@@ -216,9 +215,10 @@ async def view_logs():
     return await render_template("admin/logs.html", logs=logs)
 
 @admin_routes.route('/logs/data')
+@handle_async_errors
 async def logs_data():
     try:
-        conn = await get_db_connection()
+        conn = await connect_to_db()
 
         if conn is None or is_test_mode():
             return jsonify([])
@@ -239,6 +239,7 @@ async def logs_data():
 
 
 @admin_routes.route('/info/data')
+@handle_async_errors
 async def info_data_admin():
     # require admin
     if not session.get('admin_logged_in'):
@@ -263,6 +264,8 @@ async def info_data_admin():
 
 
 @admin_routes.route('/info')
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def info_admin():
 
     # require admin
@@ -279,6 +282,8 @@ async def info_admin():
 # ------------------ Exam Results ------------------------
 
 @admin_routes.route('/exam_results', methods=['GET'])
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def exam_results():
     # auth
     if not session.get('admin_logged_in'):
@@ -358,21 +363,30 @@ async def exam_results():
 
 @admin_routes.route('/members', methods=['GET', 'POST'])
 @require_csrf
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def members():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await get_db_connection()
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            # Fetch all peoples and pending verifies
-            await cursor.execute("SELECT * FROM peoples")
-            peoples = list(await cursor.fetchall())
-            await cursor.execute("SELECT * FROM verify_peoples")
+    conn = await connect_to_db()
+    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
+    
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        # Fetch all peoples with account types
+        await cursor.execute(f"""
+            SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
+            FROM {madrasa_name}.peoples p
+            LEFT JOIN global.acc_types a ON a.user_id = p.user_id
+        """)
+        peoples = list(await cursor.fetchall())
+        
+        # Note: verify_peoples table might not exist in new schema
+        try:
+            await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
             pending = await cursor.fetchall()
-    except Exception as e:
-        peoples = []
-        pending = []
+        except:
+            pending = []
 
     # Build list of distinct account types
     types = sorted({m['acc_type'] for m in peoples if m.get('acc_type')})
@@ -488,6 +502,8 @@ async def members():
 # ------------------- Notices -----------------------
 
 @admin_routes.route('/notice', methods=['GET'])
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def notice_page():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -579,6 +595,8 @@ async def notice_page():
 # ------------------ Routine ----------------------
 
 @admin_routes.route('/routines', methods=['GET'])
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def routines():
     # require login
     if not session.get('admin_logged_in'):
@@ -586,7 +604,7 @@ async def routines():
 
     sort = request.args.get('sort', 'default')
 
-    conn = await get_db_connection()
+    conn = await connect_to_db()
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
@@ -677,15 +695,17 @@ async def routines():
 # -------------------- Event / Function ------------------------
 
 @admin_routes.route('/events', methods=['GET'])
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def events():
     # ─── require login ────────────────────────────────────────────
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await get_db_connection()
-    events = []
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+    conn = await connect_to_db()
+    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
+    
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
             # TODO: Disabled for view-only mode
             # ─── handle form submission ────────────────────────────
             # if request.method == 'POST':
@@ -715,18 +735,17 @@ async def events():
             #         conn.commit()
             #         flash("✅ Event added successfully.", "success")
 
-            # ─── fetch all events ────────────────────────────────────
-            await cursor.execute("""
-                SELECT event_id, type, title, date, time, function_url
-                  FROM events
-                 ORDER BY date  DESC,
-                          time  DESC
-            """)
-            if not is_test_mode():
-                events = await cursor.fetchall()
-
-    except Exception as e:
-        await flash(f"⚠️ Database error: {e}", "danger")
+        # ─── fetch all events ────────────────────────────────────
+        await cursor.execute(f"""
+            SELECT event_id, type, title, date, time, function_url
+              FROM {madrasa_name}.events
+             ORDER BY date  DESC,
+                      time  DESC
+        """)
+        if not is_test_mode():
+            events = await cursor.fetchall()
+        else:
+            events = []
 
     return await render_template("admin/events.html", events=events)
 
@@ -743,6 +762,8 @@ if not os.path.exists(PIC_INDEX_PATH):
 
 
 @admin_routes.route('/madrasa_pictures', methods=['GET'])
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def madrasa_pictures():
     # 1) Require admin
     if not session.get('admin_logged_in'):
@@ -840,6 +861,8 @@ async def madrasa_pictures():
 # ---------------------- Exam -----------------------------
 
 @admin_routes.route('/admin/events/exams', methods=['GET'])
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def exams():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
@@ -847,7 +870,7 @@ async def exams():
     if not is_test_mode():
         return await render_template('admin/exams.html', exams=[])
 
-    conn = await get_db_connection()
+    conn = await connect_to_db()
     async with conn.cursor(aiomysql.DictCursor) as cursor:
 
         # Fetch all exams
@@ -995,18 +1018,18 @@ async def exams():
 #     return render_template('admin/payment_form.html', payment=payment, mode=mode)
 
 @admin_routes.route('/interactions', methods=['GET'])
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
 async def interactions():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
     sort = request.args.get('sort', 'default')
-    conn = await get_db_connection()
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("SELECT * FROM interactions")
-            rows = list(await cursor.fetchall())
-    except Exception as e:
-        rows = []
+    conn = await connect_to_db()
+    
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute("SELECT * FROM global.interactions")
+        rows = list(await cursor.fetchall())
 
     # Sorting logic
     if sort == 'device_brand':
@@ -1025,6 +1048,8 @@ async def interactions():
 
 @admin_routes.route('/power', methods=['GET', 'POST'])
 @require_csrf
+@handle_async_errors
+@rate_limit(max_requests=100, window=60)
 async def power_management():
     # Require admin login
     if not session.get('admin_logged_in'):
@@ -1036,7 +1061,7 @@ async def power_management():
         return await render_template('admin/power.html', error="Power management is not configured")
     
     if is_test_mode():
-        return await render_template('admin/power.html', error="Server is in test mode")
+        return await render_template('admin/power.html', error=None)  # Removed hardcoded test mode message
     
     if request.method == 'POST':
         form = await request.form

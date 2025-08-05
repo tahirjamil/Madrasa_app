@@ -135,6 +135,10 @@ class ProcessManager:
             env = os.environ.copy()
             env["PYTHONPATH"] = str(self.config.base_dir)
             
+            # Set TEST_MODE for dev mode
+            if dev_mode:
+                env["TEST_MODE"] = "true"
+            
             # Start process with different output handling for dev mode
             if dev_mode:
                 # In dev mode, show server logs in real-time

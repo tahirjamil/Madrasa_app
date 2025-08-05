@@ -1,11 +1,12 @@
 ---------------------------------------------- GLOBAL TABLES ----------------------------------------------
 
+-- Create global database if it doesn't exist
+CREATE DATABASE IF NOT EXISTS global;
 USE global;
 
 CREATE TABLE IF NOT EXISTS translations (
                 translation_id      INT AUTO_INCREMENT PRIMARY KEY,
                 translation_text    VARCHAR(255)   UNIQUE    NOT NULL,
-                en_text             VARCHAR(255)   NULL,
                 bn_text             VARCHAR(255)   NULL,
                 ar_text             VARCHAR(255)   NULL,
                 context             VARCHAR(100)   NULL,
@@ -142,7 +143,7 @@ CREATE TABLE IF NOT EXISTS blocklist (
 
 
 CREATE TABLE IF NOT EXISTS acc_types (
-                user_id INT NOT NULL,
+                user_id INT UNIQUE NOT NULL,
                 main_type VARCHAR(20) NOT NULL CHECK (main_type IN ('admins','students','teachers','staffs','others','badri_members','donors')),
                 teacher BOOLEAN NOT NULL DEFAULT 0,
                 student BOOLEAN NOT NULL DEFAULT 0,
@@ -154,7 +155,6 @@ CREATE TABLE IF NOT EXISTS acc_types (
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-                INDEX idx_acc_types_user_id (user_id),
                 INDEX idx_acc_types_main_type (main_type),
                 INDEX idx_acc_types_teacher (teacher),
                 INDEX idx_acc_types_student (student),
@@ -167,6 +167,8 @@ CREATE TABLE IF NOT EXISTS acc_types (
 
 ---------------------------------------------- MADRASAH SPECIFIC TABLES ----------------------------------------------
 
+-- Create madrasa database if it doesn't exist  
+CREATE DATABASE IF NOT EXISTS annur;
 USE annur;
 
 

@@ -4,7 +4,7 @@ from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
 from config import Config
 from functools import wraps
-from helpers import is_test_mode
+from helpers import is_test_mode, rate_limit
 
 login_attempts = {}
 
@@ -31,6 +31,7 @@ def require_csrf(f):
 
 @admin_routes.route('/login', methods=['GET', 'POST'])
 @require_csrf
+@rate_limit(max_requests=5, window=300)  # 5 attempts per 5 minutes for admin security
 async def login():
 
     # See for test mode

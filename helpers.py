@@ -20,7 +20,7 @@ import requests
 from aiomysql import IntegrityError
 from dotenv import load_dotenv
 from phonenumbers.phonenumberutil import NumberParseException
-from quart import jsonify, request
+from quart import flash, jsonify, redirect, request
 from quart_babel import gettext as _
 from werkzeug.datastructures import FileStorage
 
@@ -1418,4 +1418,24 @@ def initialize_application() -> bool:
         log_critical(action="init_error", trace_info="init", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
         return False
 
+# ─── CSRF Protection ───────────────────────────────────────────────────────
 
+async def validate_csrf_token():
+    """Validate CSRF token from form data"""
+    from csrf_protection import validate_csrf_token
+    form = await request.form
+    token = form.get('csrf_token')
+    if not validate_csrf_token(token):
+        await flash("CSRF token validation failed. Please try again.", "danger")
+        return False
+    return True
+
+def require_csrf(f):
+    """Decorator to require CSRF validation for POST requests"""
+    @wraps(f)
+    async def decorated_function(*args, **kwargs):
+        if request.method == 'POST':
+            if not await validate_csrf_token():
+                return redirect(request.url)
+        return await f(*args, **kwargs)
+    return decorated_function

@@ -5,3 +5,4 @@ admin_routes = Blueprint('admin_routes', __name__, template_folder='../../templa
 # Import routes from other modules to register them
 from . import auth_admin  # noqa: F401
 from . import views  # noqa: F401
+from . import auxiliary  # noqa: F401

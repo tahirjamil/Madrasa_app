@@ -4,30 +4,9 @@ from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
 from config import Config
 from functools import wraps
-from helpers import is_test_mode, rate_limit
+from helpers import is_test_mode, rate_limit, require_csrf
 
 login_attempts = {}
-
-# CSRF validation
-async def validate_csrf_token():
-    """Validate CSRF token from form data"""
-    from csrf_protection import validate_csrf_token
-    form = await request.form
-    token = form.get('csrf_token')
-    if not validate_csrf_token(token):
-        await flash("CSRF token validation failed. Please try again.", "danger")
-        return False
-    return True
-
-def require_csrf(f):
-    """Decorator to require CSRF validation for POST requests"""
-    @wraps(f)
-    async def decorated_function(*args, **kwargs):
-        if request.method == 'POST':
-            if not await validate_csrf_token():
-                return redirect(request.url)
-        return await f(*args, **kwargs)
-    return decorated_function
 
 @admin_routes.route('/login', methods=['GET', 'POST'])
 @require_csrf

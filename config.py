@@ -44,8 +44,8 @@ class Config:
     BASE_TEMP_FOLDER = os.path.join('temp')
     STATIC_FOLDER = os.path.join('static')
     PROFILE_IMG_UPLOAD_FOLDER = os.path.join(STATIC_FOLDER, 'user_profile_img')
-    EXAM_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
-    NOTICES_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
+    EXAM_RESULTS_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
+    NOTICES_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
     GALLERY_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'gallery')
 
     # Extensions
@@ -69,8 +69,15 @@ class Config:
     DUMMY_EMAIL = os.getenv("DUMMY_EMAIL")
     DUMMY_PASSWORD = os.getenv("DUMMY_PASSWORD")
 
+    # Rate Limiting
+    DEFAULT_RATE_LIMIT = 10
+    RATE_LIMIT_WINDOW = 60
+
     # Server Version
     SERVER_VERSION = "1.0.0"
+
+    # Password Strength
+    PASSWORD_MIN_LENGTH = 8
     
     # Warn about default database credentials
     if not MYSQL_USER or MYSQL_USER == "admin":

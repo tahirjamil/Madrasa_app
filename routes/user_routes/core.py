@@ -1,436 +1,1619 @@
-from quart import request, jsonify, current_app, send_from_directory
-from . import user_routes
-import aiomysql, os
+import asyncio
+import os
+import re
 from datetime import datetime, date, timezone
+from typing import Any, Dict, List, Optional, Tuple, Union
 from zoneinfo import ZoneInfo
+
+import aiomysql
 from PIL import Image
+from quart import (
+    current_app, jsonify, request, send_from_directory, 
+    Response, Request
+)
 from werkzeug.utils import secure_filename
+
+# Local imports
+from . import user_routes
 from database.database_utils import get_db_connection
 from config import Config
-from helpers import (get_id, insert_person, format_phone_number, is_test_mode, validate_file_upload, rate_limit, cache_with_invalidation,
-    encrypt_sensitive_data, hash_sensitive_data, handle_async_errors)
+from helpers import (
+    get_id, insert_person, invalidate_cache_pattern, is_test_mode, 
+    rate_limit, cache_with_invalidation,
+    encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
+    cache, performance_monitor, metrics_collector
+)
+from security import (
+    security_manager, format_phone_number, validate_file_upload,
+    validate_fullname, get_client_info, is_maintenance_mode,
+    check_rate_limit
+)
 from quart_babel import gettext as _
-from logger import log_critical, log_error
+from logger import log_critical, log_error, log_info, log_warning
 
-# ========== Config ==========
-@user_routes.route('/static/user_profile_img/<filename>') # TODO fix in app
-async def uploaded_file(filename):
-    filename = secure_filename(filename)
-    upload_folder = os.path.join(Config.PROFILE_IMG_UPLOAD_FOLDER)
-    file_path = os.path.join(upload_folder, filename)
+# ─── Configuration and Constants ───────────────────────────────────────────────
 
+class CoreConfig:
+    """Centralized configuration for core routes"""
+    
+    # File serving configuration
+    ALLOWED_GALLERY_FOLDERS = [
+        'garden', 'library', 'office', 'roof_and_kitchen', 
+        'mosque', 'studio', 'other'
+    ]
+    ALLOWED_GALLERY_GENDERS = ['male', 'female', 'both']
+    ALLOWED_CLASS_FOLDERS = [
+        'hifz', 'moktob', 'meshkat', 'daora', 'ulumul_hadith', 
+        'ifta', 'madani_nesab', 'other'
+    ]
+    
+    # Security configuration
+    ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif']
+    ALLOWED_DOCUMENT_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt']
+    
+    # Rate limiting
+    DEFAULT_RATE_LIMIT = 100  # requests per hour
+    STRICT_RATE_LIMIT = 20    # requests per hour for sensitive operations
+    
+    # Cache configuration
+    CACHE_TTL = 3600  # 1 hour
+    SHORT_CACHE_TTL = 300  # 5 minutes
+    
+    # Validation patterns
+    PHONE_PATTERN = re.compile(r'^\+?[1-9]\d{1,14}$')
+    NAME_PATTERN = re.compile(r'^[A-Za-z\s\'-]+$')
+    
+    # Error messages
+    ERROR_MESSAGES = {
+        'file_not_found': _("File not found"),
+        'invalid_folder': _("Invalid folder name"),
+        'invalid_gender': _("Invalid gender parameter"),
+        'file_too_large': _("File size exceeds maximum allowed size"),
+        'invalid_file_type': _("Invalid file type"),
+        'missing_required_fields': _("Missing required fields"),
+        'invalid_phone': _("Invalid phone number format"),
+        'invalid_name': _("Invalid name format"),
+        'rate_limit_exceeded': _("Rate limit exceeded. Please try again later."),
+        'maintenance_mode': _("Application is currently in maintenance mode"),
+        'unauthorized': _("Unauthorized access"),
+        'internal_error': _("An internal error occurred"),
+        'validation_error': _("Validation error"),
+        'database_error': _("Database operation failed")
+    }
+
+# Global configuration instance
+core_config = CoreConfig()
+
+# ─── Security and Validation Functions ───────────────────────────────────────
+
+def validate_request_headers(request: Request) -> Tuple[bool, str]:
+    """Validate request headers for security"""
+    # Check for required headers
+    required_headers = ['User-Agent', 'Accept']
+    for header in required_headers:
+        if not request.headers.get(header):
+            return False, f"Missing required header: {header}"
+    
+    # Check for suspicious headers
+    suspicious_headers = ['X-Forwarded-Host', 'X-Original-URL']
+    for header in suspicious_headers:
+        if request.headers.get(header):
+            log_critical(
+                action="suspicious_header",
+                trace_info=get_client_info()["ip_address"],
+                message=f"Suspicious header detected: {header}"
+            )
+    
+    return True, ""
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename for security"""
+    if not filename:
+        return ""
+    
+    # Remove path traversal attempts
+    filename = filename.replace('..', '').replace('/', '').replace('\\', '')
+    
+    # Remove potentially dangerous characters
+    filename = re.sub(r'[<>:"|?*]', '', filename)
+    
+    # Ensure filename is not empty after sanitization
+    if not filename.strip():
+        return "default"
+    
+    return secure_filename(filename)
+
+def validate_folder_access(folder: str, allowed_folders: List[str]) -> bool:
+    """Validate folder access permissions"""
+    return folder in allowed_folders
+
+def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str]:
+    """Get safe file path and validate existence"""
+    safe_filename = sanitize_filename(filename)
+    file_path = os.path.join(base_path, safe_filename)
+    
+    # Additional security check - ensure path is within base directory
+    try:
+        real_base_path = os.path.realpath(base_path)
+        real_file_path = os.path.realpath(file_path)
+        
+        if not real_file_path.startswith(real_base_path):
+            raise ValueError("Path traversal detected")
+            
+    except (OSError, ValueError) as e:
+        log_critical(
+            action="path_traversal_attempt",
+            trace_info=filename,
+            trace_info_hash=hash_sensitive_data(filename),
+            trace_info_encrypted=encrypt_sensitive_data(filename),
+            message=f"Path traversal attempt: {str(e)}"
+        )
+        return None, None
+    
+    return file_path, safe_filename
+
+# ─── Enhanced File Serving Routes ───────────────────────────────────────────
+
+@user_routes.route('/uploads/profile_img/<filename>')
+@handle_async_errors
+async def uploaded_file(filename: str) -> Response:
+    """
+    Serve user profile images with enhanced security
+    
+    Args:
+        filename: The filename to serve
+        
+    Returns:
+        File response or error response
+    """
+    # Validate request headers
+    is_valid, error_msg = validate_request_headers(request)
+    if not is_valid:
+        return jsonify({"error": error_msg}), 400
+    
+    # Get client info for logging
+    client_info = get_client_info()
+    
+    # Sanitize and validate filename
+    file_path, safe_filename = get_safe_file_path(
+        Config.PROFILE_IMG_UPLOAD_FOLDER, filename
+    )
+    
+    if not file_path:
+        log_warning(
+            action="invalid_profile_image_request",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid filename: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    # Check if file exists and is accessible
     if not os.path.isfile(file_path):
-        return jsonify({"message": "File not found"}), 404
-    return await send_from_directory(upload_folder, filename), 200
+        log_warning(
+            action="profile_image_not_found",
+            trace_info=client_info["ip_address"],
+            message=f"Profile image not found: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    # Validate file type
+    if not any(safe_filename.lower().endswith(ext) for ext in core_config.ALLOWED_IMAGE_EXTENSIONS):
+        log_warning(
+            action="invalid_image_type",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid image type: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_file_type']}), 400
+    
+    try:
+        # Serve file with security headers
+        response = await send_from_directory(
+            Config.PROFILE_IMG_UPLOAD_FOLDER, 
+            safe_filename
+        )
+        
+        # Add security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        
+        # Log successful access
+        log_info(
+            action="profile_image_served",
+            trace_info=client_info["ip_address"],
+            message=f"Profile image served: {safe_filename}"
+        )
+        
+        return response
+        
+    except Exception as e:
+        log_critical(
+            action="file_serving_error",
+            trace_info=client_info["ip_address"],
+            trace_info_hash=hash_sensitive_data(filename),
+            trace_info_encrypted=encrypt_sensitive_data(filename),
+            message=f"Error serving file {filename}: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/notices/<path:filename>')
-async def notices_file(filename):
-    filename = secure_filename(filename)
-    upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'notices')
-    file_path = os.path.join(upload_folder, filename)
-
+@handle_async_errors
+async def notices_file(filename: str) -> Response:
+    """
+    Serve notice files with enhanced security
+    
+    Args:
+        filename: The filename to serve
+        
+    Returns:
+        File response or error response
+    """
+    # Validate request headers
+    is_valid, error_msg = validate_request_headers(request)
+    if not is_valid:
+        return jsonify({"error": error_msg}), 400
+    
+    # Get client info for logging
+    client_info = get_client_info()
+    
+    # Get upload folder from config
+    upload_folder = Config.NOTICES_UPLOAD_FOLDER
+    
+    # Sanitize and validate filename
+    file_path, safe_filename = get_safe_file_path(upload_folder, filename)
+    
+    if not file_path:
+        log_warning(
+            action="invalid_notice_request",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid filename: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    # Check if file exists
     if not os.path.isfile(file_path):
-        return jsonify({"message": _("File not found")}), 404
-    return await send_from_directory(upload_folder, filename), 200
+        log_warning(
+            action="notice_file_not_found",
+            trace_info=client_info["ip_address"],
+            message=f"Notice file not found: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    try:
+        # Serve file with security headers
+        response = await send_from_directory(upload_folder, safe_filename)
+        
+        # Add security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Cache-Control'] = 'public, max-age=1800'  # 30 minutes
+        
+        # Log successful access
+        log_info(
+            action="notice_file_served",
+            trace_info=client_info["ip_address"],
+            message=f"Notice file served: {safe_filename}"
+        )
+        
+        return response
+        
+    except Exception as e:
+        log_critical(
+            action="notice_serving_error",
+            trace_info=client_info["ip_address"],
+            trace_info_hash=hash_sensitive_data(filename),
+            trace_info_encrypted=encrypt_sensitive_data(filename),
+            message=f"Error serving notice file {filename}: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/exam_results/<path:filename>')
-async def exam_results_file(filename):
-    filename = secure_filename(filename)
-    upload_folder = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'exam_results')
-    file_path = os.path.join(upload_folder, filename)
-
-    if not os.path.isfile(file_path):
-        return jsonify({"message": "File not found"}), 404
+@handle_async_errors
+async def exam_results_file(filename: str) -> Response:
+    """
+    Serve exam result files with enhanced security
+    
+    Args:
+        filename: The filename to serve
         
-    return await send_from_directory(upload_folder, filename), 200
+    Returns:
+        File response or error response
+    """
+    # Validate request headers
+    is_valid, error_msg = validate_request_headers(request)
+    if not is_valid:
+        return jsonify({"error": error_msg}), 400
+    
+    # Get client info for logging
+    client_info = get_client_info()
+    
+    # Get upload folder from config
+    upload_folder = Config.EXAM_RESULTS_UPLOAD_FOLDER
+    
+    # Sanitize and validate filename
+    file_path, safe_filename = get_safe_file_path(upload_folder, filename)
+    
+    if not file_path:
+        log_warning(
+            action="invalid_exam_result_request",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid filename: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    # Check if file exists
+    if not os.path.isfile(file_path):
+        log_warning(
+            action="exam_result_file_not_found",
+            trace_info=client_info["ip_address"],
+            message=f"Exam result file not found: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    try:
+        # Serve file with security headers
+        response = await send_from_directory(upload_folder, safe_filename)
+        
+        # Add security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour
+        
+        # Log successful access
+        log_info(
+            action="exam_result_file_served",
+            trace_info=client_info["ip_address"],
+            message=f"Exam result file served: {safe_filename}"
+        )
+        
+        return response
+        
+    except Exception as e:
+        log_critical(
+            action="exam_result_serving_error",
+            trace_info=client_info["ip_address"],
+            trace_info_hash=hash_sensitive_data(filename),
+            trace_info_encrypted=encrypt_sensitive_data(filename),
+            message=f"Error serving exam result file {filename}: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/gallery/<gender>/<folder>/<path:filename>')
-async def gallery_file(gender, folder, filename):
-    folders = ['garden', 'library', 'office', 'roof_and_kitchen', 'mosque', 'studio', 'other']
-    genders = ['male', 'female', 'both']
-    filename = secure_filename(filename)
-    if folder not in folders or gender not in genders:
-        return jsonify({"message": "Invalid folder name"}), 404
+@handle_async_errors
+async def gallery_file(gender: str, folder: str, filename: str) -> Response:
+    """
+    Serve gallery files with enhanced security and validation
     
-    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', gender, folder, filename)
-    if os.path.isfile(file_path):
-        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', gender, folder), filename), 200
-    else:
-        return jsonify({"message": "File not found"}), 404
+    Args:
+        gender: The gender category (male/female/both)
+        folder: The folder name
+        filename: The filename to serve
+        
+    Returns:
+        File response or error response
+    """
+    # Validate request headers
+    is_valid, error_msg = validate_request_headers(request)
+    if not is_valid:
+        return jsonify({"error": error_msg}), 400
     
+    # Get client info for logging
+    client_info = get_client_info()
+    
+    # Validate gender parameter
+    if gender not in core_config.ALLOWED_GALLERY_GENDERS:
+        log_warning(
+            action="invalid_gallery_gender",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid gender parameter: {gender}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_gender']}), 400
+    
+    # Validate folder parameter
+    if not validate_folder_access(folder, core_config.ALLOWED_GALLERY_FOLDERS):
+        log_warning(
+            action="invalid_gallery_folder",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid folder parameter: {folder}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_folder']}), 400
+    
+    # Get upload folder path
+    upload_folder = os.path.join(
+        current_app.config['BASE_UPLOAD_FOLDER'], 
+        'gallery', gender, folder
+    )
+    
+    # Sanitize and validate filename
+    file_path, safe_filename = get_safe_file_path(upload_folder, filename)
+    
+    if not file_path:
+        log_warning(
+            action="invalid_gallery_file_request",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid filename: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    # Check if file exists
+    if not os.path.isfile(file_path):
+        log_warning(
+            action="gallery_file_not_found",
+            trace_info=client_info["ip_address"],
+            message=f"Gallery file not found: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    try:
+        # Serve file with security headers
+        response = await send_from_directory(upload_folder, safe_filename)
+        
+        # Add security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Cache-Control'] = 'public, max-age=7200'  # 2 hours
+        
+        # Log successful access
+        log_info(
+            action="gallery_file_served",
+            trace_info=client_info["ip_address"],
+            message=f"Gallery file served: {gender}/{folder}/{safe_filename}"
+        )
+        
+        return response
+        
+    except Exception as e:
+        log_critical(
+            action="gallery_serving_error",
+            trace_info=client_info["ip_address"],
+            trace_info_hash=hash_sensitive_data(filename),
+            trace_info_encrypted=encrypt_sensitive_data(filename),
+            message=f"Error serving gallery file {filename}: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/gallery/classes/<folder>/<path:filename>')
-async def gallery_classes_file(folder, filename):
-    folders = ['hifz', 'moktob', 'meshkat', 'daora', 'ulumul_hadith', 'ifta', 'madani_nesab', 'other']
-    filename = secure_filename(filename)
-    if folder not in folders:
-        return jsonify({"message": "Invalid folder name"}), 404
+@handle_async_errors
+async def gallery_classes_file(folder: str, filename: str) -> Response:
+    """
+    Serve gallery class files with enhanced security and validation
     
-    file_path = os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', 'classes', folder, filename)
-    if os.path.isfile(file_path):
-        return await send_from_directory(os.path.join(current_app.config['BASE_UPLOAD_FOLDER'], 'gallery', 'classes', folder), filename), 200
-    else:
-        return jsonify({"message": "File not found"}), 404
+    Args:
+        folder: The class folder name
+        filename: The filename to serve
+        
+    Returns:
+        File response or error response
+    """
+    # Validate request headers
+    is_valid, error_msg = validate_request_headers(request)
+    if not is_valid:
+        return jsonify({"error": error_msg}), 400
+    
+    # Get client info for logging
+    client_info = get_client_info()
+    
+    # Validate folder parameter
+    if not validate_folder_access(folder, core_config.ALLOWED_CLASS_FOLDERS):
+        log_warning(
+            action="invalid_class_folder",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid class folder parameter: {folder}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_folder']}), 400
+    
+    # Get upload folder path
+    upload_folder = os.path.join(
+        current_app.config['BASE_UPLOAD_FOLDER'], 
+        'gallery', 'classes', folder
+    )
+    
+    # Sanitize and validate filename
+    file_path, safe_filename = get_safe_file_path(upload_folder, filename)
+    
+    if not file_path:
+        log_warning(
+            action="invalid_class_file_request",
+            trace_info=client_info["ip_address"],
+            message=f"Invalid filename: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    # Check if file exists
+    if not os.path.isfile(file_path):
+        log_warning(
+            action="class_file_not_found",
+            trace_info=client_info["ip_address"],
+            message=f"Class file not found: {filename}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+    
+    try:
+        # Serve file with security headers
+        response = await send_from_directory(upload_folder, safe_filename)
+        
+        # Add security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Cache-Control'] = 'public, max-age=7200'  # 2 hours
+        
+        # Log successful access
+        log_info(
+            action="class_file_served",
+            trace_info=client_info["ip_address"],
+            message=f"Class file served: {folder}/{safe_filename}"
+        )
+        
+        return response
+        
+    except Exception as e:
+        log_critical(
+            action="class_file_serving_error",
+            trace_info=client_info["ip_address"],
+            trace_info_hash=hash_sensitive_data(filename),
+            trace_info_encrypted=encrypt_sensitive_data(filename),
+            message=f"Error serving class file {filename}: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
 
-# ========== Routes ==========
+# ─── Data Management Routes ─────────────────────────────────────────────────
 
 @user_routes.route('/add_people', methods=['POST'])
-@rate_limit(max_requests=10, window=60)
+@rate_limit(max_requests=core_config.STRICT_RATE_LIMIT, window=3600)
 @handle_async_errors
-async def add_person():
-
+async def add_person() -> Response:
+    """
+    Add a new person to the system with comprehensive validation and security
+    
+    Returns:
+        JSON response with success status and user information
+    """
+    # Check maintenance mode
+    if is_maintenance_mode():
+        return jsonify({
+            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+        }), 503
+    
+    # Get client info for logging
+    # client_info = get_client_info()
+    
+    # Test mode handling
     if is_test_mode():
-        return jsonify({"success": True, "message": "App in test mode", "user_id": None, "info": None}), 201
-    
-    conn = await get_db_connection()
-    BASE_URL = current_app.config['BASE_URL']
-
-    data = await request.form
-    image = (await request.files).get('image')
-
-    fullname = data.get('name_en')
-    phone = data.get('phone')
-    madrasa_name = os.getenv("MADRASA_NAME")
-    
-    get_acc_type = data.get('acc_type', '')
-
-    if not get_acc_type.endswith('s'):
-        get_acc_type = (f"{get_acc_type}s")
-
-    VALID_ACCOUNT_TYPES = ['admins', 'students', 'teachers', 'staffs', 'others', 'badri_members', 'donors']
-    if not get_acc_type in VALID_ACCOUNT_TYPES:
-        get_acc_type = 'others'
-
-    if not fullname or not phone or not get_acc_type:
-        log_error(action="add_people_missing", trace_info=phone or "unknown", trace_info_hash=hash_sensitive_data(phone or "unknown"), trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"), message="Missing fields")
-        return jsonify({"message": _("fullname, phone and acc_type are required")}), 400
-
-    fullname = fullname.strip().lower()
-    formatted_phone, msg = format_phone_number(phone)
-    if not formatted_phone:
-        return jsonify({"message": msg}), 400
-
-    person_id = get_id(formatted_phone, fullname)
-    acc_type = get_acc_type.lower()
-
-    if not person_id:
-        return jsonify({"message": _("ID not found")}), 404
-
-    fields = {
-        "user_id": person_id
-    }
-    
-    # Add acc_type boolean fields - collect from form data with defaults
-    fields["teacher"] = data.get('teacher', '0') == '1' or acc_type == 'teachers'
-    fields["student"] = data.get('student', '0') == '1' or acc_type == 'students'
-    fields["staff"] = data.get('staff', '0') == '1' or acc_type == 'staffs'
-    fields["donor"] = data.get('donor', '0') == '1' or acc_type == 'donors'
-    fields["badri_member"] = data.get('badri_member', '0') == '1' or acc_type == 'badri_members'
-    fields["special_member"] = data.get('special_member', '0') == '1'
-
-    # Handle image upload
-    if image and image.filename:
-        ok, msg = validate_file_upload(filename=image.filename, allowed_extensions=Config.ALLOWED_PROFILE_IMG_EXTENSIONS, file_size=image.content_length)
-        if not ok:
-            return jsonify({"message": msg}), 400
-
-        filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
-        filename = filename_base + ".webp"  # save as .webp
-        upload_folder = os.path.join(Config.PROFILE_IMG_UPLOAD_FOLDER)
-        image_path = os.path.join(upload_folder, filename)
-        
-        try:
-            img = Image.open(image.stream)
-            img.verify()
-            image.stream.seek(0)
-            img = Image.open(image.stream)
-            img.save(image_path, "WEBP")
-
-                
-        except Exception as e:
-            return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
-            
-        fields["image_path"] = BASE_URL + '/uploads/profile_pics/' + filename
-    else:
-        return jsonify({"message": "Invalid image file format"}), 400
-
-
-    def f(k): 
-        return data.get(k)
-
-    # Validate and fill fields based on acc_type
-    if acc_type == 'students':
-        required = [
-            'name_en', 'name_bn', 'name_ar', 'date_of_birth',
-            'birth_certificate', 'blood_group', 'gender',
-            'source', 'present_address', 'present_address_hash', 'present_address_encrypted', 
-            'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
-            'father_en', 'father_bn', 'father_ar',
-            'mother_en', 'mother_bn', 'mother_ar',
-            'class', 'phone', 'student_id', 'guardian_number'
-        ]
-    
-        if not all(f(k) for k in required):
-            return jsonify({"message": _("All required fields must be provided for Student")}), 400
-        fields.update({k: f(k) for k in required})
-
-        
-    elif acc_type in ['teachers', 'admins']:
-        required = [
-            'name_en', 'name_bn', 'name_ar', 'date_of_birth',
-            'national_id', 'blood_group', 'gender',
-            'title1', 'present_address', 'present_address_hash', 'present_address_encrypted',
-            'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
-            'father_en', 'father_bn', 'father_ar',
-            'mother_en', 'mother_bn', 'mother_ar',
-            'phone'
-        ]
-        if not all(f(k) for k in required):
-            return jsonify({"message": _("All required fields must be provided for %(type)s") % {"type": acc_type}}), 400
-        fields.update({k: f(k) for k in required})
-
-        optional = ["degree"]
-        fields.update({k: f(k) for k in optional if f(k)})
-
-    elif acc_type == 'staffs':
-        required = [
-            'name_en', 'name_bn', 'name_ar', 'date_of_birth',
-            'national_id', 'blood_group',
-            'title2', 'present_address', 'present_address_hash', 'present_address_encrypted',
-            'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
-            'father_en', 'father_bn', 'father_ar',
-            'mother_en', 'mother_bn', 'mother_ar',
-            'phone'
-        ]
-        if not all(f(k) for k in required):
-            return jsonify({"message": _("All required fields must be provided for %(type)s") % {"type": acc_type}}), 400
-        fields.update({k: f(k) for k in required})
-
-        
-    else:
-        if not f("name_en") or not f("phone") or not f("father_or_spouse") or not f("date_of_birth"):
-            return jsonify({"message": _("Name, Phone, and Father/Spouse are required for Guest")}), 400
-
-        fields["name_en"] = f("name_en")
-        fields["phone"] = f("phone")
-        fields["father_or_spouse"] = f("father_or_spouse")
-        fields["date_of_birth"] = f("date_of_birth")
-
-        optional = [
-            "source", "present_address", "present_address_hash", "present_address_encrypted",
-            "blood_group", "gender", "degree"
-        ]
-        fields.update({k: f(k) for k in optional if f(k)})
-
-
-    ENCRYPTED_FIELDS = ["national_id_encrypted", "birth_certificate_encrypted"]
-    HASH_FIELDS = ["present_address_hash", "permanent_address_hash", "address_hash"]
-
-    for ef in ENCRYPTED_FIELDS:
-        if ef in fields and fields[ef]:
-            fields[ef] = encrypt_sensitive_data(fields[ef])
-
-    for hf in HASH_FIELDS:
-        if hf in fields and fields[hf]:
-            fields[hf] = hash_sensitive_data(fields[hf])
-
-    async with conn.cursor() as cursor:
-        await insert_person(madrasa_name, fields, acc_type, phone)
-        await conn.commit()
-        await cursor.execute(f"SELECT image_path from {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s", (fullname, formatted_phone))
-        row = await cursor.fetchone()
-        img_path = row["image_path"] if row else None
         return jsonify({
             "success": True, 
-            "message": _("%(type)s profile added successfully") % {"type": acc_type}, 
-            "user_id": person_id, 
+            "message": "App in test mode", 
+            "user_id": None, 
+            "info": None
+        }), 201
+    
+    try:
+        # Get form data
+        data = await request.form
+        files = await request.files
+        image = files.get('image')
+        
+        # Validate required fields using enhanced validation
+        required_fields = ['name_en', 'phone', 'acc_type']
+        is_valid, missing_fields = validate_input_data(data, required_fields)
+        
+        if not is_valid:
+            log_warning(
+                action="add_people_missing_fields",
+                trace_info=data.get("ip_address", ""),
+                message=f"Missing required fields: {missing_fields}"
+            )
+            return jsonify({
+                "message": _("Missing required fields: %(fields)s") % {"fields": ", ".join(missing_fields)}
+            }), 400
+        
+        # Extract and validate basic fields with sanitization
+        fullname = sanitize_sql_input(data.get('name_en', '').strip())
+        phone = sanitize_sql_input(data.get('phone', '').strip())
+        acc_type = sanitize_sql_input(data.get('acc_type', '').strip())
+        
+        # Validate fullname
+        is_valid_name, name_error = validate_fullname(fullname)
+        if not is_valid_name:
+            return jsonify({"message": name_error}), 400
+        
+        # Validate and format phone number
+        formatted_phone, phone_error = format_phone_number(phone)
+        if not formatted_phone:
+            return jsonify({"message": phone_error}), 400
+        
+        # Normalize account type
+        if not acc_type.endswith('s'):
+            acc_type = f"{acc_type}s"
+        
+        VALID_ACCOUNT_TYPES = [
+            'admins', 'students', 'teachers', 'staffs', 
+            'others', 'badri_members', 'donors'
+        ]
+        if acc_type not in VALID_ACCOUNT_TYPES:
+            acc_type = 'others'
+        
+        # Get user ID
+        person_id = await get_id(formatted_phone, fullname.lower())
+        if not person_id:
+            log_error(
+                action="add_people_id_not_found",
+                trace_info=formatted_phone,
+                trace_info_hash=hash_sensitive_data(formatted_phone),
+                trace_info_encrypted=encrypt_sensitive_data(formatted_phone),
+                message="User ID not found"
+            )
+            return jsonify({"message": _("ID not found")}), 404
+        
+        # Initialize fields dictionary
+        fields = {"user_id": person_id}
+        
+        # Set account type boolean fields
+        fields.update({
+            "teacher": data.get('teacher', '0') == '1' or acc_type == 'teachers',
+            "student": data.get('student', '0') == '1' or acc_type == 'students',
+            "staff": data.get('staff', '0') == '1' or acc_type == 'staffs',
+            "donor": data.get('donor', '0') == '1' or acc_type == 'donors',
+            "badri_member": data.get('badri_member', '0') == '1' or acc_type == 'badri_members',
+            "special_member": data.get('special_member', '0') == '1'
+        })
+        
+        # Handle image upload with enhanced security
+        if image and image.filename:
+            # Validate file upload
+            is_valid_file, file_error = validate_file_upload(
+                filename=image.filename,
+                allowed_extensions=Config.ALLOWED_PROFILE_IMG_EXTENSIONS,
+                file_size=image.content_length
+            )
+            
+            if not is_valid_file:
+                return jsonify({"message": file_error}), 400
+            
+            # Generate secure filename
+            filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
+            filename = filename_base + ".webp"
+            upload_folder = Config.PROFILE_IMG_UPLOAD_FOLDER
+            image_path = os.path.join(upload_folder, filename)
+            
+            try:
+                # Process and save image
+                img = Image.open(image.stream)
+                img.verify()  # Verify image integrity
+                image.stream.seek(0)
+                img = Image.open(image.stream)
+                
+                # Convert to RGB if necessary
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    img = img.convert('RGB')
+                
+                # Save as WebP for better compression
+                img.save(image_path, "WEBP", quality=85)
+                
+                # Set image path
+                BASE_URL = current_app.config['BASE_URL']
+                fields["image_path"] = f"{BASE_URL}/uploads/profile_pics/{filename}"
+                
+            except Exception as e:
+                log_critical(
+                    action="image_processing_error",
+                    trace_info=data.get("ip_address", ""),
+                    trace_info_hash=hash_sensitive_data(image.filename),
+                    trace_info_encrypted=encrypt_sensitive_data(image.filename),
+                    message=f"Failed to process image: {str(e)}"
+                )
+                return jsonify({"message": "Failed to process image"}), 500
+        else:
+            return jsonify({"message": "Image file is required"}), 400
+        
+        # Helper function to get form data
+        def get_field(key: str, default: str = '') -> str:
+            return data.get(key, default).strip()
+        
+        # Validate and fill fields based on account type
+        if acc_type == 'students':
+            required_fields = [
+                'name_en', 'name_bn', 'name_ar', 'date_of_birth',
+                'birth_certificate', 'blood_group', 'gender',
+                'source', 'present_address', 'present_address_hash', 'present_address_encrypted',
+                'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
+                'father_en', 'father_bn', 'father_ar',
+                'mother_en', 'mother_bn', 'mother_ar',
+                'class', 'phone', 'student_id', 'guardian_number'
+            ]
+            
+            missing_required = [field for field in required_fields if not get_field(field)]
+            if missing_required:
+                return jsonify({
+                    "message": _("All required fields must be provided for Student")
+                }), 400
+            
+            fields.update({field: get_field(field) for field in required_fields})
+            
+        elif acc_type in ['teachers', 'admins']:
+            required_fields = [
+                'name_en', 'name_bn', 'name_ar', 'date_of_birth',
+                'national_id', 'blood_group', 'gender',
+                'title1', 'present_address', 'present_address_hash', 'present_address_encrypted',
+                'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
+                'father_en', 'father_bn', 'father_ar',
+                'mother_en', 'mother_bn', 'mother_ar',
+                'phone'
+            ]
+            
+            missing_required = [field for field in required_fields if not get_field(field)]
+            if missing_required:
+                return jsonify({
+                    "message": _("All required fields must be provided for %(type)s") % {"type": acc_type}
+                }), 400
+            
+            fields.update({field: get_field(field) for field in required_fields})
+            
+            # Add optional fields
+            optional_fields = ["degree"]
+            fields.update({field: get_field(field) for field in optional_fields if get_field(field)})
+            
+        elif acc_type == 'staffs':
+            required_fields = [
+                'name_en', 'name_bn', 'name_ar', 'date_of_birth',
+                'national_id', 'blood_group',
+                'title2', 'present_address', 'present_address_hash', 'present_address_encrypted',
+                'permanent_address', 'permanent_address_hash', 'permanent_address_encrypted',
+                'father_en', 'father_bn', 'father_ar',
+                'mother_en', 'mother_bn', 'mother_ar',
+                'phone'
+            ]
+            
+            missing_required = [field for field in required_fields if not get_field(field)]
+            if missing_required:
+                return jsonify({
+                    "message": _("All required fields must be provided for %(type)s") % {"type": acc_type}
+                }), 400
+            
+            fields.update({field: get_field(field) for field in required_fields})
+            
+        else:  # others, donors, badri_members
+            basic_required = ['name_en', 'phone', 'father_or_spouse', 'date_of_birth']
+            missing_basic = [field for field in basic_required if not get_field(field)]
+            
+            if missing_basic:
+                return jsonify({
+                    "message": _("Name, Phone, and Father/Spouse are required for Guest")
+                }), 400
+            
+            fields.update({
+                "name_en": get_field("name_en"),
+                "phone": get_field("phone"),
+                "father_or_spouse": get_field("father_or_spouse"),
+                "date_of_birth": get_field("date_of_birth")
+            })
+            
+            # Add optional fields
+            optional_fields = [
+                "source", "present_address", "present_address_hash", "present_address_encrypted",
+                "blood_group", "gender", "degree"
+            ]
+            fields.update({field: get_field(field) for field in optional_fields if get_field(field)})
+        
+        # Encrypt sensitive fields
+        encrypted_fields = ["national_id_encrypted", "birth_certificate_encrypted"]
+        hash_fields = ["present_address_hash", "permanent_address_hash", "address_hash"]
+        
+        for field in encrypted_fields:
+            if field in fields and fields[field]:
+                fields[field] = encrypt_sensitive_data(fields[field])
+        
+        for field in hash_fields:
+            if field in fields and fields[field]:
+                fields[field] = hash_sensitive_data(fields[field])
+        
+        # Insert into database
+        madrasa_name = os.getenv("MADRASA_NAME")
+        await insert_person(madrasa_name, fields, acc_type, formatted_phone)
+        
+        # Invalidate related cache
+        invalidate_related_cache('add_person', user_id=person_id)
+        
+        # Get image path for response
+        conn = await get_db_connection_with_retry()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(
+                f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
+                (fullname.lower(), formatted_phone)
+            )
+            row = await cursor.fetchone()
+            img_path = row["image_path"] if row else None
+        
+        # Log successful addition
+        log_operation_success("add_person", {
+            "fullname": fullname,
+            "acc_type": acc_type,
+            "user_id": person_id
+        })
+        
+        return jsonify({
+            "success": True,
+            "message": _("%(type)s profile added successfully") % {"type": acc_type},
+            "user_id": person_id,
             "info": img_path
-            }), 201
+        }), 201
+        
+    except Exception as e:
+        log_critical(
+            action="add_person_error",
+            trace_info=data.get("ip_address", ""),
+            trace_info_hash=hash_sensitive_data(phone or "unknown"),
+            trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"),
+            message=f"Error adding person: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/members', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
-async def get_info():
-    conn = await get_db_connection()
+async def get_info() -> Response:
+    """
+    Get member information with caching and incremental updates
     
-    data = await request.get_json()
-    madrasa_name = os.getenv("MADRASA_NAME")
-    lastfetched = data.get('updatedSince')
-    # member_id_list = data.get('member_id')
-    corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
-
-
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-        sql = f"""SELECT tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
-                taddress.translation_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
-                tfather.translation_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
-
-                p.degree, p.gender,
-                p.blood_group,
+    Returns:
+        JSON response with member data and sync timestamp
+    """
+    # Check maintenance mode
+    if is_maintenance_mode():
+        return jsonify({
+            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+        }), 503
+    
+    # Get client info for logging
+    # client_info = get_client_info()
+    
+    try:
+        # Get request data
+        data = await request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid request data"}), 400
+        
+        madrasa_name = os.getenv("MADRASA_NAME")
+        lastfetched = data.get('updatedSince')
+        
+        # Process timestamp using enhanced validation
+        corrected_time = None
+        if lastfetched:
+            if not validate_timestamp_format(lastfetched):
+                log_warning(
+                    action="invalid_timestamp_format",
+                    trace_info=data.get("ip_address", ""),
+                    message=f"Invalid timestamp format: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid timestamp format"}), 400
+            try:
+                corrected_time = lastfetched.replace("T", " ").replace("Z", "")
+            except Exception as e:
+                log_warning(
+                    action="timestamp_processing_error",
+                    trace_info=data.get("ip_address", ""),
+                    message=f"Error processing timestamp: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid timestamp format"}), 400
+        
+        # Build SQL query with proper joins
+        sql = f"""
+            SELECT 
+                tname.translation_text AS name_en, 
+                tname.bn_text AS name_bn, 
+                tname.ar_text AS name_ar,
+                taddress.translation_text AS address_en, 
+                taddress.bn_text AS address_bn, 
+                taddress.ar_text AS address_ar,
+                tfather.translation_text AS father_en, 
+                tfather.bn_text AS father_bn, 
+                tfather.ar_text AS father_ar,
+                p.degree, p.gender, p.blood_group,
                 p.phone, p.image_path AS picUrl, p.member_id, p.acc_type AS role,
                 COALESCE(p.title1, p.title2, p.class) AS title,
-
-                a.main_type AS acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member,
-
-                FROM {madrasa_name}.peoples p
-
-                JOIN global.acc_types a ON a.user_id = p.user_id
-                
-                JOIN global.translations tname ON tname.translation_text = p.name
-                LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
-                LEFT JOIN global.translations tfather ON tfather.translation_text = p.father_name
-                LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
-
-                WHERE p.member_id IS NOT NULL"""
-        params = []
-
-        if lastfetched:
-            sql += " AND updated_at > %s"
-            params.append(corrected_time)
-            
-        await cursor.execute(sql, params)
-        members = await cursor.fetchall()
-    return jsonify({
-        "members": members,
-        "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
-        }), 200
+                a.main_type AS acc_type, 
+                a.teacher, a.student, a.staff, a.donor, 
+                a.badri_member, a.special_member
+            FROM {madrasa_name}.peoples p
+            JOIN global.acc_types a ON a.user_id = p.user_id
+            JOIN global.translations tname ON tname.translation_text = p.name
+            LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+            LEFT JOIN global.translations tfather ON tfather.translation_text = p.father_name
+            WHERE p.member_id IS NOT NULL
+        """
         
+        params = []
+        if corrected_time:
+            sql += " AND p.updated_at > %s"
+            params.append(corrected_time)
+        
+        sql += " ORDER BY p.member_id"
+        
+        # Execute query with enhanced cache management
+        cache_key = get_cache_key("members", lastfetched=lastfetched)
+        cached_members = get_cached_data(cache_key)
+        
+        if cached_members is not None:
+            return jsonify(cached_members), 200
+        
+        conn = await get_db_connection_with_retry()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(sql, params)
+            members = await cursor.fetchall()
+        
+        # Cache the result
+        result_data = {
+            "members": members,
+            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        }
+        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        
+        # Log successful retrieval
+        log_operation_success("get_members", {
+            "count": len(members),
+            "lastfetched": lastfetched
+        })
+        
+        return jsonify(result_data), 200
+        
+    except Exception as e:
+        log_critical(
+            action="get_members_error",
+            trace_info=data.get("ip_address", ""),
+            trace_info_hash="N/A",
+            trace_info_encrypted="N/A",
+            message=f"Error retrieving members: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route("/routines", methods=["POST"])
 @cache_with_invalidation
 @handle_async_errors
-async def get_routine():
-    conn = await get_db_connection()
-    data = await request.get_json()
-    madrasa_name = os.getenv("MADRASA_NAME")
-    lastfetched = data.get("updatedSince")
-    corrected_time = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
-
-
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-        sql = f"""SELECT r.gender, r.class_group, r.class_level, r.weekday, r.serial,
-        tsubject.translation_text AS subject_en, tsubject.bn_text AS subject_bn, tsubject.ar_text AS subject_ar, 
-        tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar 
-        FROM {madrasa_name}.routines r
-
-        JOIN global.translations tsubject ON tsubject.translation_text = r.subject 
-        JOIN global.translations tname ON tname.translation_text = r.name"""
-        params = []
-        
-        if lastfetched:
-            sql += " WHERE updated_at > %s"
-            params.append(corrected_time)
-
-        sql += " ORDER BY class_level"
-        
-        await cursor.execute(sql, params)
-        result = await cursor.fetchall()
-
+async def get_routine() -> Response:
+    """
+    Get routine information with caching and incremental updates
+    
+    Returns:
+        JSON response with routine data and sync timestamp
+    """
+    # Check maintenance mode
+    if is_maintenance_mode():
         return jsonify({
-        "routines": result,
-        "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
-        }), 200
+            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+        }), 503
+    
+    # Get client info for logging
+    # client_info = get_client_info()
+    
+    try:
+        # Get request data
+        data = await request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid request data"}), 400
         
+        madrasa_name = os.getenv("MADRASA_NAME")
+        lastfetched = data.get("updatedSince")
+        
+        # Process timestamp using enhanced validation
+        corrected_time = None
+        if lastfetched:
+            if not validate_timestamp_format(lastfetched):
+                log_warning(
+                    action="invalid_routine_timestamp",
+                    trace_info=data.get("ip_address", ""),
+                    message=f"Invalid timestamp format: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid timestamp format"}), 400
+            try:
+                corrected_time = lastfetched.replace("T", " ").replace("Z", "")
+            except Exception as e:
+                log_warning(
+                    action="routine_timestamp_processing_error",
+                    trace_info=data.get("ip_address", ""),
+                    message=f"Error processing timestamp: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid timestamp format"}), 400
+        
+        # Build SQL query
+        sql = f"""
+            SELECT 
+                r.gender, r.class_group, r.class_level, r.weekday, r.serial,
+                tsubject.translation_text AS subject_en, 
+                tsubject.bn_text AS subject_bn, 
+                tsubject.ar_text AS subject_ar, 
+                tname.translation_text AS name_en, 
+                tname.bn_text AS name_bn, 
+                tname.ar_text AS name_ar 
+            FROM {madrasa_name}.routines r
+            JOIN global.translations tsubject ON tsubject.translation_text = r.subject 
+            JOIN global.translations tname ON tname.translation_text = r.name
+        """
+        
+        params = []
+        if corrected_time:
+            sql += " WHERE r.updated_at > %s"
+            params.append(corrected_time)
+        
+        sql += " ORDER BY r.class_level, r.weekday, r.serial"
+        
+        # Execute query with enhanced cache management
+        cache_key = get_cache_key("routines", lastfetched=lastfetched)
+        cached_routines = get_cached_data(cache_key)
+        
+        if cached_routines is not None:
+            return jsonify(cached_routines), 200
+        
+        conn = await get_db_connection_with_retry()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(sql, params)
+            result = await cursor.fetchall()
+        
+        # Cache the result
+        result_data = {
+            "routines": result,
+            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        }
+        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        
+        # Log successful retrieval
+        log_operation_success("get_routines", {
+            "count": len(result),
+            "lastfetched": lastfetched
+        })
+        
+        return jsonify(result_data), 200
+        
+    except Exception as e:
+        log_critical(
+            action="get_routines_error",
+            trace_info=data.get("ip_address", ""),
+            trace_info_hash="N/A",
+            trace_info_encrypted="N/A",
+            message=f"Error retrieving routines: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route('/events', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
-async def events():
-    data = await request.get_json() or {}
-    madrasa_name = os.getenv("MADRASA_NAME")
-    lastfetched = data.get('updatedSince')
-    DHAKA = ZoneInfo("Asia/Dhaka")
-
-
-    sql = f"""SELECT e.type, e.time, e.date, e.function_url,
-            ttitle.translation_text AS title_en, ttitle.bn_text AS title_bn, ttitle.ar_text AS title_ar
-            FROM {madrasa_name}.events e
-            JOIN global.translations ttitle ON ttitle.translation_text = e.title"""
-    params = []
-
-    if lastfetched:
-        try:
-            cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
-            sql += " WHERE created_at > %s"
-            params.append(cutoff)
-        except ValueError:
-            log_error(action="get_events_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=f"Invalid timestamp: {lastfetched}")
-            return jsonify({"error": "Invalid updatedSince format"}), 400
-
-    sql += " ORDER BY event_id DESC"
+async def events() -> Response:
+    """
+    Get events with enhanced date processing and status classification
     
-    conn = await get_db_connection()
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-        await cursor.execute(sql, params)
-        rows = await cursor.fetchall()
+    Returns:
+        JSON response with events data and sync timestamp
+    """
+    # Check maintenance mode
+    if is_maintenance_mode():
+        return jsonify({
+            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+        }), 503
+    
+    # Get client info for logging
+    # client_info = get_client_info()
+    
+    try:
+        # Get request data
+        data = await request.get_json() or {}
+        madrasa_name = os.getenv("MADRASA_NAME")
+        lastfetched = data.get('updatedSince')
+        DHAKA = ZoneInfo("Asia/Dhaka")
         
-    now_dhaka = datetime.now(DHAKA)
-    today     = now_dhaka.date()
-
-    for ev in rows:
-        ev_dt = ev.get("date") or ev.get("event_date")
-
-        if isinstance(ev_dt, datetime):
-            ev_dt_local = ev_dt.astimezone(DHAKA)
-            ev_date     = ev_dt_local.date()
-            ev["date"]  = ev_dt_local.isoformat()
-
-        elif isinstance(ev_dt, date):
-            ev_date = ev_dt
-            ev["date"] = ev_dt.isoformat()
-
-        else:
-            ev_date = None
-
-        if ev_date:
-            if ev_date > today:
-                ev["type"] = "upcoming"
-            elif ev_date == today:
-                ev["type"] = "ongoing"
+        # Build SQL query
+        sql = f"""
+            SELECT 
+                e.type, e.time, e.date, e.function_url,
+                ttitle.translation_text AS title_en, 
+                ttitle.bn_text AS title_bn, 
+                ttitle.ar_text AS title_ar
+            FROM {madrasa_name}.events e
+            JOIN global.translations ttitle ON ttitle.translation_text = e.title
+        """
+        
+        params = []
+        if lastfetched:
+            if not validate_timestamp_format(lastfetched):
+                log_error(
+                    action="get_events_failed",
+                    trace_info=data.get("ip_address", ""),
+                    trace_info_hash=hash_sensitive_data(lastfetched),
+                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
+                    message=f"Invalid timestamp: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid updatedSince format"}), 400
+            try:
+                cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
+                sql += " WHERE e.created_at > %s"
+                params.append(cutoff)
+            except ValueError as e:
+                log_error(
+                    action="events_timestamp_processing_error",
+                    trace_info=data.get("ip_address", ""),
+                    trace_info_hash=hash_sensitive_data(lastfetched),
+                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
+                    message=f"Error processing timestamp: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid updatedSince format"}), 400
+        
+        sql += " ORDER BY e.event_id DESC"
+        
+        # Execute query with enhanced cache management
+        cache_key = get_cache_key("events", lastfetched=lastfetched)
+        cached_events = get_cached_data(cache_key)
+        
+        if cached_events is not None:
+            return jsonify(cached_events), 200
+        
+        conn = await get_db_connection_with_retry()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(sql, params)
+            rows = await cursor.fetchall()
+        
+        # Process events with date classification
+        now_dhaka = datetime.now(DHAKA)
+        today = now_dhaka.date()
+        
+        for ev in rows:
+            ev_dt = ev.get("date") or ev.get("event_date")
+            
+            if isinstance(ev_dt, datetime):
+                ev_dt_local = ev_dt.astimezone(DHAKA)
+                ev_date = ev_dt_local.date()
+                ev["date"] = ev_dt_local.isoformat()
+            elif isinstance(ev_dt, date):
+                ev_date = ev_dt
+                ev["date"] = ev_dt.isoformat()
             else:
-                ev["type"] = "past"
-        else:
-            ev["status"] = "unknown"
-
-    return jsonify({
-        "events": rows,
-        "lastSyncedAt": datetime.now(timezone.utc)
-                             .isoformat().replace("+00:00","Z")
-    }), 200
+                ev_date = None
+            
+            # Classify event status
+            if ev_date:
+                if ev_date > today:
+                    ev["type"] = "upcoming"
+                elif ev_date == today:
+                    ev["type"] = "ongoing"
+                else:
+                    ev["type"] = "past"
+            else:
+                ev["status"] = "unknown"
+        
+        # Cache the result
+        result_data = {
+            "events": rows,
+            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        }
+        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        
+        # Log successful retrieval
+        log_operation_success("get_events", {
+            "count": len(rows),
+            "lastfetched": lastfetched
+        })
+        
+        return jsonify(result_data), 200
+        
+    except Exception as e:
+        log_critical(
+            action="get_events_error",
+            trace_info=data.get("ip_address", ""),
+            trace_info_hash="N/A",
+            trace_info_encrypted="N/A",
+            message=f"Error retrieving events: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route('/exams', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
-async def get_exams():
-    conn = await get_db_connection()
-    data = await request.get_json()
-    madrasa_name = os.getenv("MADRASA_NAME")
-    lastfetched = data.get("updatedSince")
-    cutoff = lastfetched.replace("T", " ").replace("Z", "") if lastfetched else None
-
-
-    sql = f"""SELECT e.class, e.gender, e.start_time, e.end_time, e.date, e.weekday, e.sec_start_time, e.sec_end_time,
-            tbook.translation_text AS book_en, tbook.bn_text AS book_bn, tbook.ar_text AS book_ar
-            FROM {madrasa_name}.exams e
-            JOIN global.translations tbook ON tbook.translation_text = e.book"""
-    params = []
-
-    if lastfetched:
-        try:
-            sql += " WHERE created_at > %s"
-            params.append(cutoff)
-
-        except ValueError:
-            log_error(action="get_exams_failed", trace_info="unknown", trace_info_hash=hash_sensitive_data("unknown"), trace_info_encrypted=encrypt_sensitive_data("unknown"), message=f"Invalid timestamp: {lastfetched}")
-            return jsonify({"error": "Invalid updatedSince format"}), 400
+async def get_exams() -> Response:
+    """
+    Get exam information with enhanced validation and error handling
     
-    sql += " ORDER BY exam_id"
-
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-        await cursor.execute(sql, params)
-        result = await cursor.fetchall()
-        
+    Returns:
+        JSON response with exam data and sync timestamp
+    """
+    # Check maintenance mode
+    if is_maintenance_mode():
         return jsonify({
+            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+        }), 503
+    
+    # Get client info for logging
+    # client_info = get_client_info()
+    
+    try:
+        # Get request data
+        data = await request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid request data"}), 400
+        
+        madrasa_name = os.getenv("MADRASA_NAME")
+        lastfetched = data.get("updatedSince")
+        
+        # Process timestamp using enhanced validation
+        cutoff = None
+        if lastfetched:
+            if not validate_timestamp_format(lastfetched):
+                log_error(
+                    action="get_exams_failed",
+                    trace_info=data.get("ip_address", ""),
+                    trace_info_hash=hash_sensitive_data(lastfetched),
+                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
+                    message=f"Invalid timestamp: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid updatedSince format"}), 400
+            try:
+                cutoff = lastfetched.replace("T", " ").replace("Z", "")
+            except Exception as e:
+                log_error(
+                    action="exams_timestamp_processing_error",
+                    trace_info=data.get("ip_address", ""),
+                    trace_info_hash=hash_sensitive_data(lastfetched),
+                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
+                    message=f"Error processing timestamp: {lastfetched}"
+                )
+                return jsonify({"error": "Invalid updatedSince format"}), 400
+        
+        # Build SQL query
+        sql = f"""
+            SELECT 
+                e.class, e.gender, e.start_time, e.end_time, e.date, e.weekday, 
+                e.sec_start_time, e.sec_end_time,
+                tbook.translation_text AS book_en, 
+                tbook.bn_text AS book_bn, 
+                tbook.ar_text AS book_ar
+            FROM {madrasa_name}.exams e
+            JOIN global.translations tbook ON tbook.translation_text = e.book
+        """
+        
+        params = []
+        if cutoff:
+            sql += " WHERE e.created_at > %s"
+            params.append(cutoff)
+        
+        sql += " ORDER BY e.exam_id"
+        
+        # Execute query with enhanced cache management
+        cache_key = get_cache_key("exams", lastfetched=lastfetched)
+        cached_exams = get_cached_data(cache_key)
+        
+        if cached_exams is not None:
+            return jsonify(cached_exams), 200
+        
+        conn = await get_db_connection_with_retry()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(sql, params)
+            result = await cursor.fetchall()
+        
+        # Cache the result
+        result_data = {
             "exams": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            })
+        }
+        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        
+        # Log successful retrieval
+        log_operation_success("get_exams", {
+            "count": len(result),
+            "lastfetched": lastfetched
+        })
+        
+        return jsonify(result_data), 200
+        
+    except Exception as e:
+        log_critical(
+            action="get_exams_error",
+            trace_info=data.get("ip_address", ""),
+            trace_info_hash="N/A",
+            trace_info_encrypted="N/A",
+            message=f"Error retrieving exams: {str(e)}"
+        )
+        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
+
+# ─── Advanced Utility Functions ───────────────────────────────────────────────
+
+def validate_input_data(data: Dict[str, Any], required_fields: List[str]) -> Tuple[bool, List[str]]:
+    """Validate input data against required fields"""
+    missing_fields = []
+    for field in required_fields:
+        if not data.get(field):
+            missing_fields.append(field)
+    return len(missing_fields) == 0, missing_fields
+
+def sanitize_sql_input(input_str: str) -> str:
+    """Sanitize input for SQL queries"""
+    if not input_str:
+        return ""
+    
+    # Remove potentially dangerous characters
+    dangerous_chars = [';', '--', '/*', '*/', 'union', 'select', 'insert', 'update', 'delete', 'drop', 'create']
+    sanitized = input_str.lower()
+    
+    for char in dangerous_chars:
+        if char in sanitized:
+            log_warning(
+                action="sql_injection_attempt",
+                trace_info=get_client_info()["ip_address"],
+                message=f"Potential SQL injection attempt: {char}"
+            )
+            return ""
+    
+    return input_str.strip()
+
+def validate_timestamp_format(timestamp: str) -> bool:
+    """Validate timestamp format"""
+    try:
+        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return True
+    except ValueError:
+        return False
+
+def get_cache_key(prefix: str, **kwargs) -> str:
+    """Generate cache key with parameters"""
+    key_parts = [prefix]
+    for key, value in sorted(kwargs.items()):
+        key_parts.append(f"{key}:{value}")
+    return ":".join(key_parts)
+
+# ─── Performance Monitoring and Metrics ───────────────────────────────────────
+
+def record_request_metrics(endpoint: str, duration: float, status_code: int) -> None:
+    """Record request metrics for monitoring"""
+    performance_monitor.record_request_time(endpoint, duration)
+    metrics_collector.increment('requests')
+    
+    if status_code >= 400:
+        metrics_collector.increment('errors')
+        performance_monitor.record_error('http_error', f"Status {status_code}")
+
+def monitor_database_performance(query: str, duration: float) -> None:
+    """Monitor database query performance"""
+    metrics_collector.increment('database_queries')
+    
+    if duration > 1.0:  # Log slow queries
+        metrics_collector.increment('slow_queries')
+        log_warning(
+            action="slow_database_query",
+            trace_info=get_client_info()["ip_address"],
+            message=f"Slow query detected: {duration:.2f}s"
+        )
+
+# ─── Security Enhancements ───────────────────────────────────────────────────
+
+def validate_request_origin(request: Request) -> bool:
+    """Validate request origin for security"""
+    # Check referer header
+    referer = request.headers.get('Referer')
+    if referer:
+        # Validate referer is from same domain
+        try:
+            from urllib.parse import urlparse
+            parsed_referer = urlparse(referer)
+            parsed_host = urlparse(request.url_root)
+            
+            if parsed_referer.netloc != parsed_host.netloc:
+                log_warning(
+                    action="suspicious_referer",
+                    trace_info=get_client_info()["ip_address"],
+                    message=f"Suspicious referer: {referer}"
+                )
+                return False
+        except Exception:
+            return False
+    
+    return True
+
+# ─── Cache Management and Invalidation ───────────────────────────────────────
+
+def invalidate_related_cache(operation: str, **kwargs) -> None:
+    """Invalidate cache entries related to an operation"""
+    cache_patterns = {
+        'add_person': ['members', 'user_*'],
+        'update_person': ['members', 'user_*'],
+        'add_event': ['events'],
+        'update_event': ['events'],
+        'add_exam': ['exams'],
+        'update_exam': ['exams'],
+        'add_routine': ['routines'],
+        'update_routine': ['routines']
+    }
+    
+    patterns = cache_patterns.get(operation, [])
+    for pattern in patterns:
+        invalidate_cache_pattern(pattern)
+
+def get_cached_data(cache_key: str, ttl: int = None) -> Any:
+    """Get data from cache with fallback"""
+    if ttl is None:
+        ttl = core_config.CACHE_TTL
+    
+    cached_data = cache.get(cache_key)
+    if cached_data is not None:
+        metrics_collector.increment('cache_hits')
+        return cached_data
+    
+    metrics_collector.increment('cache_misses')
+    return None
+
+def set_cached_data(cache_key: str, data: Any, ttl: int = None) -> None:
+    """Set data in cache with TTL"""
+    if ttl is None:
+        ttl = core_config.CACHE_TTL
+    
+    cache.set(cache_key, data, ttl)
+
+# ─── Request Processing Middleware ───────────────────────────────────────────
+
+async def process_request_middleware(request: Request) -> Tuple[bool, str]:
+    """Process request with security and validation checks"""
+    # Check maintenance mode
+    if is_maintenance_mode():
+        return False, core_config.ERROR_MESSAGES['maintenance_mode']
+    
+    # Validate request headers
+    is_valid, error_msg = validate_request_headers(request)
+    if not is_valid:
+        return False, error_msg
+    
+    # Validate request origin
+    if not validate_request_origin(request):
+        return False, "Invalid request origin"
+    
+    # Check for suspicious activity
+    client_info = get_client_info()
+    if security_manager.detect_sql_injection(str(request.url)):
+        security_manager.track_suspicious_activity(
+            client_info["ip_address"], 
+            "SQL injection in URL"
+        )
+        return False, "Suspicious request detected"
+    
+    return True, ""
+
+# ─── Response Enhancement ─────────────────────────────────────────────────────
+
+def enhance_response_headers(response: Response) -> Response:
+    """Add security and performance headers to response"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+def create_error_response(error_type: str, message: str, status_code: int = 400) -> Response:
+    """Create standardized error response"""
+    response = jsonify({
+        "error": error_type,
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+    response.status_code = status_code
+    return enhance_response_headers(response)
+
+# ─── Database Connection Management ───────────────────────────────────────────
+
+async def get_db_connection_with_retry(max_retries: int = 3) -> Any:
+    """Get database connection with retry logic"""
+    for attempt in range(max_retries):
+        try:
+            conn = await get_db_connection()
+            return conn
+        except Exception as e:
+            if attempt == max_retries - 1:
+                log_critical(
+                    action="database_connection_failed",
+                    trace_info=get_client_info()["ip_address"],
+                    trace_info_hash="N/A",
+                    trace_info_encrypted="N/A",
+                    message=f"Database connection failed after {max_retries} attempts: {str(e)}"
+                )
+                raise
+            else:
+                await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+    
+    raise Exception("Database connection failed")
+
+# ─── Logging and Monitoring Enhancements ─────────────────────────────────────
+
+def log_operation_success(operation: str, details: Dict[str, Any]) -> None:
+    """Log successful operation with details"""
+    log_info(
+        action=f"{operation}_success",
+        trace_info=get_client_info()["ip_address"],
+        message=f"Operation {operation} completed successfully",
+        **details
+    )
+
+def log_operation_failure(operation: str, error: Exception, details: Dict[str, Any] = None) -> None:
+    """Log failed operation with error details"""
+    if details is None:
+        details = {}
+    
+    log_critical(
+        action=f"{operation}_failure",
+        trace_info=get_client_info()["ip_address"],
+        trace_info_hash=hash_sensitive_data(str(error)),
+        trace_info_encrypted=encrypt_sensitive_data(str(error)),
+        message=f"Operation {operation} failed: {str(error)}",
+        **details
+    )
+
+# ─── Configuration Validation ───────────────────────────────────────────────
+
+def validate_core_config() -> List[str]:
+    """Validate core configuration and return any issues"""
+    issues = []
+    
+    # Check required environment variables
+    required_env_vars = ['MADRASA_NAME', 'BASE_URL']
+    for var in required_env_vars:
+        if not os.getenv(var):
+            issues.append(f"Missing required environment variable: {var}")
+    
+    # Check upload directories
+    upload_dirs = [
+        Config.PROFILE_IMG_UPLOAD_FOLDER,
+        os.path.join(current_app.config.get('BASE_UPLOAD_FOLDER', ''), 'notices'),
+        os.path.join(current_app.config.get('BASE_UPLOAD_FOLDER', ''), 'exam_results')
+    ]
+    
+    for directory in upload_dirs:
+        if directory and not os.path.exists(directory):
+            try:
+                os.makedirs(directory, exist_ok=True)
+            except Exception as e:
+                issues.append(f"Cannot create directory {directory}: {e}")
+    
+    return issues
+
+# ─── Initialization and Cleanup ─────────────────────────────────────────────
+
+def initialize_core_module() -> bool:
+    """Initialize core module with validation"""
+    try:
+        # Validate configuration
+        config_issues = validate_core_config()
+        if config_issues:
+            for issue in config_issues:
+                log_critical(
+                    action="core_config_error",
+                    trace_info="initialization",
+                    trace_info_hash="N/A",
+                    trace_info_encrypted="N/A",
+                    message=issue
+                )
+            return False
+        
+        # Initialize security manager
+        security_manager.suspicious_patterns.extend([
+            r'(?i)(union(\s+all)?\s+select|select\s+.*from|insert\s+into|update\s+.*set|delete\s+from|drop\s+table|create\s+table|alter\s+table|--|#|;|\bor\b|\band\b|\bexec\b|\bsp_\b|\bxp_\b)',
+            r'<script[^>]*>.*?</script>',
+            r'javascript:',
+            r'on\w+\s*=',
+            r'<iframe[^>]*>',
+            r'<object[^>]*>',
+            r'<embed[^>]*>'
+        ])
+        
+        log_info(
+            action="core_module_initialized",
+            trace_info="initialization",
+            message="Core module initialized successfully"
+        )
+        return True
+        
+    except Exception as e:
+        log_critical(
+            action="core_init_error",
+            trace_info="initialization",
+            trace_info_hash="N/A",
+            trace_info_encrypted="N/A",
+            message=f"Core module initialization failed: {str(e)}"
+        )
+        return False
+
+# Initialize the core module
+if not initialize_core_module():
+    raise RuntimeError("Failed to initialize core module")

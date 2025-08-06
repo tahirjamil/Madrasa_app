@@ -100,14 +100,29 @@ def is_test_mode() -> bool:
     verify = os.getenv("TEST_MODE", "")
     return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
 
-async def check_rate_limit(identifier: str, max_requests: int = None, window: int = None) -> bool:
-    """Check rate limit for given identifier"""
+def check_rate_limit(identifier: str, max_requests: int = None, window: int = None) -> bool:
+    """Enhanced rate limiting with additional checks"""
     if max_requests is None:
-        max_requests = Config.MAX_REQUESTS_PER_HOUR
+        max_requests = Config.DEFAULT_RATE_LIMIT
     if window is None:
         window = Config.RATE_LIMIT_WINDOW
     
-    return rate_limiter.is_allowed(identifier, max_requests, window)
+    # Additional security checks
+    client_info = get_client_info()
+    
+    # Check for suspicious patterns
+    if security_manager.detect_sql_injection(identifier):
+        security_manager.track_suspicious_activity(
+            client_info["ip_address"], 
+            "SQL injection attempt"
+        )
+        return False
+        
+    # Check basic rate limit
+    if not rate_limiter.is_allowed(identifier, max_requests, window):
+        return False
+    
+    return True
 
 async def block_check(info: str) -> Optional[bool]:
     """Check if IP/device is blocked with enhanced security"""
@@ -300,18 +315,6 @@ def format_phone_number(phone: str) -> Tuple[Optional[str], str]:
     except NumberParseException:
         return None, "Invalid phone number format"
 
-def validate_password(pwd: str) -> Tuple[bool, str]:
-    """Enhanced password validation with security requirements"""
-    if is_test_mode():
-        return True, ""
-    
-    schema = PasswordValidator()
-    schema.min(8).has().uppercase().has().lowercase().has().digits().has().no().spaces()
-    
-    if not schema.validate(pwd):
-        return False, "Password must be at least 8 characters with uppercase, lowercase, digit, and no spaces"
-    
-    return True, ""
 
 def validate_fullname(fullname: str) -> Tuple[bool, str]:
     """Enhanced fullname validation with comprehensive checks"""
@@ -402,6 +405,7 @@ class SecurityManager:
         # If too many suspicious activities, block IP
         if len(self.suspicious_activities[ip_address]) > 10:
             self.blocked_ips.add(ip_address)
+            _send_security_notifications(ip_address, "system", f"Too many suspicious activities: {activity}")
             log_critical(action="ip_blocked", trace_info=ip_address, trace_info_hash=hash_sensitive_data(ip_address), trace_info_encrypted=encrypt_sensitive_data(ip_address), message=f"Too many suspicious activities: {activity}")
 
 # Global security manager
@@ -431,30 +435,62 @@ def validate_email(email: str) -> Tuple[bool, str]:
     
     return True, ""
 
-async def validate_file_upload(filename: str, allowed_extensions: List[str], file_size: int) -> Tuple[bool, str]:
-    """Validate uploaded file with extension, name, and size checks"""
-    if not filename:
-        return False, "No file selected"
+def validate_password_strength(password: str) -> Tuple[bool, str]:
+    """Enhanced password strength validation"""
+    if len(password) < Config.PASSWORD_MIN_LENGTH:
+        return False, f"Password must be at least {Config.PASSWORD_MIN_LENGTH} characters long"
+    
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+    
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+    
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one digit"
+    
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain at least one special character"
+    
+    # Check for common weak passwords
+    weak_passwords = ['password', '123456', 'qwerty', 'admin', 'user']
+    if password.lower() in weak_passwords:
+        return False, "Password is too common"
+    
+    return True, ""
+
+
+def validate_file_upload(file, allowed_extensions: List[str], max_size: int) -> Tuple[bool, str]:
+    """Enhanced file upload validation with security checks"""
+    if not file or not file.filename:
+        return False, "No file provided"
     
     # Check file extension
-    if '.' not in filename:
+    if '.' not in file.filename:
         return False, "Invalid file format"
     
-    extension = filename.rsplit('.', 1)[1].lower()
+    extension = file.filename.rsplit('.', 1)[1].lower()
     if extension not in allowed_extensions:
         return False, f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
     
-    # Suspicious filename patterns
+    # Check file size
+    if file.content_length and file.content_length > max_size:
+        return False, f"File size exceeds maximum allowed size ({max_size / 1024 / 1024} MB)"
+    
+    # Check for suspicious filename patterns
     suspicious_patterns = [
         r'\.\./', r'\.\.\\', r'[<>:"|?*]',
         r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)',
     ]
+    
     for pattern in suspicious_patterns:
-        if re.search(pattern, filename, re.IGNORECASE):
+        if re.search(pattern, file.filename, re.IGNORECASE):
+            log_warning(
+                action="suspicious_filename",
+                trace_info=get_client_info()["ip_address"],
+                message=f"Suspicious filename detected: {file.filename}"
+            )
             return False, "Invalid filename"
-
-    if file_size > Config.MAX_CONTENT_LENGTH:
-        return False, f"File size exceeds {Config.MAX_CONTENT_LENGTH / 1024 / 1024} MB"
     
     return True, ""
 

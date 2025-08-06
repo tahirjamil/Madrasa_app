@@ -1,8 +1,8 @@
 import os, time, logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from quart import (
-    Quart, render_template, request, session, g,
+    Quart, Response, render_template, request, session, g,
     send_from_directory, jsonify
 )
 from quart_cors import cors
@@ -15,10 +15,11 @@ from database import create_tables
 from database.database_utils import connect_to_db
 
 # API & Web Blueprints
-from helpers import is_maintenance_mode, get_system_health, initialize_application
+from helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
+from security import rate_limiter
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
@@ -209,6 +210,25 @@ async def health_check():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }), 500
+
+@app.route('/metrics')
+async def get_metrics() -> Response:
+    """Get application metrics for monitoring"""
+    try:
+        metrics = metrics_collector.get_metrics()
+        performance_stats = performance_monitor.get_performance_stats()
+        
+        return jsonify({
+            "metrics": metrics,
+            "performance": performance_stats,
+            "cache_size": len(cache._cache),
+            "rate_limiter_size": len(rate_limiter._requests),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting metrics: {str(e)}")
+        return jsonify({"error": "Failed to get metrics"}), 500
         
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')

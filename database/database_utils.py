@@ -1,22 +1,22 @@
 import aiomysql
 import os
-from config import Config
+from config import config, MadrasaConfig
 
 # Centralized Async DB Connection
 def get_db_config():
     # Ensure all required config values are present and not None
     if not all([
-        Config.MYSQL_HOST,
-        Config.MYSQL_USER,
-        Config.MYSQL_PASSWORD is not None,  # Password can be empty string but not None
-        Config.MYSQL_DB
+        config.MYSQL_HOST,
+        config.MYSQL_USER,
+        config.MYSQL_PASSWORD is not None,  # Password can be empty string but not None
+        config.MYSQL_DB
     ]):
         raise ValueError("Database configuration is incomplete. Please check your config settings.")
     return dict(
-        host=Config.MYSQL_HOST,
-        user=Config.MYSQL_USER,
-        password=Config.MYSQL_PASSWORD or "",
-        db=Config.MYSQL_DB,
+        host=config.MYSQL_HOST,
+        user=config.MYSQL_USER,
+        password=config.MYSQL_PASSWORD or "",
+        db=config.MYSQL_DB,
         autocommit=False,
         charset='utf8mb4',
         connect_timeout=60
@@ -25,7 +25,7 @@ def get_db_config():
 async def connect_to_db():
     try:
         config = get_db_config()
-        return await aiomysql.connect(**config)
+        return await aiomysql.connect(**MadrasaConfig)
     except Exception as e:
         print(f"Database connection failed: {e}")
         return None

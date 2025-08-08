@@ -10,16 +10,15 @@ from dotenv import load_dotenv
 from quart_babel import Babel
 import socket
 
-from config import Config
+from config import config, MadrasaConfig
 from database import create_tables
 from database.database_utils import connect_to_db
 
 # API & Web Blueprints
-from helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor
+from helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
-from security import rate_limiter
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
@@ -43,7 +42,7 @@ load_dotenv(env)
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
-app.config.from_object(Config)
+app.config.from_object(MadrasaConfig)
 
 # Quart-Babel setup
 app.config['BABEL_DEFAULT_LOCALE'] = 'en'
@@ -72,7 +71,7 @@ async def add_security_headers(response):
     return response
 
 # Log important configuration
-logger.info(f"BASE_URL: {Config.BASE_URL}")
+logger.info(f"BASE_URL: {config.BASE_URL}")
 logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
 logger.info(f"CORS enabled: True (quart_cors)")
 
@@ -224,11 +223,11 @@ async def get_metrics() -> Response:
             "cache_size": len(cache._cache),
             "rate_limiter_size": len(rate_limiter._requests),
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }), 200
+        })
         
     except Exception as e:
         logger.error(f"Error getting metrics: {str(e)}")
-        return jsonify({"error": "Failed to get metrics"}), 500
+        return jsonify({"message": "Failed to get metrics"})
         
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')

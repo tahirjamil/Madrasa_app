@@ -14,7 +14,7 @@ login_attempts = {}
 async def login():
 
     # See for test mode
-    test = True if is_test_mode() else False
+    test = True if config.is_testing() else False
 
     # Set session to expire after configured time
     session.permanent = True

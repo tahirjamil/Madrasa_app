@@ -16,55 +16,19 @@ from werkzeug.utils import secure_filename
 # Local imports
 from . import user_routes
 from database.database_utils import get_db_connection
-from config import Config
+from config import config
 from helpers import (
-    get_id, insert_person, invalidate_cache_pattern, is_test_mode, 
-    rate_limit, cache_with_invalidation,
+    format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, 
+    rate_limit, cache_with_invalidation, security_manager,
     encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
-    cache, performance_monitor, metrics_collector
-)
-from security import (
-    security_manager, format_phone_number, validate_file_upload,
-    validate_fullname, get_client_info, is_maintenance_mode,
-    check_rate_limit
+    cache, performance_monitor, metrics_collector, validate_file_upload, validate_fullname
 )
 from quart_babel import gettext as _
-from logger import log_critical, log_error, log_info, log_warning
+from logger import log
 
 # ─── Configuration and Constants ───────────────────────────────────────────────
 
-class CoreConfig:
-    """Centralized configuration for core routes"""
-    
-    # File serving configuration
-    ALLOWED_GALLERY_FOLDERS = [
-        'garden', 'library', 'office', 'roof_and_kitchen', 
-        'mosque', 'studio', 'other'
-    ]
-    ALLOWED_GALLERY_GENDERS = ['male', 'female', 'both']
-    ALLOWED_CLASS_FOLDERS = [
-        'hifz', 'moktob', 'meshkat', 'daora', 'ulumul_hadith', 
-        'ifta', 'madani_nesab', 'other'
-    ]
-    
-    # Security configuration
-    ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif']
-    ALLOWED_DOCUMENT_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt']
-    
-    # Rate limiting
-    DEFAULT_RATE_LIMIT = 100  # requests per hour
-    STRICT_RATE_LIMIT = 20    # requests per hour for sensitive operations
-    
-    # Cache configuration
-    CACHE_TTL = 3600  # 1 hour
-    SHORT_CACHE_TTL = 300  # 5 minutes
-    
-    # Validation patterns
-    PHONE_PATTERN = re.compile(r'^\+?[1-9]\d{1,14}$')
-    NAME_PATTERN = re.compile(r'^[A-Za-z\s\'-]+$')
-    
-    # Error messages
-    ERROR_MESSAGES = {
+ERROR_MESSAGES = {
         'file_not_found': _("File not found"),
         'invalid_folder': _("Invalid folder name"),
         'invalid_gender': _("Invalid gender parameter"),
@@ -81,9 +45,6 @@ class CoreConfig:
         'database_error': _("Database operation failed")
     }
 
-# Global configuration instance
-core_config = CoreConfig()
-
 # ─── Security and Validation Functions ───────────────────────────────────────
 
 def validate_request_headers(request: Request) -> Tuple[bool, str]:
@@ -98,7 +59,7 @@ def validate_request_headers(request: Request) -> Tuple[bool, str]:
     suspicious_headers = ['X-Forwarded-Host', 'X-Original-URL']
     for header in suspicious_headers:
         if request.headers.get(header):
-            log_critical(
+            log.critical(
                 action="suspicious_header",
                 trace_info=get_client_info()["ip_address"],
                 message=f"Suspicious header detected: {header}"
@@ -127,7 +88,7 @@ def validate_folder_access(folder: str, allowed_folders: List[str]) -> bool:
     """Validate folder access permissions"""
     return folder in allowed_folders
 
-def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str]:
+def get_safe_file_path(base_path: str, filename: str) -> Optional[Tuple[str, str]]:
     """Get safe file path and validate existence"""
     safe_filename = sanitize_filename(filename)
     file_path = os.path.join(base_path, safe_filename)
@@ -141,14 +102,14 @@ def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str]:
             raise ValueError("Path traversal detected")
             
     except (OSError, ValueError) as e:
-        log_critical(
+        log.critical(
             action="path_traversal_attempt",
             trace_info=filename,
             trace_info_hash=hash_sensitive_data(filename),
             trace_info_encrypted=encrypt_sensitive_data(filename),
             message=f"Path traversal attempt: {str(e)}"
         )
-        return None, None
+        return None
     
     return file_path, safe_filename
 
@@ -156,16 +117,8 @@ def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str]:
 
 @user_routes.route('/uploads/profile_img/<filename>')
 @handle_async_errors
-async def uploaded_file(filename: str) -> Response:
-    """
-    Serve user profile images with enhanced security
-    
-    Args:
-        filename: The filename to serve
-        
-    Returns:
-        File response or error response
-    """
+async def uploaded_file(filename: str) -> Tuple[Response, int]:
+    """Serve user profile images with enhanced security"""
     # Validate request headers
     is_valid, error_msg = validate_request_headers(request)
     if not is_valid:
@@ -175,40 +128,38 @@ async def uploaded_file(filename: str) -> Response:
     client_info = get_client_info()
     
     # Sanitize and validate filename
-    file_path, safe_filename = get_safe_file_path(
-        Config.PROFILE_IMG_UPLOAD_FOLDER, filename
-    )
+    file_path, safe_filename = get_safe_file_path(config.PROFILE_IMG_UPLOAD_FOLDER, filename)
     
     if not file_path:
-        log_warning(
+        log.warning(
             action="invalid_profile_image_request",
             trace_info=client_info["ip_address"],
             message=f"Invalid filename: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists and is accessible
     if not os.path.isfile(file_path):
-        log_warning(
+        log.warning(
             action="profile_image_not_found",
             trace_info=client_info["ip_address"],
             message=f"Profile image not found: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Validate file type
-    if not any(safe_filename.lower().endswith(ext) for ext in core_config.ALLOWED_IMAGE_EXTENSIONS):
-        log_warning(
+    if not any(safe_filename.lower().endswith(ext) for ext in config.ALLOWED_IMAGE_EXTENSIONS):
+        log.warning(
             action="invalid_image_type",
             trace_info=client_info["ip_address"],
             message=f"Invalid image type: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_file_type']}), 400
+        return jsonify({"message": ERROR_MESSAGES['invalid_file_type']}), 400
     
     try:
         # Serve file with security headers
         response = await send_from_directory(
-            Config.PROFILE_IMG_UPLOAD_FOLDER, 
+            config.PROFILE_IMG_UPLOAD_FOLDER, 
             safe_filename
         )
         
@@ -218,36 +169,28 @@ async def uploaded_file(filename: str) -> Response:
         response.headers['Cache-Control'] = 'public, max-age=3600'
         
         # Log successful access
-        log_info(
+        log.info(
             action="profile_image_served",
             trace_info=client_info["ip_address"],
             message=f"Profile image served: {safe_filename}"
         )
         
-        return response
+        return response, 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="file_serving_error",
             trace_info=client_info["ip_address"],
             trace_info_hash=hash_sensitive_data(filename),
             trace_info_encrypted=encrypt_sensitive_data(filename),
             message=f"Error serving file {filename}: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/notices/<path:filename>')
 @handle_async_errors
-async def notices_file(filename: str) -> Response:
-    """
-    Serve notice files with enhanced security
-    
-    Args:
-        filename: The filename to serve
-        
-    Returns:
-        File response or error response
-    """
+async def notices_file(filename: str) -> Tuple[Response, int]:
+    """Serve notice files with enhanced security"""
     # Validate request headers
     is_valid, error_msg = validate_request_headers(request)
     if not is_valid:
@@ -257,27 +200,27 @@ async def notices_file(filename: str) -> Response:
     client_info = get_client_info()
     
     # Get upload folder from config
-    upload_folder = Config.NOTICES_UPLOAD_FOLDER
+    upload_folder = config.NOTICES_UPLOAD_FOLDER
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
     if not file_path:
-        log_warning(
+        log.warning(
             action="invalid_notice_request",
             trace_info=client_info["ip_address"],
             message=f"Invalid filename: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log_warning(
+        log.warning(
             action="notice_file_not_found",
             trace_info=client_info["ip_address"],
             message=f"Notice file not found: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
         # Serve file with security headers
@@ -289,36 +232,28 @@ async def notices_file(filename: str) -> Response:
         response.headers['Cache-Control'] = 'public, max-age=1800'  # 30 minutes
         
         # Log successful access
-        log_info(
+        log.info(
             action="notice_file_served",
             trace_info=client_info["ip_address"],
             message=f"Notice file served: {safe_filename}"
         )
         
-        return response
+        return response, 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="notice_serving_error",
             trace_info=client_info["ip_address"],
             trace_info_hash=hash_sensitive_data(filename),
             trace_info_encrypted=encrypt_sensitive_data(filename),
             message=f"Error serving notice file {filename}: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/exam_results/<path:filename>')
 @handle_async_errors
-async def exam_results_file(filename: str) -> Response:
-    """
-    Serve exam result files with enhanced security
-    
-    Args:
-        filename: The filename to serve
-        
-    Returns:
-        File response or error response
-    """
+async def exam_results_file(filename: str) -> Tuple[Response, int]:
+    """Serve exam result files with enhanced security"""
     # Validate request headers
     is_valid, error_msg = validate_request_headers(request)
     if not is_valid:
@@ -328,27 +263,27 @@ async def exam_results_file(filename: str) -> Response:
     client_info = get_client_info()
     
     # Get upload folder from config
-    upload_folder = Config.EXAM_RESULTS_UPLOAD_FOLDER
+    upload_folder = config.EXAM_RESULTS_UPLOAD_FOLDER
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
     if not file_path:
-        log_warning(
+        log.warning(
             action="invalid_exam_result_request",
             trace_info=client_info["ip_address"],
             message=f"Invalid filename: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log_warning(
+        log.warning(
             action="exam_result_file_not_found",
             trace_info=client_info["ip_address"],
             message=f"Exam result file not found: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
         # Serve file with security headers
@@ -360,38 +295,28 @@ async def exam_results_file(filename: str) -> Response:
         response.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour
         
         # Log successful access
-        log_info(
+        log.info(
             action="exam_result_file_served",
             trace_info=client_info["ip_address"],
             message=f"Exam result file served: {safe_filename}"
         )
         
-        return response
+        return response, 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="exam_result_serving_error",
             trace_info=client_info["ip_address"],
             trace_info_hash=hash_sensitive_data(filename),
             trace_info_encrypted=encrypt_sensitive_data(filename),
             message=f"Error serving exam result file {filename}: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/gallery/<gender>/<folder>/<path:filename>')
 @handle_async_errors
-async def gallery_file(gender: str, folder: str, filename: str) -> Response:
-    """
-    Serve gallery files with enhanced security and validation
-    
-    Args:
-        gender: The gender category (male/female/both)
-        folder: The folder name
-        filename: The filename to serve
-        
-    Returns:
-        File response or error response
-    """
+async def gallery_file(gender: str, folder: str, filename: str) -> Tuple[Response, int]:
+    """Serve gallery files with enhanced security and validation"""
     # Validate request headers
     is_valid, error_msg = validate_request_headers(request)
     if not is_valid:
@@ -401,22 +326,22 @@ async def gallery_file(gender: str, folder: str, filename: str) -> Response:
     client_info = get_client_info()
     
     # Validate gender parameter
-    if gender not in core_config.ALLOWED_GALLERY_GENDERS:
-        log_warning(
+    if gender not in config.ALLOWED_GALLERY_GENDERS:
+        log.warning(
             action="invalid_gallery_gender",
             trace_info=client_info["ip_address"],
             message=f"Invalid gender parameter: {gender}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_gender']}), 400
+        return jsonify({"message": ERROR_MESSAGES['invalid_gender']}), 400
     
     # Validate folder parameter
-    if not validate_folder_access(folder, core_config.ALLOWED_GALLERY_FOLDERS):
-        log_warning(
+    if not validate_folder_access(folder, config.ALLOWED_GALLERY_FOLDERS):
+        log.warning(
             action="invalid_gallery_folder",
             trace_info=client_info["ip_address"],
             message=f"Invalid folder parameter: {folder}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_folder']}), 400
+        return jsonify({"message": ERROR_MESSAGES['invalid_folder']}), 400
     
     # Get upload folder path
     upload_folder = os.path.join(
@@ -428,21 +353,21 @@ async def gallery_file(gender: str, folder: str, filename: str) -> Response:
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
     if not file_path:
-        log_warning(
+        log.warning(
             action="invalid_gallery_file_request",
             trace_info=client_info["ip_address"],
             message=f"Invalid filename: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log_warning(
+        log.warning(
             action="gallery_file_not_found",
             trace_info=client_info["ip_address"],
             message=f"Gallery file not found: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
         # Serve file with security headers
@@ -454,37 +379,28 @@ async def gallery_file(gender: str, folder: str, filename: str) -> Response:
         response.headers['Cache-Control'] = 'public, max-age=7200'  # 2 hours
         
         # Log successful access
-        log_info(
+        log.info(
             action="gallery_file_served",
             trace_info=client_info["ip_address"],
             message=f"Gallery file served: {gender}/{folder}/{safe_filename}"
         )
         
-        return response
+        return response, 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="gallery_serving_error",
             trace_info=client_info["ip_address"],
             trace_info_hash=hash_sensitive_data(filename),
             trace_info_encrypted=encrypt_sensitive_data(filename),
             message=f"Error serving gallery file {filename}: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/gallery/classes/<folder>/<path:filename>')
 @handle_async_errors
-async def gallery_classes_file(folder: str, filename: str) -> Response:
-    """
-    Serve gallery class files with enhanced security and validation
-    
-    Args:
-        folder: The class folder name
-        filename: The filename to serve
-        
-    Returns:
-        File response or error response
-    """
+async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, int]:
+    """Serve gallery class files with enhanced security and validation"""
     # Validate request headers
     is_valid, error_msg = validate_request_headers(request)
     if not is_valid:
@@ -494,13 +410,13 @@ async def gallery_classes_file(folder: str, filename: str) -> Response:
     client_info = get_client_info()
     
     # Validate folder parameter
-    if not validate_folder_access(folder, core_config.ALLOWED_CLASS_FOLDERS):
-        log_warning(
+    if not validate_folder_access(folder, config.ALLOWED_CLASS_FOLDERS):
+        log.warning(
             action="invalid_class_folder",
             trace_info=client_info["ip_address"],
             message=f"Invalid class folder parameter: {folder}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['invalid_folder']}), 400
+        return jsonify({"message": ERROR_MESSAGES['invalid_folder']}), 400
     
     # Get upload folder path
     upload_folder = os.path.join(
@@ -512,21 +428,21 @@ async def gallery_classes_file(folder: str, filename: str) -> Response:
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
     if not file_path:
-        log_warning(
+        log.warning(
             action="invalid_class_file_request",
             trace_info=client_info["ip_address"],
             message=f"Invalid filename: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log_warning(
+        log.warning(
             action="class_file_not_found",
             trace_info=client_info["ip_address"],
             message=f"Class file not found: {filename}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['file_not_found']}), 404
+        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
         # Serve file with security headers
@@ -538,47 +454,42 @@ async def gallery_classes_file(folder: str, filename: str) -> Response:
         response.headers['Cache-Control'] = 'public, max-age=7200'  # 2 hours
         
         # Log successful access
-        log_info(
+        log.info(
             action="class_file_served",
             trace_info=client_info["ip_address"],
             message=f"Class file served: {folder}/{safe_filename}"
         )
         
-        return response
+        return response, 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="class_file_serving_error",
             trace_info=client_info["ip_address"],
             trace_info_hash=hash_sensitive_data(filename),
             trace_info_encrypted=encrypt_sensitive_data(filename),
             message=f"Error serving class file {filename}: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 # ─── Data Management Routes ─────────────────────────────────────────────────
 
 @user_routes.route('/add_people', methods=['POST'])
-@rate_limit(max_requests=core_config.STRICT_RATE_LIMIT, window=3600)
+@rate_limit(max_requests=config.STRICT_RATE_LIMIT, window=3600)
 @handle_async_errors
-async def add_person() -> Response:
-    """
-    Add a new person to the system with comprehensive validation and security
-    
-    Returns:
-        JSON response with success status and user information
-    """
+async def add_person() -> Tuple[Response, int]:
+    """Add a new person to the system with comprehensive validation and security """
     # Check maintenance mode
-    if is_maintenance_mode():
+    if config.is_maintenance:
         return jsonify({
-            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+            "error": ERROR_MESSAGES['maintenance_mode']
         }), 503
     
     # Get client info for logging
     # client_info = get_client_info()
     
     # Test mode handling
-    if is_test_mode():
+    if config.is_testing():
         return jsonify({
             "success": True, 
             "message": "App in test mode", 
@@ -591,13 +502,14 @@ async def add_person() -> Response:
         data = await request.form
         files = await request.files
         image = files.get('image')
+        madrasa_name = os.getenv("MADRASA_NAME") or "Null"
         
         # Validate required fields using enhanced validation
         required_fields = ['name_en', 'phone', 'acc_type']
         is_valid, missing_fields = validate_input_data(data, required_fields)
         
         if not is_valid:
-            log_warning(
+            log.warning(
                 action="add_people_missing_fields",
                 trace_info=data.get("ip_address", ""),
                 message=f"Missing required fields: {missing_fields}"
@@ -635,7 +547,7 @@ async def add_person() -> Response:
         # Get user ID
         person_id = await get_id(formatted_phone, fullname.lower())
         if not person_id:
-            log_error(
+            log.error(
                 action="add_people_id_not_found",
                 trace_info=formatted_phone,
                 trace_info_hash=hash_sensitive_data(formatted_phone),
@@ -661,9 +573,8 @@ async def add_person() -> Response:
         if image and image.filename:
             # Validate file upload
             is_valid_file, file_error = validate_file_upload(
-                filename=image.filename,
-                allowed_extensions=Config.ALLOWED_PROFILE_IMG_EXTENSIONS,
-                file_size=image.content_length
+                file=image,
+                allowed_extensions=config.ALLOWED_PROFILE_IMG_EXTENSIONS,
             )
             
             if not is_valid_file:
@@ -672,7 +583,7 @@ async def add_person() -> Response:
             # Generate secure filename
             filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
             filename = filename_base + ".webp"
-            upload_folder = Config.PROFILE_IMG_UPLOAD_FOLDER
+            upload_folder = config.PROFILE_IMG_UPLOAD_FOLDER
             image_path = os.path.join(upload_folder, filename)
             
             try:
@@ -694,7 +605,7 @@ async def add_person() -> Response:
                 fields["image_path"] = f"{BASE_URL}/uploads/profile_pics/{filename}"
                 
             except Exception as e:
-                log_critical(
+                log.critical(
                     action="image_processing_error",
                     trace_info=data.get("ip_address", ""),
                     trace_info_hash=hash_sensitive_data(image.filename),
@@ -807,7 +718,6 @@ async def add_person() -> Response:
                 fields[field] = hash_sensitive_data(fields[field])
         
         # Insert into database
-        madrasa_name = os.getenv("MADRASA_NAME")
         await insert_person(madrasa_name, fields, acc_type, formatted_phone)
         
         # Invalidate related cache
@@ -838,19 +748,17 @@ async def add_person() -> Response:
         }), 201
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="add_person_error",
-            trace_info=data.get("ip_address", ""),
-            trace_info_hash=hash_sensitive_data(phone or "unknown"),
-            trace_info_encrypted=encrypt_sensitive_data(phone or "unknown"),
+            trace_info="system",
             message=f"Error adding person: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['internal_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/members', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
-async def get_info() -> Response:
+async def get_info() -> Tuple[Response, int]:
     """
     Get member information with caching and incremental updates
     
@@ -858,9 +766,9 @@ async def get_info() -> Response:
         JSON response with member data and sync timestamp
     """
     # Check maintenance mode
-    if is_maintenance_mode():
+    if config.is_maintenance:
         return jsonify({
-            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+            "error": ERROR_MESSAGES['maintenance_mode']
         }), 503
     
     # Get client info for logging
@@ -879,7 +787,7 @@ async def get_info() -> Response:
         corrected_time = None
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
-                log_warning(
+                log.warning(
                     action="invalid_timestamp_format",
                     trace_info=data.get("ip_address", ""),
                     message=f"Invalid timestamp format: {lastfetched}"
@@ -888,7 +796,7 @@ async def get_info() -> Response:
             try:
                 corrected_time = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
-                log_warning(
+                log.warning(
                     action="timestamp_processing_error",
                     trace_info=data.get("ip_address", ""),
                     message=f"Error processing timestamp: {lastfetched}"
@@ -945,7 +853,7 @@ async def get_info() -> Response:
             "members": members,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_members", {
@@ -956,29 +864,22 @@ async def get_info() -> Response:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="get_members_error",
-            trace_info=data.get("ip_address", ""),
-            trace_info_hash="N/A",
-            trace_info_encrypted="N/A",
+            trace_info="system",
             message=f"Error retrieving members: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route("/routines", methods=["POST"])
 @cache_with_invalidation
 @handle_async_errors
-async def get_routine() -> Response:
-    """
-    Get routine information with caching and incremental updates
-    
-    Returns:
-        JSON response with routine data and sync timestamp
-    """
+async def get_routine() -> Tuple[Response, int]:
+    """Get routine information with caching and incremental updates"""
     # Check maintenance mode
-    if is_maintenance_mode():
+    if config.is_maintenance:
         return jsonify({
-            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+            "error": ERROR_MESSAGES['maintenance_mode']
         }), 503
     
     # Get client info for logging
@@ -997,7 +898,7 @@ async def get_routine() -> Response:
         corrected_time = None
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
-                log_warning(
+                log.warning(
                     action="invalid_routine_timestamp",
                     trace_info=data.get("ip_address", ""),
                     message=f"Invalid timestamp format: {lastfetched}"
@@ -1006,7 +907,7 @@ async def get_routine() -> Response:
             try:
                 corrected_time = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
-                log_warning(
+                log.warning(
                     action="routine_timestamp_processing_error",
                     trace_info=data.get("ip_address", ""),
                     message=f"Error processing timestamp: {lastfetched}"
@@ -1052,7 +953,7 @@ async def get_routine() -> Response:
             "routines": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_routines", {
@@ -1063,19 +964,17 @@ async def get_routine() -> Response:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="get_routines_error",
-            trace_info=data.get("ip_address", ""),
-            trace_info_hash="N/A",
-            trace_info_encrypted="N/A",
+            trace_info="system",
             message=f"Error retrieving routines: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route('/events', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
-async def events() -> Response:
+async def events() -> Tuple[Response, int]:
     """
     Get events with enhanced date processing and status classification
     
@@ -1083,9 +982,9 @@ async def events() -> Response:
         JSON response with events data and sync timestamp
     """
     # Check maintenance mode
-    if is_maintenance_mode():
+    if config.is_maintenance:
         return jsonify({
-            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+            "error": ERROR_MESSAGES['maintenance_mode']
         }), 503
     
     # Get client info for logging
@@ -1112,7 +1011,7 @@ async def events() -> Response:
         params = []
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
-                log_error(
+                log.error(
                     action="get_events_failed",
                     trace_info=data.get("ip_address", ""),
                     trace_info_hash=hash_sensitive_data(lastfetched),
@@ -1125,7 +1024,7 @@ async def events() -> Response:
                 sql += " WHERE e.created_at > %s"
                 params.append(cutoff)
             except ValueError as e:
-                log_error(
+                log.error(
                     action="events_timestamp_processing_error",
                     trace_info=data.get("ip_address", ""),
                     trace_info_hash=hash_sensitive_data(lastfetched),
@@ -1181,7 +1080,7 @@ async def events() -> Response:
             "events": rows,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_events", {
@@ -1192,29 +1091,22 @@ async def events() -> Response:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="get_events_error",
-            trace_info=data.get("ip_address", ""),
-            trace_info_hash="N/A",
-            trace_info_encrypted="N/A",
+            trace_info="system",
             message=f"Error retrieving events: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route('/exams', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
-async def get_exams() -> Response:
-    """
-    Get exam information with enhanced validation and error handling
-    
-    Returns:
-        JSON response with exam data and sync timestamp
-    """
+async def get_exams() -> Tuple[Response, int]:
+    """Get exam information with enhanced validation and error handling"""
     # Check maintenance mode
-    if is_maintenance_mode():
+    if config.is_maintenance:
         return jsonify({
-            "error": core_config.ERROR_MESSAGES['maintenance_mode']
+            "error": ERROR_MESSAGES['maintenance_mode']
         }), 503
     
     # Get client info for logging
@@ -1233,7 +1125,7 @@ async def get_exams() -> Response:
         cutoff = None
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
-                log_error(
+                log.error(
                     action="get_exams_failed",
                     trace_info=data.get("ip_address", ""),
                     trace_info_hash=hash_sensitive_data(lastfetched),
@@ -1244,7 +1136,7 @@ async def get_exams() -> Response:
             try:
                 cutoff = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
-                log_error(
+                log.error(
                     action="exams_timestamp_processing_error",
                     trace_info=data.get("ip_address", ""),
                     trace_info_hash=hash_sensitive_data(lastfetched),
@@ -1289,7 +1181,7 @@ async def get_exams() -> Response:
             "exams": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=core_config.SHORT_CACHE_TTL)
+        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_exams", {
@@ -1300,14 +1192,12 @@ async def get_exams() -> Response:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="get_exams_error",
-            trace_info=data.get("ip_address", ""),
-            trace_info_hash="N/A",
-            trace_info_encrypted="N/A",
+            trace_info="system",
             message=f"Error retrieving exams: {str(e)}"
         )
-        return jsonify({"message": core_config.ERROR_MESSAGES['database_error']}), 500
+        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 # ─── Advanced Utility Functions ───────────────────────────────────────────────
 
@@ -1330,7 +1220,7 @@ def sanitize_sql_input(input_str: str) -> str:
     
     for char in dangerous_chars:
         if char in sanitized:
-            log_warning(
+            log.warning(
                 action="sql_injection_attempt",
                 trace_info=get_client_info()["ip_address"],
                 message=f"Potential SQL injection attempt: {char}"
@@ -1371,7 +1261,7 @@ def monitor_database_performance(query: str, duration: float) -> None:
     
     if duration > 1.0:  # Log slow queries
         metrics_collector.increment('slow_queries')
-        log_warning(
+        log.warning(
             action="slow_database_query",
             trace_info=get_client_info()["ip_address"],
             message=f"Slow query detected: {duration:.2f}s"
@@ -1391,7 +1281,7 @@ def validate_request_origin(request: Request) -> bool:
             parsed_host = urlparse(request.url_root)
             
             if parsed_referer.netloc != parsed_host.netloc:
-                log_warning(
+                log.warning(
                     action="suspicious_referer",
                     trace_info=get_client_info()["ip_address"],
                     message=f"Suspicious referer: {referer}"
@@ -1424,7 +1314,7 @@ def invalidate_related_cache(operation: str, **kwargs) -> None:
 def get_cached_data(cache_key: str, ttl: int = None) -> Any:
     """Get data from cache with fallback"""
     if ttl is None:
-        ttl = core_config.CACHE_TTL
+        ttl = config.CACHE_TTL
     
     cached_data = cache.get(cache_key)
     if cached_data is not None:
@@ -1437,7 +1327,7 @@ def get_cached_data(cache_key: str, ttl: int = None) -> Any:
 def set_cached_data(cache_key: str, data: Any, ttl: int = None) -> None:
     """Set data in cache with TTL"""
     if ttl is None:
-        ttl = core_config.CACHE_TTL
+        ttl = config.CACHE_TTL
     
     cache.set(cache_key, data, ttl)
 
@@ -1446,8 +1336,8 @@ def set_cached_data(cache_key: str, data: Any, ttl: int = None) -> None:
 async def process_request_middleware(request: Request) -> Tuple[bool, str]:
     """Process request with security and validation checks"""
     # Check maintenance mode
-    if is_maintenance_mode():
-        return False, core_config.ERROR_MESSAGES['maintenance_mode']
+    if config.is_maintenance:
+        return False, ERROR_MESSAGES['maintenance_mode']
     
     # Validate request headers
     is_valid, error_msg = validate_request_headers(request)
@@ -1461,7 +1351,7 @@ async def process_request_middleware(request: Request) -> Tuple[bool, str]:
     # Check for suspicious activity
     client_info = get_client_info()
     if security_manager.detect_sql_injection(str(request.url)):
-        security_manager.track_suspicious_activity(
+        await security_manager.track_suspicious_activity(
             client_info["ip_address"], 
             "SQL injection in URL"
         )
@@ -1502,7 +1392,7 @@ async def get_db_connection_with_retry(max_retries: int = 3) -> Any:
             return conn
         except Exception as e:
             if attempt == max_retries - 1:
-                log_critical(
+                log.critical(
                     action="database_connection_failed",
                     trace_info=get_client_info()["ip_address"],
                     trace_info_hash="N/A",
@@ -1519,7 +1409,7 @@ async def get_db_connection_with_retry(max_retries: int = 3) -> Any:
 
 def log_operation_success(operation: str, details: Dict[str, Any]) -> None:
     """Log successful operation with details"""
-    log_info(
+    log.info(
         action=f"{operation}_success",
         trace_info=get_client_info()["ip_address"],
         message=f"Operation {operation} completed successfully",
@@ -1531,7 +1421,7 @@ def log_operation_failure(operation: str, error: Exception, details: Dict[str, A
     if details is None:
         details = {}
     
-    log_critical(
+    log.critical(
         action=f"{operation}_failure",
         trace_info=get_client_info()["ip_address"],
         trace_info_hash=hash_sensitive_data(str(error)),
@@ -1554,7 +1444,7 @@ def validate_core_config() -> List[str]:
     
     # Check upload directories
     upload_dirs = [
-        Config.PROFILE_IMG_UPLOAD_FOLDER,
+        config.PROFILE_IMG_UPLOAD_FOLDER,
         os.path.join(current_app.config.get('BASE_UPLOAD_FOLDER', ''), 'notices'),
         os.path.join(current_app.config.get('BASE_UPLOAD_FOLDER', ''), 'exam_results')
     ]
@@ -1577,7 +1467,7 @@ def initialize_core_module() -> bool:
         config_issues = validate_core_config()
         if config_issues:
             for issue in config_issues:
-                log_critical(
+                log.critical(
                     action="core_config_error",
                     trace_info="initialization",
                     trace_info_hash="N/A",
@@ -1597,7 +1487,7 @@ def initialize_core_module() -> bool:
             r'<embed[^>]*>'
         ])
         
-        log_info(
+        log.info(
             action="core_module_initialized",
             trace_info="initialization",
             message="Core module initialized successfully"
@@ -1605,7 +1495,7 @@ def initialize_core_module() -> bool:
         return True
         
     except Exception as e:
-        log_critical(
+        log.critical(
             action="core_init_error",
             trace_info="initialization",
             trace_info_hash="N/A",

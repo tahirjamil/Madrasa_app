@@ -11,7 +11,6 @@ werkzeug
 # Other dependencies
 requests
 python-dotenv
-password-validator
 bcrypt
 phonenumbers
 Pillow

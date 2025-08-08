@@ -8,7 +8,7 @@ user_routes = Blueprint("user_routes", __name__)
 # @require_api_key TODO: fix this
 async def check():
     lang = request.accept_languages.best_match(["en", "bn", "ar"])
-    if is_maintenance_mode():
+    if config.is_maintenance:
         return jsonify({"action": "maintenance", "message": _("System is under maintenance. Please try again later.")}), 503
 
 

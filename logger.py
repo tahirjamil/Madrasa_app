@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Enhanced logger with better error handling and performance
-async def log_event(action, trace_info, trace_info_hash, trace_info_encrypted, message, level="info", metadata=None):
+async def log_event(action : str, trace_info, trace_info_hash, trace_info_encrypted, message : str, level="info", metadata=None):
     """
     Enhanced logging function with better error handling and metadata support
     
@@ -59,7 +59,7 @@ async def log_event(action, trace_info, trace_info_hash, trace_info_encrypted, m
         print(f"Database logging failed: {e}")
         await _log_to_file(action, trace_info, trace_info_hash, trace_info_encrypted, message, level, metadata, error=True)
 
-async def _log_to_file(action, trace_info, trace_info_hash, trace_info_encrypted, message, level, metadata=None, error=False):
+async def _log_to_file(action : str, trace_info, trace_info_hash, trace_info_encrypted, message : str, level, metadata=None, error=False):
     """Log to file as backup when database logging fails"""
     try:
         log_dir = Path("logs")
@@ -85,7 +85,7 @@ async def _log_to_file(action, trace_info, trace_info_hash, trace_info_encrypted
     except Exception as e:
         print(f"File logging also failed: {e}")
 
-def log_event_async(action, trace_info, trace_info_hash, trace_info_encrypted, message, level="info", metadata=None):
+def log_event_async(action : str, trace_info, trace_info_hash, trace_info_encrypted, message : str, level="info", metadata=None):
     """
     Enhanced non-blocking wrapper for log_event that schedules logging in the background.
     Can be called without await to avoid blocking the main flow.
@@ -108,7 +108,7 @@ def log_event_async(action, trace_info, trace_info_hash, trace_info_encrypted, m
     except Exception as e:
         print(f"Failed to schedule log task: {e}")
 
-def log_event_sync(action, trace_info, trace_info_hash, trace_info_encrypted, message, level="info", metadata=None):
+def log_event_sync(action : str, trace_info, trace_info_hash, trace_info_encrypted, message : str, level="info", metadata=None):
     """
     Enhanced synchronous wrapper that runs the logging operation and waits for completion.
     Use sparingly as it will block the calling thread.
@@ -123,18 +123,21 @@ def log_event_sync(action, trace_info, trace_info_hash, trace_info_encrypted, me
         print(f"Sync logging failed: {e}")
 
 # Utility functions for different log levels with backward compatibility
-def log_info(action, trace_info, trace_info_hash, trace_info_encrypted, message, metadata=None):
-    """Log info level message"""
-    log_event_async(action, trace_info, trace_info_hash, trace_info_encrypted, message, "info", metadata)
+class logger:
+    def info(self, action : str, trace_info, message : str, trace_info_hash = None, trace_info_encrypted = None, metadata=None):
+        """Log info level message"""
+        log_event_async(action=action, trace_info=trace_info, trace_info_hash=trace_info_hash, trace_info_encrypted=trace_info_encrypted, message=message, level="info", metadata=metadata)
 
-def log_warning(action, trace_info, trace_info_hash, trace_info_encrypted, message, metadata=None):
-    """Log warning level message"""
-    log_event_async(action, trace_info, trace_info_hash, trace_info_encrypted, message, "warning", metadata)
+    def warning(self, action : str, trace_info, message : str, trace_info_hash = None, trace_info_encrypted = None, metadata=None):
+        """Log warning level message"""
+        log_event_async(action=action, trace_info=trace_info, trace_info_hash=trace_info_hash, trace_info_encrypted=trace_info_encrypted, message=message, level="warning", metadata=metadata)
 
-def log_error(action, trace_info, trace_info_hash, trace_info_encrypted, message, metadata=None):
-    """Log error level message"""
-    log_event_async(action, trace_info, trace_info_hash, trace_info_encrypted, message, "error", metadata)
+    def error(self, action : str, trace_info, message : str, trace_info_hash = None, trace_info_encrypted = None, metadata=None):
+        """Log error level message"""
+        log_event_async(action=action, trace_info=trace_info, trace_info_hash=trace_info_hash, trace_info_encrypted=trace_info_encrypted, message=message, level="error", metadata=metadata)
 
-def log_critical(action, trace_info, trace_info_hash, trace_info_encrypted, message, metadata=None):
-    """Log critical level message"""
-    log_event_async(action, trace_info, trace_info_hash, trace_info_encrypted, message, "critical", metadata)
+    def critical(self, action : str, trace_info, message : str, trace_info_hash = None, trace_info_encrypted = None, metadata=None):
+        """Log critical level message"""
+        log_event_async(action=action, trace_info=trace_info, trace_info_hash=trace_info_hash, trace_info_encrypted=trace_info_encrypted, message=message, level="critical", metadata=metadata)
+
+log = logger()

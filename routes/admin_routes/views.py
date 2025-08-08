@@ -81,7 +81,7 @@ async def admin_dashboard():
             # Handle SQL form submission
             if request.method == "POST":
                 form = await request.form
-                raw_sql = form.get('sql', '').strip() if not is_test_mode() else ''
+                raw_sql = form.get('sql', '').strip() if not config.is_testing() else ''
                 username = form.get('username', '')
                 password = form.get('password', '')
 
@@ -89,7 +89,7 @@ async def admin_dashboard():
                 ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
 
                 # Say test mode if in test
-                if is_test_mode():
+                if config.is_testing():
                     await flash("The server is in testing mode.", "danger")
                 # Authenticate admin credentials
                 elif username != ADMIN_USER or password != ADMIN_PASS:
@@ -166,7 +166,7 @@ async def view_logs():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
     
-    if is_test_mode():
+    if config.is_testing():
         # await flash("Server is in test mode", "danger")  # Removed hardcoded test mode message
         return await render_template("admin/logs.html", logs=[])
     
@@ -203,7 +203,7 @@ async def info_admin():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    logs = getattr(current_app, 'request_response_log', [])[-100:] if not is_test_mode() else []
+    logs = getattr(current_app, 'request_response_log', [])[-100:] if not config.is_testing() else []
 
     return await render_template("admin/info.html", logs=logs)
 
@@ -259,7 +259,7 @@ async def exam_results():
     #     return redirect(url_for('admin_routes.exam_results'))
 
     # GET: show all together
-    results = load_results() if not is_test_mode() else []
+    results = load_results() if not config.is_testing() else []
     return await render_template("admin/exam_results.html", results=results)
 
 
@@ -351,7 +351,7 @@ async def members():
                 return 0
         members.sort(key=user_id_int, reverse=reverse)
 
-    if is_test_mode():
+    if config.is_testing():
         members = []
         pending = []
 
@@ -410,7 +410,7 @@ async def notice_page():
     today = date.today()
     upcoming, ongoing, past = [], [], []
 
-    if not is_test_mode():
+    if not config.is_testing():
         for n in notices:
             try:
                 n_date = datetime.strptime(n['target_date'], '%Y-%m-%d').date()
@@ -470,7 +470,7 @@ async def routines():
             routines_by_class[k].sort(key=lambda r: int(r.get('serial', 0)))
     # else: default (serial from db order)
 
-    if is_test_mode():
+    if config.is_testing():
         routines_by_class = {}
 
     return await render_template(
@@ -531,7 +531,7 @@ async def events():
              ORDER BY date  DESC,
                       time  DESC
         """)
-        if not is_test_mode():
+        if not config.is_testing():
             events = await cursor.fetchall()
         else:
             events = []
@@ -595,7 +595,7 @@ async def madrasa_pictures():
 
     # 4) On GET: load current list
     pictures = []
-    if not is_test_mode():
+    if not config.is_testing():
         try:
             with open(PIC_INDEX_PATH) as idx:
                 pictures = json.load(idx)
@@ -615,7 +615,7 @@ async def exams():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
     
-    if not is_test_mode():
+    if not config.is_testing():
         return await render_template('admin/exams.html', exams=[])
 
     conn = await connect_to_db()
@@ -788,7 +788,7 @@ async def interactions():
         rows.sort(key=lambda r: int(r.get('open_times', 0)), reverse=True)
     # else: default order
 
-    if is_test_mode():
+    if config.is_testing():
         rows = []
 
     return await render_template('admin/interactions.html', interactions=rows, sort=sort)
@@ -808,7 +808,7 @@ async def power_management():
     if not POWER_KEY:
         return await render_template('admin/power.html', error="Power management is not configured")
     
-    if is_test_mode():
+    if config.is_testing():
         return await render_template('admin/power.html', error=None)  # Removed hardcoded test mode message
     
     if request.method == 'POST':

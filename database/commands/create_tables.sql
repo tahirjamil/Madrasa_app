@@ -4,7 +4,7 @@
 CREATE DATABASE IF NOT EXISTS global;
 USE global;
 
-CREATE TABLE IF NOT EXISTS translations (
+CREATE TABLE IF NOT EXISTS global_translations (
                 translation_id      INT AUTO_INCREMENT PRIMARY KEY,
                 translation_text    VARCHAR(255)   UNIQUE    NOT NULL,
                 bn_text             VARCHAR(255)   NULL,
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS books (
                 class   VARCHAR(50),
 
                 INDEX idx_books_class (class),
-                FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                FOREIGN KEY (name) REFERENCES global_translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;                           
 
 
@@ -171,6 +171,19 @@ CREATE TABLE IF NOT EXISTS acc_types (
 CREATE DATABASE IF NOT EXISTS annur;
 USE annur;
 
+CREATE TABLE IF NOT EXISTS translations (
+                translation_id      INT AUTO_INCREMENT PRIMARY KEY,
+                translation_text    VARCHAR(255)   UNIQUE    NOT NULL,
+                bn_text             VARCHAR(255)   NULL,
+                ar_text             VARCHAR(255)   NULL,
+                context             VARCHAR(100)   NULL,
+
+                updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    
+                INDEX idx_translations_translation_text (translation_text)
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 CREATE TABLE IF NOT EXISTS peoples (
                     person_id            INT            NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -216,10 +229,10 @@ CREATE TABLE IF NOT EXISTS peoples (
 
                     UNIQUE KEY unique_person (name, phone),
                     FOREIGN KEY (user_id) REFERENCES global.users(user_id) ON DELETE SET NULL ON UPDATE CASCADE,
-                    FOREIGN KEY (name) REFERENCES global.translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
-                    FOREIGN KEY (address) REFERENCES global.translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
-                    FOREIGN KEY (father_name) REFERENCES global.translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
-                    FOREIGN KEY (mother_name) REFERENCES global.translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE
+                    FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
+                    FOREIGN KEY (address) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
+                    FOREIGN KEY (father_name) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE,
+                    FOREIGN KEY (mother_name) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE
                     ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -260,8 +273,8 @@ CREATE TABLE IF NOT EXISTS routines (
                 INDEX idx_routines_class_group (class_group),
                 INDEX idx_routines_class_level (class_level),
                 INDEX idx_routines_weekday (weekday),
-                FOREIGN KEY (subject) REFERENCES global.translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
-                FOREIGN KEY (name) REFERENCES global.translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                FOREIGN KEY (subject) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE,
+                FOREIGN KEY (name) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -283,7 +296,7 @@ CREATE TABLE IF NOT EXISTS exams (
                 INDEX idx_exams_class (class),
                 INDEX idx_exams_gender (gender),
                 INDEX idx_exams_weekday (weekday),
-                FOREIGN KEY (book) REFERENCES global.translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE
+                FOREIGN KEY (book) REFERENCES translations(translation_text) ON DELETE SET NULL ON UPDATE CASCADE
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -300,5 +313,5 @@ CREATE TABLE IF NOT EXISTS events (
 
                 INDEX idx_events_type (type),
                 INDEX idx_events_title (title),
-                FOREIGN KEY (title) REFERENCES global.translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                FOREIGN KEY (title) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

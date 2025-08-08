@@ -10,7 +10,7 @@ async def logs_data():
     try:
         conn = await connect_to_db()
 
-        if conn is None or is_test_mode():
+        if conn is None or config.is_testing():
             return jsonify([])
     except Exception as e:
         return jsonify([])
@@ -35,7 +35,7 @@ async def info_data_admin():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
     
-    if is_test_mode():
+    if config.is_testing():
         return jsonify([])
 
     logs = getattr(current_app, 'request_response_log', [])[-100:]

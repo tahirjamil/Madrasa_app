@@ -20,7 +20,7 @@ async def payments():
     fullname = (data.get('fullname') or 'guest').strip()
     madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
 
-    if is_test_mode():
+    if config.is_testing():
         fullname = Config.DUMMY_FULLNAME
         phone = Config.DUMMY_PHONE
 
@@ -70,7 +70,7 @@ async def get_transactions():
     transaction_type = data.get('type')
     lastfetched      = data.get('updatedSince')
     
-    if is_test_mode():
+    if config.is_testing():
         fullname = Config.DUMMY_FULLNAME
         phone = Config.DUMMY_PHONE
 

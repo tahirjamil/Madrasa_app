@@ -81,32 +81,32 @@ class TestSecurityFunctions(unittest.TestCase):
     def test_is_maintenance_mode(self):
         """Test maintenance mode detection"""
         # Test default (not in maintenance)
-        self.assertFalse(is_maintenance_mode())
+        self.assertFalse(config.is_maintenance)
         
         # Test various true values
         for value in ['true', 'True', 'TRUE', 'yes', 'Yes', 'YES', 'on', 'On', 'ON']:
             os.environ['MAINTENANCE_MODE'] = value
-            self.assertTrue(is_maintenance_mode())
+            self.assertTrue(config.is_maintenance)
         
         # Test false values
         for value in ['false', 'False', 'FALSE', 'no', 'No', 'NO', 'off', 'Off', 'OFF', '']:
             os.environ['MAINTENANCE_MODE'] = value
-            self.assertFalse(is_maintenance_mode())
+            self.assertFalse(config.is_maintenance)
     
     def test_is_test_mode(self):
         """Test test mode detection"""
         # Test default (not in test mode)
-        self.assertFalse(is_test_mode())
+        self.assertFalse(config.is_testing())
         
         # Test various true values
         for value in ['true', 'True', 'TRUE', 'yes', 'Yes', 'YES', 'on', 'On', 'ON']:
             os.environ['TEST_MODE'] = value
-            self.assertTrue(is_test_mode())
+            self.assertTrue(config.is_testing())
         
         # Test false values
         for value in ['false', 'False', 'FALSE', 'no', 'No', 'NO', 'off', 'Off', 'OFF', '']:
             os.environ['TEST_MODE'] = value
-            self.assertFalse(is_test_mode())
+            self.assertFalse(config.is_testing())
 
 
 class TestValidationFunctions(unittest.TestCase):

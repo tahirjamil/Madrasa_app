@@ -67,6 +67,25 @@ This document summarizes all the security fixes, code improvements, and producti
    - Concurrency tests
    - Connection cleanup tests
 
+4. **`test_api_endpoints.py`**
+   - Comprehensive API endpoint testing using aiohttp
+   - Tests all routes with actual HTTP requests
+   - Includes auth flow, data endpoints, payment endpoints
+   - Tests error handling, SQL injection, XSS attempts
+   - Rate limiting verification
+   - Response time tracking
+
+5. **`test_api_curl.sh`**
+   - Shell script for manual API testing with curl
+   - Useful for debugging and quick tests
+   - Tests all major endpoints
+   - Includes security testing scenarios
+
+6. **`start_test_server.sh`**
+   - Script to start server with test configuration
+   - Sets up minimal required environment variables
+   - Enables test mode for safe testing
+
 ## Running Tests
 
 ### Prerequisites
@@ -107,6 +126,46 @@ pytest test/ --cov=. --cov-report=html
 # Run specific test file
 pytest test/test_security.py -v
 ```
+
+### Testing API Endpoints
+
+#### Start Test Server
+```bash
+# Start server with test configuration
+./test/start_test_server.sh
+
+# Or manually with environment variables
+SKIP_ENV_VALIDATION=1 python3 run_server.py
+```
+
+#### Run API Tests
+```bash
+# Python API test suite (requires aiohttp)
+pip install aiohttp
+python3 test/test_api_endpoints.py
+
+# Test against custom URL
+python3 test/test_api_endpoints.py http://localhost:5000
+
+# Shell script with curl
+./test/test_api_curl.sh
+
+# Test specific endpoint with curl
+curl -X POST http://localhost:8000/register \
+  -H "Content-Type: application/json" \
+  -d '{"fullname": "test", "phone": "01712345678", "password": "Test123!"}'
+```
+
+#### API Test Coverage
+The API tests cover:
+- ✅ All authentication endpoints (register, login, send_code, etc.)
+- ✅ Data retrieval endpoints (members, routines, events, exams)
+- ✅ Payment endpoints (due_payments, transactions)
+- ✅ File serving endpoints
+- ✅ Web page routes
+- ✅ Error handling (missing fields, invalid data)
+- ✅ Security testing (SQL injection, XSS attempts)
+- ✅ Rate limiting verification
 
 ## Remaining Considerations
 

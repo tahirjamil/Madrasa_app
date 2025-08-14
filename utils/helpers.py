@@ -1,12 +1,19 @@
 """Helper Functions for Madrasha Application"""
+import collections
+import dataclasses
+import decimal
+import fnmatch
 import base64, hashlib, random, re, aiomysql, phonenumbers, requests
+import threading
+import uuid
+import datetime as dt
 from hmac import compare_digest
 import asyncio, json, os, smtplib, time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
 from functools import wraps
-from typing import Any, Dict, List, Optional, Tuple, Callable, Union
+from typing import Any, Dict, List, Optional, Tuple, Callable, Union, Iterable
 
 from aiomysql import IntegrityError
 from dotenv import load_dotenv
@@ -18,65 +25,357 @@ from config import config
 from logger import log
 
 
-# ─── Caching and Performance ─────────────────────────────────────────────────
-
+# ---------- improved CacheManager ----------
 class CacheManager:
-    """Advanced caching system with TTL and memory management"""
-    
-    def __init__(self):
-        self._cache: Dict[str, Tuple[Any, float]] = {}
-        self._max_size = 1000
-        self._cleanup_interval = 5 * 60  # 5 minutes
-    
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get value from cache if not expired"""
-        if key in self._cache:
-            value, expiry = self._cache[key]
-            if time.time() < expiry:
-                return value
-            else:
-                del self._cache[key]
-        return default
-    
-    def set(self, key: str, value: Any, ttl: int = 1 * 3600) -> None:
-        """Set value in cache with TTL"""
-        if len(self._cache) >= self._max_size:
-            self._cleanup()
-        
-        expiry = time.time() + ttl
-        self._cache[key] = (value, expiry)
-    
-    def delete(self, key: str) -> None:
-        """Delete key from cache"""
-        self._cache.pop(key, None)
-    
-    def clear(self) -> None:
-        """Clear all cache entries"""
-        self._cache.clear()
-    
-    def _cleanup(self) -> None:
-        """Remove expired entries and oldest entries if needed"""
-        current_time = time.time()
-        expired_keys = [
-            key for key, (_, expiry) in self._cache.items()
-            if current_time >= expiry
-        ]
-        
-        for key in expired_keys:
-            del self._cache[key]
-        
-        # If still too many items, remove oldest
-        if len(self._cache) > self._max_size // 2:
-            sorted_items = sorted(
-                self._cache.items(),
-                key=lambda x: x[1][1]  # Sort by expiry time
-            )
-            items_to_remove = len(sorted_items) - self._max_size // 2
-            for key, _ in sorted_items[:items_to_remove]:
-                del self._cache[key]
+    def __init__(self, max_size: int = 1000, cleanup_interval: int = 300):
+        self._cache: Dict[str, (Any, float)] = {}
+        self._max_size = max_size
+        self._cleanup_interval = cleanup_interval
+        self._lock = threading.RLock()
+        self._last_cleanup = time.time()
 
-# Global cache instance
+    def _maybe_cleanup(self) -> None:
+        now = time.time()
+        if now - self._last_cleanup < self._cleanup_interval:
+            return
+        self._last_cleanup = now
+        self._cleanup()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            self._maybe_cleanup()
+            item = self._cache.get(key)
+            if item is None:
+                return default
+            value, expiry = item
+            if expiry is None or time.time() < expiry:
+                return value
+            # expired
+            self._cache.pop(key, None)
+            return default
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = 3600) -> None:
+        expiry = None if ttl is None else time.time() + ttl
+        with self._lock:
+            if len(self._cache) >= self._max_size:
+                self._cleanup()
+            self._cache[key] = (value, expiry)
+
+    def delete(self, key: str) -> None:
+        with self._lock:
+            self._cache.pop(key, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+    def keys(self):
+        with self._lock:
+            return list(self._cache.keys())
+
+    def delete_pattern(self, pattern: str) -> int:
+        """
+        Delete entries whose key matches a glob-style pattern or substring.
+        Returns number of deleted keys.
+        """
+        with self._lock:
+            deleted = []
+            # support both glob patterns (with *?) and simple substring
+            is_glob = any(ch in pattern for ch in "*?[]")
+            for key in list(self._cache.keys()):
+                match = fnmatch.fnmatch(key, pattern) if is_glob else (pattern in key)
+                if match:
+                    deleted.append(key)
+                    self._cache.pop(key, None)
+            return len(deleted)
+
+    def _cleanup(self) -> None:
+        now = time.time()
+        # remove expired
+        expired = [k for k, (_, exp) in self._cache.items() if exp is not None and now >= exp]
+        for k in expired:
+            self._cache.pop(k, None)
+        # if still too many, remove oldest by expiry (None=forever -> put last)
+        if len(self._cache) > self._max_size:
+            ordered = sorted(self._cache.items(), key=lambda kv: (kv[1][1] is None, kv[1][1] or float('inf')))
+            to_remove = len(self._cache) - (self._max_size // 2)
+            for k, _ in ordered[:to_remove]:
+                self._cache.pop(k, None)
+
+# global cache instance
 cache = CacheManager()
+
+# ---------- Cache Functions ----------
+def get_cache_key(prefix: str, **kwargs) -> str:
+    parts = [prefix]
+    for k, v in sorted(kwargs.items()):
+        # canonical JSON representation of values to reduce accidental collisions
+        parts.append(f"{k}:{json.dumps(v, sort_keys=True, separators=(',',':'), default=str, ensure_ascii=False)}")
+    return ":".join(parts)
+
+def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: Any = None) -> Any:
+    # metrics + TTL default handled here
+    if ttl is None:
+        ttl = getattr(config, "CACHE_TTL", 3600)
+    val = cache.get(cache_key, default=None)
+    if val is not None:
+        metrics_collector.increment("cache_hits")
+        return val
+    metrics_collector.increment("cache_misses")
+    return default
+
+def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) -> None:
+    if ttl is None:
+        ttl = getattr(config, "CACHE_TTL", 3600)
+    cache.set(cache_key, data, ttl)
+
+def invalidate_cache_pattern(pattern: str) -> int:
+    return cache.delete_pattern(pattern)
+
+# operation -> patterns mapping (domain specific)
+CACHE_INVALIDATION_MAP = {
+    'add_person': ['members:*', 'user:*'],
+    'update_person': ['members:*', 'user:*'],
+    'add_event': ['events:*'],
+    'update_event': ['events:*'],
+    # add more...
+}
+
+def invalidate_related_cache(operation: str, **kwargs) -> None:
+    patterns = CACHE_INVALIDATION_MAP.get(operation, [])
+    for p in patterns:
+        invalidate_cache_pattern(p)
+
+# ---------- decorator for endpoint-level caching ----------
+def cache_with_invalidation(ttl: int = 3600):
+    """
+    Decorator factory for caching async/sync view funcs.
+    Uses request fingerprint to build a key. Skips caching Response objects.
+    """
+    def deco(func: Callable):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Build fingerprint deterministically
+            try:
+                method = request.method
+                path = request.path
+                try:
+                    query = dict(sorted(request.args.items()))
+                except Exception:
+                    query = {}
+                try:
+                    body = await request.get_json()
+                except Exception:
+                    body = None
+                fingerprint = json.dumps({"m": method, "p": path, "q": query, "b": body},
+                                         sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
+            except Exception:
+                # fallback to args/kwargs if no request context
+                fingerprint = json.dumps({"args": [repr(a) for a in args], "kwargs": kwargs},
+                                         sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
+
+            key = f"{func.__module__}.{func.__name__}:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
+            cached = cache.get(key, default=None)
+            if cached is not None:
+                return cached
+
+            result = await func(*args, **kwargs) if callable(getattr(func, "__call__", None)) else func(*args, **kwargs)
+
+            # only cache pure data (not Response) to avoid header staleness
+            if not isinstance(result, Response):
+                cache.set(key, result, ttl)
+            return result
+
+        return wrapper
+    return deco
+
+# ---------- Enhanced HTTP Cache ---------- TODO: This is unknown
+class EnhancedJSONEncoder(json.JSONEncoder):
+    """Extend JSONEncoder with common non-JSON types handling."""
+    def default(self, obj):
+        # datetimes -> ISO8601 string
+        if isinstance(obj, (dt.datetime, dt.date, dt.time)):
+            # Use ISO format; datetimes preserve timezone if present
+            return obj.isoformat()
+        # Decimal -> number (or string if prefered)
+        if isinstance(obj, decimal.Decimal):
+            # convert to a float-safe string to avoid precision loss in JSON
+            return str(obj)
+        # UUID -> hex string
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        # dataclass -> dict
+        if dataclasses.is_dataclass(obj):
+            return dataclasses.asdict(obj)
+        # bytes -> base64 string
+        if isinstance(obj, (bytes, bytearray)):
+            return base64.b64encode(bytes(obj)).decode('ascii')
+        # fallback to parent's behavior (which will raise TypeError)
+        return super().default(obj)
+
+
+# class SimpleLRU:
+#     """Thread-safe tiny LRU mapping from canonical_json -> etag (string).
+#        Keeps `maxsize` most recent entries.
+#     """
+#     def __init__(self, maxsize: int = 1024):
+#         self.maxsize = maxsize
+#         self.lock = threading.Lock()
+#         self._data = collections.OrderedDict()
+
+#     def get(self, key: str) -> Optional[str]:
+#         with self.lock:
+#             try:
+#                 val = self._data.pop(key)
+#                 # reinsert to mark as most-recent
+#                 self._data[key] = val
+#                 return val
+#             except KeyError:
+#                 return None
+
+#     def set(self, key: str, value: str) -> None:
+#         with self.lock:
+#             if key in self._data:
+#                 self._data.pop(key)
+#             self._data[key] = value
+#             # evict oldest if over capacity
+#             while len(self._data) > self.maxsize:
+#                 self._data.popitem(last=False)
+
+# _etag_cache = SimpleLRU(maxsize=2048)
+
+
+def canonical_json(value: Any) -> str:
+    """
+    Return a deterministic, compact JSON string for 'value'.
+    Uses EnhancedJSONEncoder for common non-serializable types.
+    Raises TypeError if value cannot be serialized.
+    """
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),  # remove spaces for byte-stability
+        ensure_ascii=False,
+        cls=EnhancedJSONEncoder,
+    )
+
+
+# def generate_etag_from_data(data: Any, *, weak: bool = False) -> str:
+#     """
+#     Produce a quoted ETag string (e.g. "\"<hex>\"" or 'W/"<hex>"').
+#     Uses SHA-256 over canonical_json(data).
+#     Caches the mapping canonical_json -> etag for perf.
+#     """
+#     canon = canonical_json(data)
+#     # try cache
+#     cached = _etag_cache.get(canon)
+#     if cached is not None:
+#         # if weak requested, prefix 'W/' if not already weak
+#         return f'W/{cached}' if weak and not cached.startswith('W/') else cached
+
+#     payload = canon.encode("utf-8")
+#     digest = hashlib.sha256(payload).hexdigest()
+#     quoted = f'"{digest}"'            # strong quoted ETag
+#     _etag_cache.set(canon, quoted)
+#     if weak:
+#         return f'W/{quoted}'
+#     return quoted
+
+
+# _ETAG_TOKEN_RE = re.compile(r'(W/)?"((?:[^"\\]|\\.)*)"|([^,\s]+)')
+
+# def parse_if_none_match(header_value: str) -> Iterable[Tuple[bool, str]]:
+#     """
+#     Parse If-None-Match header into sequence of (is_weak, tag_value) pairs.
+#     - If header is "*" yields (False, "*")
+#     - tag_value is the inner (unquoted) string for quoted ETags, or raw token for unquoted.
+#     """
+#     if header_value is None:
+#         return ()
+#     header_value = header_value.strip()
+#     if header_value == '*':
+#         return ((False, '*'),)
+
+#     matches = []
+#     for m in _ETAG_TOKEN_RE.finditer(header_value):
+#         weak_prefix = m.group(1)
+#         quoted_inner = m.group(2)
+#         unquoted_token = m.group(3)
+#         if quoted_inner is not None:
+#             is_weak = bool(weak_prefix)
+#             tag = quoted_inner
+#         elif unquoted_token is not None:
+#             is_weak = bool(weak_prefix)
+#             tag = unquoted_token
+#         else:
+#             continue
+#         matches.append((is_weak, tag))
+#     return matches
+
+# def _normalize_etag_value(etag: str) -> str:
+#     """Return normalized etag content (without W/ and without surrounding quotes)."""
+#     if etag.startswith('W/'):
+#         etag = etag[2:]
+#     etag = etag.strip()
+#     if len(etag) >= 2 and etag[0] == '"' and etag[-1] == '"':
+#         return etag[1:-1]
+#     return etag
+
+
+# def respond_with_etag_json(data: Any, status: int = 200, cache_ttl: Optional[int] = None, *, generate_weak_etag: bool = False) -> Response:
+#     """Return a Quart Response for JSON with ETag support and optional Cache-Control."""
+#     # Attempt to compute ETag (may raise TypeError if value not serializable)
+#     etag = generate_etag_from_data(data, weak=generate_weak_etag)
+#     # For matching, compare normalized (unquoted) digest values
+#     normalized_current = _normalize_etag_value(etag)
+
+#     if_none_match = None
+#     try:
+#         if_none_match = request.headers.get('If-None-Match')
+#     except Exception:
+#         # No request context — behave as if no conditional header
+#         if_none_match = None
+
+#     def set_cache_headers(resp: Response) -> Response:
+#         resp.headers['ETag'] = etag
+#         if cache_ttl is not None:
+#             resp.headers['Cache-Control'] = f'public, max-age={int(cache_ttl)}'
+#         return resp
+
+#     if if_none_match:
+#         parsed = parse_if_none_match(if_none_match)
+#         matched = False
+#         for is_weak, token in parsed:
+#             # wildcard '*' -> matches existing resource
+#             if token == '*':
+#                 matched = True
+#                 break
+#             # normalize header token and compare using **weak** comparison semantics:
+#             # RFC: For If-None-Match the weak comparison is appropriate for GET/HEAD.
+#             # We'll compare the underlying digests equality (ignoring W/).
+#             if _normalize_etag_value(token) == normalized_current:
+#                 matched = True
+#                 break
+
+#         if matched:
+#             method = None
+#             try:
+#                 method = request.method
+#             except Exception:
+#                 method = 'GET'
+#             if method in ('GET', 'HEAD'):
+#                 resp = Response(status=304)
+#                 return set_cache_headers(resp)
+#             else:
+#                 # For methods other than GET/HEAD, If-None-Match match -> 412 per RFC
+#                 resp = Response(status=412)
+#                 return set_cache_headers(resp)
+
+#     # No match => send full JSON response
+#     resp = jsonify(data)
+#     resp.status_code = status
+#     return set_cache_headers(resp)
+
 
 # ─── Communication Functions ──────────────────────────────────────────────────
 
@@ -669,34 +968,6 @@ class PerformanceMonitor:
 # Global performance monitor
 performance_monitor = PerformanceMonitor()
 
-
-# ─── Advanced Caching Functions ────────────────────────────────────────────
-
-def cache_with_invalidation(func: Callable) -> Callable:
-    """Decorator for function result caching with automatic invalidation"""
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        # Create cache key from function name and arguments
-        cache_key = f"{func.__name__}:{hash(str(args) + str(sorted(kwargs.items())))}"
-        
-        # Try to get from cache
-        cached_result = cache.get(cache_key)
-        if cached_result is not None:
-            return cached_result
-        
-        # Execute function and cache result
-        result = await func(*args, **kwargs)
-        cache.set(cache_key, result, ttl=3600)  # Cache for 1 hour
-        return result
-    
-    return wrapper
-
-def invalidate_cache_pattern(pattern: str) -> None: # TODO: This is unknown
-    """Invalidate cache entries matching a pattern"""
-    keys_to_remove = [key for key in cache._cache.keys() if pattern in key]
-    for key in keys_to_remove:
-        cache.delete(key)
-
 # ─── Advanced Error Handling ───────────────────────────────────────────────
 
 class AppError(Exception): # TODO: Implement this
@@ -949,23 +1220,6 @@ async def _send_security_notifications(ip_address: str, device_id: str, info: st
                         @An-Nur.app"""
                         )
 
-# async def _update_blocklist(ip_address: str, device_id: str, info: str) -> None:
-#     """Update blocklist with security breach information"""
-#     conn = await get_db_connection()
-#     basic_info = ip_address or device_id or "Basic Info Breached"
-#     additional_info = info or "NULL"
-    
-#     try:
-#         async with conn.cursor() as cursor:
-#             await cursor.execute(
-#                 "INSERT INTO global.blocklist (basic_info, additional_info) VALUES (%s, %s)",
-#                 (basic_info, additional_info)
-#             )
-#             await conn.commit()
-#     except Exception as e:
-#         log.critical(action="update_blocklist_failed", trace_info=info, message=f"Failed to update blocklist: {e}", secure=True)
-
-
 # ─── Verification Functions ───────────────────────────────────────────────────
 
 def generate_code(code_length: Optional[int] = None) -> int:
@@ -1106,7 +1360,7 @@ async def validate_device_info(device_id: str, ip_address: str, device_brand: st
     
     for pattern in suspicious_patterns:
         if re.search(pattern, device_id, re.IGNORECASE) or re.search(pattern, device_brand, re.IGNORECASE) or re.search(pattern, device_model, re.IGNORECASE) or re.search(pattern, device_os, re.IGNORECASE):
-            await _send_security_notifications(ip_address, device_id, "Suspicious device identifier detected")
+            security_manager.track_suspicious_activity(ip_address, "Suspicious device identifier detected")
             return False, "Suspicious device identifier detected"
     
     return True, ""
@@ -1126,8 +1380,8 @@ class SecurityManager:
             r'<object[^>]*>',
             r'<embed[^>]*>'
         ]
-        self.blocked_ips = set()
-        self.suspicious_activities = {}
+        self.blocked_ips = set() # save the blocked ips in a set or database
+        self.suspicious_activities = {} # save the suspicious activities in a dictionary or database
     
     def detect_sql_injection(self, input_str: str) -> bool:
         """Detect potential SQL injection attempts"""
@@ -1183,6 +1437,25 @@ class SecurityManager:
 
 # Global security manager
 security_manager = SecurityManager()
+
+
+# ─── Performance Monitoring and Metrics ───────────────────────────────────────
+def record_request_metrics(endpoint: str, duration: float, status_code: int) -> None:
+    """Record request metrics for monitoring"""
+    performance_monitor.record_request_time(endpoint, duration)
+    metrics_collector.increment('requests')
+    
+    if status_code >= 400:
+        metrics_collector.increment('errors')
+        performance_monitor.record_error('http_error', f"Status {status_code}")
+
+def monitor_database_performance(query: str, duration: float) -> None:
+    """Monitor database query performance"""
+    metrics_collector.increment('database_queries')
+    
+    if duration > 1.0:  # Log slow queries
+        metrics_collector.increment('slow_queries')
+        log.warning(action="slow_database_query", trace_info=get_client_info()["ip_address"], message=f"Slow query detected: {duration:.2f}s", secure=False)
 
 
 # ─── Advanced Validation Functions ──────────────────────────────────────────
@@ -1418,7 +1691,7 @@ async def validate_device_fingerprint(device_data: Dict[str, Any]) -> bool:
     
     for pattern in suspicious_patterns:
         if re.search(pattern, device_id, re.IGNORECASE):
-            await _send_security_notifications(device_data['ip_address'], device_data['device_id'], "Suspicious device identifier detected")
+            security_manager.track_suspicious_activity(device_data['ip_address'], "Suspicious device identifier detected")
             return False
     
     if not await validate_request_origin(request):
@@ -1495,7 +1768,7 @@ async def secure_data(required_fields: list[str] = None) -> tuple[dict | None, s
             client_info = await get_client_info()
             ip = (client_info or {}).get("ip_address")
             device_id = (client_info or {}).get("device_id")
-            await _send_security_notifications(ip, device_id, "SQL injection detected")
+            security_manager.track_suspicious_activity(ip, "SQL injection detected")
             log.critical(action="sql_injection_detected", trace_info=ip or "unknown", message=f"SQL injection detected: {value}", secure=False)
             return None, "SQL injection detected"
 
@@ -1520,6 +1793,6 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
     for header in suspicious_headers:
         if request.headers.get(header):
             log.critical(action="suspicious_header", trace_info=ip_address, message=f"Suspicious header detected: {header}", secure=False)
-            await _send_security_notifications(ip_address, device_id, "Suspicious header detected")
+            security_manager.track_suspicious_activity(ip_address, "Suspicious header detected")
     
     return True, ""

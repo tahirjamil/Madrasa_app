@@ -1,7 +1,7 @@
 import os
 import re
 from datetime import datetime, date, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple, List
 from zoneinfo import ZoneInfo
 
 import aiomysql
@@ -16,11 +16,11 @@ from werkzeug.utils import secure_filename
 from . import user_routes
 from database.database_utils import get_db_connection
 from config import config
-from helpers import (
-    format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, 
-    rate_limit, cache_with_invalidation, secure_data, security_manager,
+from utils.helpers.helpers import (
+    format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, get_cache_key,
+    rate_limit, cache_with_invalidation, secure_data, security_manager, set_cached_data, get_cached_data,
     encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
-    cache, performance_monitor, metrics_collector, validate_file_upload, validate_fullname, validate_request_origin
+    cache, performance_monitor, metrics_collector, validate_file_upload, validate_fullname, validate_request_origin,
 )
 from quart_babel import gettext as _
 from logger import log
@@ -934,72 +934,9 @@ async def get_exams() -> Tuple[Response, int]:
         log.critical(action="get_exams_error", trace_info="system", message=f"Error retrieving exams: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
-# ─── Advanced Utility Functions ───────────────────────────────────────────────
 
-def get_cache_key(prefix: str, **kwargs) -> str:
-    """Generate cache key with parameters"""
-    key_parts = [prefix]
-    for key, value in sorted(kwargs.items()):
-        key_parts.append(f"{key}:{value}")
-    return ":".join(key_parts)
 
-# ─── Performance Monitoring and Metrics ───────────────────────────────────────
 
-def record_request_metrics(endpoint: str, duration: float, status_code: int) -> None:
-    """Record request metrics for monitoring"""
-    performance_monitor.record_request_time(endpoint, duration)
-    metrics_collector.increment('requests')
-    
-    if status_code >= 400:
-        metrics_collector.increment('errors')
-        performance_monitor.record_error('http_error', f"Status {status_code}")
-
-def monitor_database_performance(query: str, duration: float) -> None:
-    """Monitor database query performance"""
-    metrics_collector.increment('database_queries')
-    
-    if duration > 1.0:  # Log slow queries
-        metrics_collector.increment('slow_queries')
-        log.warning(action="slow_database_query", trace_info=get_client_info()["ip_address"], message=f"Slow query detected: {duration:.2f}s", secure=False)
-
-# ─── Cache Management and Invalidation ───────────────────────────────────────
-
-def invalidate_related_cache(operation: str, **kwargs) -> None:
-    """Invalidate cache entries related to an operation"""
-    cache_patterns = {
-        'add_person': ['members', 'user_*'],
-        'update_person': ['members', 'user_*'],
-        'add_event': ['events'],
-        'update_event': ['events'],
-        'add_exam': ['exams'],
-        'update_exam': ['exams'],
-        'add_routine': ['routines'],
-        'update_routine': ['routines']
-    }
-    
-    patterns = cache_patterns.get(operation, [])
-    for pattern in patterns:
-        invalidate_cache_pattern(pattern)
-
-def get_cached_data(cache_key: str, ttl: Optional[int] = None) -> Any:
-    """Get data from cache with fallback"""
-    if ttl is None:
-        ttl = config.CACHE_TTL
-    
-    cached_data = cache.get(cache_key)
-    if cached_data is not None:
-        metrics_collector.increment('cache_hits')
-        return cached_data
-    
-    metrics_collector.increment('cache_misses')
-    return None
-
-def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) -> None:
-    """Set data in cache with TTL"""
-    if ttl is None:
-        ttl = config.CACHE_TTL
-    
-    cache.set(cache_key, data, ttl)
 
 # ─── Request Processing Middleware ───────────────────────────────────────────
 

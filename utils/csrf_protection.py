@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-CSRF Protection Module
-
-"""
+"""CSRF Protection Module"""
 
 import secrets, hashlib, time, logging
 from config import config

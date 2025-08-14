@@ -9,6 +9,11 @@ import uuid
 import datetime as dt
 from hmac import compare_digest
 import asyncio, json, os, smtplib, time
+import pickle
+try:
+    import redis.asyncio as redis_async
+except Exception:
+    redis_async = None
 from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
@@ -73,6 +78,10 @@ class CacheManager:
         with self._lock:
             return list(self._cache.keys())
 
+    def size(self) -> int:
+        with self._lock:
+            return len(self._cache)
+
     def delete_pattern(self, pattern: str) -> int:
         """
         Delete entries whose key matches a glob-style pattern or substring.
@@ -102,8 +111,154 @@ class CacheManager:
             for k, _ in ordered[:to_remove]:
                 self._cache.pop(k, None)
 
+# Redis/KeyDB-backed cache manager (uses redis.asyncio under the hood with a background loop)
+if redis_async is not None:
+    class RedisCacheManager:
+        def __init__(
+            self,
+            *,
+            url: Optional[str] = None,
+            host: str = "localhost",
+            port: int = 6379,
+            db: int = 0,
+            password: Optional[str] = None,
+            prefix: str = "madrasa",
+            op_timeout_seconds: float = 5.0,
+        ) -> None:
+            self.prefix = (prefix or "madrasa").strip(":")
+            self._loop = asyncio.new_event_loop()
+            self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+            self._thread.start()
+            if url:
+                self._client = redis_async.from_url(url, encoding=None, decode_responses=False)
+            else:
+                self._client = redis_async.Redis(
+                    host=host,
+                    port=port,
+                    db=db,
+                    password=password,
+                    encoding=None,
+                    decode_responses=False,
+                )
+            self._timeout = op_timeout_seconds
+
+        def _ns(self, key: str) -> str:
+            return f"{self.prefix}:{key}"
+
+        def _submit(self, coro):
+            return asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+        def get(self, key: str, default: Any = None) -> Any:
+            try:
+                data = self._submit(self._client.get(self._ns(key))).result(timeout=self._timeout)
+                if data is None:
+                    return default
+                return pickle.loads(data)
+            except Exception as e:
+                try:
+                    log.critical(action="redis_get_error", trace_info="cache", message=str(e), secure=False)
+                except Exception:
+                    pass
+                return default
+
+        def set(self, key: str, value: Any, ttl: Optional[int] = 3600) -> None:
+            try:
+                blob = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+                self._submit(self._client.set(self._ns(key), blob, ex=ttl)).result(timeout=self._timeout)
+            except Exception as e:
+                try:
+                    log.critical(action="redis_set_error", trace_info="cache", message=str(e), secure=False)
+                except Exception:
+                    pass
+
+        def delete(self, key: str) -> None:
+            try:
+                self._submit(self._client.delete(self._ns(key))).result(timeout=self._timeout)
+            except Exception as e:
+                try:
+                    log.critical(action="redis_delete_error", trace_info="cache", message=str(e), secure=False)
+                except Exception:
+                    pass
+
+        def clear(self) -> None:
+            try:
+                self.delete_pattern("*")
+            except Exception:
+                pass
+
+        async def _scan_keys(self, match: str) -> list:
+            keys = []
+            async for k in self._client.scan_iter(match=match, count=1000):
+                keys.append(k)
+            return keys
+
+        def keys(self):
+            try:
+                ks = self._submit(self._scan_keys(f"{self.prefix}:*")).result(timeout=max(self._timeout, 10))
+                # return decoded keys without modification
+                result = []
+                for k in ks:
+                    if isinstance(k, (bytes, bytearray)):
+                        result.append(k.decode())
+                    else:
+                        result.append(k)
+                return result
+            except Exception:
+                return []
+
+        def delete_pattern(self, pattern: str) -> int:
+            is_glob = any(ch in pattern for ch in "*?[]")
+            match = f"{self.prefix}:{pattern}" if is_glob else f"{self.prefix}:*{pattern}*"
+            try:
+                ks = self._submit(self._scan_keys(match)).result(timeout=max(self._timeout, 10))
+                if ks:
+                    self._submit(self._client.delete(*ks)).result(timeout=max(self._timeout, 10))
+                return len(ks or [])
+            except Exception as e:
+                try:
+                    log.critical(action="redis_delete_pattern_error", trace_info="cache", message=str(e), secure=False)
+                except Exception:
+                    pass
+                return 0
+
+        async def _count_keys(self, match: str) -> int:
+            count = 0
+            async for _ in self._client.scan_iter(match=match, count=1000):
+                count += 1
+            return count
+
+        def size(self) -> int:
+            try:
+                return int(self._submit(self._count_keys(f"{self.prefix}:*")).result(timeout=max(self._timeout, 15)))
+            except Exception:
+                return 0
+else:
+    RedisCacheManager = None  # type: ignore
+
+
+def create_cache_backend():
+    """Create the appropriate cache backend based on configuration and availability."""
+    try:
+        if getattr(config, "USE_REDIS_CACHE", False) and RedisCacheManager is not None:
+            return RedisCacheManager(
+                url=getattr(config, "REDIS_URL", None),
+                host=getattr(config, "REDIS_HOST", "localhost"),
+                port=getattr(config, "REDIS_PORT", 6379),
+                db=getattr(config, "REDIS_DB", 0),
+                password=getattr(config, "REDIS_PASSWORD", None),
+                prefix=getattr(config, "REDIS_PREFIX", "madrasa"),
+            )
+    except Exception as e:
+        try:
+            log.critical(action="cache_backend_init_error", trace_info="cache", message=str(e), secure=False)
+        except Exception:
+            pass
+    # Fallback to in-memory cache
+    return CacheManager()
+
 # global cache instance
-cache = CacheManager()
+# Initialize Redis/KeyDB-backed cache if enabled; fallback to in-memory
+cache = create_cache_backend()
 
 # ---------- Cache Functions ----------
 def get_cache_key(prefix: str, **kwargs) -> str:
@@ -917,7 +1072,7 @@ async def get_system_health() -> Dict[str, Any]:
         "file_system": fs_health,
         "maintenance_mode": config.is_maintenance(),
         "test_mode": config.is_testing(),
-        "cache_size": len(cache._cache),
+        "cache_size": cache.size(),
         "rate_limiter_size": len(rate_limiter._requests)
     }
 

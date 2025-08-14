@@ -17,3 +17,4 @@ Pillow
 markdown
 cryptography
 psutil
+redis>=5.0.0

@@ -194,6 +194,15 @@ class MadrasaConfig:
     CACHE_TTL = 3600  # 1 hour
     SHORT_CACHE_TTL = 300  # 5 minutes
     
+    # Redis/KeyDB cache settings
+    USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() in ("1", "true", "yes", "on")
+    REDIS_URL = os.getenv("REDIS_URL") or os.getenv("KEYDB_URL")
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+    REDIS_DB = int(os.getenv("REDIS_DB", 0))
+    REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
+    REDIS_PREFIX = os.getenv("REDIS_PREFIX", "madrasa")
+    
     # ============================================================================
     # TESTING AND DEVELOPMENT
     # ============================================================================

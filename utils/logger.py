@@ -42,7 +42,7 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
                 "message": message
             })
 
-            sql = "INSERT INTO logs (action, trace_info, message, level, metadata"
+            sql = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_secure) VALUES (%s, %s, %s, %s, %s, %s, %s)"
             params = [action, trace_info, message, level, json.dumps(log_metadata)]
 
             if secure:
@@ -52,10 +52,9 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
                 if not trace_info_hash or not trace_info_encrypted:
                     raise ValueError("Failed to generate secure trace info")
 
-                sql += ", trace_info_hash, trace_info_secure) VALUES (%s, %s, %s, %s, %s, %s, %s)"
                 params.extend([trace_info_hash, trace_info_encrypted])
             else:
-                sql += ") VALUES (%s, %s, %s, %s, %s)"
+                params.extend([None, None])
 
             await cursor.execute(sql, params)
             await conn.commit()

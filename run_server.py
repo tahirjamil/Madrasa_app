@@ -5,6 +5,9 @@ Advanced Server Runner for Madrasha App
 """
 
 import os, sys, platform, subprocess, signal, time, json, logging, argparse, threading, psutil, socket
+import select
+import tty
+import termios
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -116,12 +119,16 @@ class ProcessManager:
         self.process: Optional[subprocess.Popen] = None
         self.monitor_thread: Optional[threading.Thread] = None
         self.shutdown_event = threading.Event()
+        self._lock = threading.Lock()
         self.restart_count = 0
         self.last_restart_time = 0
+        self._last_dev_mode = False
         
     def start_server(self, dev_mode: bool = False) -> bool:
         """Start the server process"""
         try:
+            with self._lock:
+                self._last_dev_mode = dev_mode
             current_os = platform.system()
             self.logger.info(f"Starting server on {current_os}")
             
@@ -295,31 +302,52 @@ class ProcessManager:
         except:
             return 50.0  # Default 50%
     
-    def stop_server(self, graceful: bool = True):
-        """Stop the server process"""
-        self.shutdown_event.set()
-        
-        if self.process:
-            if graceful:
-                self.logger.info("Sending SIGTERM to server process...")
-                self.process.terminate()
-                
-                # Wait for graceful shutdown
-                try:
-                    self.process.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    self.logger.warning("Server did not stop gracefully, forcing shutdown...")
-                    self.process.kill()
-            else:
-                self.logger.info("Force killing server process...")
-                self.process.kill()
+    def stop_server(self, graceful: bool = True, *, for_restart: bool = False):
+        """Stop the server process.
+        If for_restart is True, do not set the global shutdown_event so the runner loop continues.
+        """
+        with self._lock:
+            if not for_restart:
+                self.shutdown_event.set()
             
-            # Clean up PID file
-            if self.config.pid_file.exists():
-                self.config.pid_file.unlink()
-        
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_thread.join(timeout=5)
+            if self.process:
+                if graceful:
+                    self.logger.info("Sending SIGTERM to server process...")
+                    self.process.terminate()
+                    
+                    # Wait for graceful shutdown
+                    try:
+                        self.process.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        self.logger.warning("Server did not stop gracefully, forcing shutdown...")
+                        self.process.kill()
+                else:
+                    self.logger.info("Force killing server process...")
+                    self.process.kill()
+                
+                # Clean up PID file
+                if self.config.pid_file.exists():
+                    try:
+                        self.config.pid_file.unlink()
+                    except Exception:
+                        pass
+            
+            if self.monitor_thread and self.monitor_thread.is_alive():
+                self.monitor_thread.join(timeout=2)
+            
+            self.process = None
+
+    def restart_server(self, *, graceful: bool = True) -> bool:
+        """Restart the server (graceful or force)."""
+        self.logger.info(f"Restart requested ({'graceful' if graceful else 'force'})")
+        self.stop_server(graceful=graceful, for_restart=True)
+        time.sleep(0.3)
+        ok = self.start_server(dev_mode=self._last_dev_mode)
+        if ok:
+            self.logger.info("Restart completed successfully")
+        else:
+            self.logger.error("Restart failed")
+        return ok
 
 # ─── Health Checker ────────────────────────────────────────────────────────────
 
@@ -429,6 +457,9 @@ class AdvancedServerRunner:
                 return False
             
             self.logger.info("Server is running successfully")
+            if not daemon and sys.stdin.isatty():
+                self.logger.info("Keyboard: Ctrl+G=graceful restart, Ctrl+F=force restart, Ctrl+Q=quit")
+                self._start_keyboard_listener()
             
             if dev_mode:
                 # In dev mode, wait for the server process to complete
@@ -450,6 +481,44 @@ class AdvancedServerRunner:
             return False
         finally:
             self.process_manager.stop_server()
+
+    def _start_keyboard_listener(self):
+        t = threading.Thread(target=self._keyboard_loop, daemon=True)
+        t.start()
+
+    def _keyboard_loop(self):
+        fd = sys.stdin.fileno()
+        try:
+            old_settings = termios.tcgetattr(fd)
+        except Exception:
+            return
+        try:
+            tty.setraw(fd)
+            while not self.process_manager.shutdown_event.is_set():
+                r, _, _ = select.select([sys.stdin], [], [], 0.2)
+                if not r:
+                    continue
+                ch = sys.stdin.read(1)
+                if not ch:
+                    continue
+                code = ord(ch)
+                if code == 7:  # Ctrl+G
+                    self.logger.info("Shortcut: Ctrl+G (graceful restart)")
+                    self.process_manager.restart_server(graceful=True)
+                elif code == 6:  # Ctrl+F
+                    self.logger.info("Shortcut: Ctrl+F (force restart)")
+                    self.process_manager.restart_server(graceful=False)
+                elif code == 17:  # Ctrl+Q
+                    self.logger.info("Shortcut: Ctrl+Q (quit)")
+                    self.process_manager.stop_server(graceful=True)
+                    os._exit(0)
+        except Exception as e:
+            self.logger.error(f"Keyboard listener error: {e}")
+        finally:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
     
     def _is_server_running(self) -> bool:
         """Check if server is already running"""
@@ -560,11 +629,10 @@ Examples:
         return
     
     # Check for dev mode file
-    if args.dev or args.dev is not None:
-        dev_mode = True
+    dev_mode = bool(args.dev)
     
     print(f"Detected OS: {platform.system()}")
-    print(f"Dev mode: {'ON' if dev_mode is not None else 'OFF'}")
+    print(f"Dev mode: {'ON' if dev_mode else 'OFF'}")
     
     # Run server
     success = runner.run(dev_mode=dev_mode, daemon=args.daemon)

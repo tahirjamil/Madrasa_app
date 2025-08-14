@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from helpers import delete_users
-from logger import log_error, log_critical, log_info
+from logger import log
 from database.backup_db import main as backup_main
 
 # Add project root to path
@@ -83,7 +83,7 @@ async def run_maintenance():
             maintenance_results["errors"].append(error_msg)
             logger.error(error_msg)
             print(f"❌ {error_msg}")
-            log_error(action="maintenance_auto_deletion_failed", trace_info="system", message=error_msg)
+            log.error(action="maintenance_auto_deletion_failed", trace_info="system", message=error_msg, secure=False)
         
         # Task 2: Database backup
         logger.info("💾 Starting database backup task...")
@@ -112,7 +112,7 @@ async def run_maintenance():
             maintenance_results["errors"].append(error_msg)
             logger.error(error_msg)
             print(f"❌ {error_msg}")
-            log_error(action="maintenance_backup_failed", trace_info="system", message=error_msg)
+            log.error(action="maintenance_backup_failed", trace_info="system", message=error_msg, secure=False)
         
         # Task 3: Log cleanup (new)
         logger.info("🧹 Starting log cleanup task...")
@@ -141,7 +141,7 @@ async def run_maintenance():
             maintenance_results["errors"].append(error_msg)
             logger.error(error_msg)
             print(f"❌ {error_msg}")
-            log_error(action="maintenance_log_cleanup_failed", trace_info="system", message=error_msg)
+            log.error(action="maintenance_log_cleanup_failed", trace_info="system", message=error_msg, secure=False)
         
         # Overall status
         total_duration = (datetime.now() - start_time).total_seconds()
@@ -158,7 +158,7 @@ async def run_maintenance():
             print("✅ Maintenance completed successfully")
         
         # Log the maintenance results
-        log_info(action="maintenance_completed", trace_info="system", message=f"Maintenance completed with status: {maintenance_results['overall_status']}", metadata=maintenance_results)
+        log.info(action="maintenance_completed", trace_info="system", message=f"Maintenance completed with status: {maintenance_results['overall_status']}", metadata=maintenance_results, secure=False)
         
         # Save maintenance report
         await save_maintenance_report(maintenance_results)
@@ -167,7 +167,7 @@ async def run_maintenance():
         error_msg = f"Maintenance script failed: {str(e)}"
         logger.critical(error_msg)
         print(f"❌ {error_msg}")
-        log_critical(action="maintenance_script_failed", trace_info="system", message=error_msg)
+        log.critical(action="maintenance_script_failed", trace_info="system", message=error_msg, secure=False)
         sys.exit(1)
 
 async def cleanup_old_logs():

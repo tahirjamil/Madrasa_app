@@ -4,20 +4,20 @@ from database.database_utils import connect_to_db
 from datetime import datetime, date
 from helpers import (
     load_results, load_notices, save_notices, save_results, 
-    allowed_exam_file, allowed_notice_file, cache_with_invalidation, 
+    cache_with_invalidation, 
     handle_async_errors, rate_limit, hash_sensitive_data, 
     encrypt_sensitive_data, format_phone_number, get_db_context
 )
-from logger import log_event_async as log_event
-from config import Config
-import json, re, subprocess, os, aiomysql, asyncio
+from logger import log
+from config import config
+import json, re, os, aiomysql, subprocess
 from functools import wraps
-from helpers import is_test_mode, require_csrf
+from helpers import require_csrf
 
 #  DIRS
-EXAM_DIR     = Config.EXAM_DIR
-NOTICES_DIR = Config.NOTICES_DIR
-GALLERY_DIR = Config.GALLERY_DIR
+EXAM_DIR     = config.EXAM_RESULTS_UPLOAD_FOLDER
+NOTICES_DIR = config.NOTICES_UPLOAD_FOLDER
+GALLERY_DIR = config.GALLERY_DIR
 PIC_INDEX_PATH       = os.path.join(GALLERY_DIR, 'index.json')
 
 # RE
@@ -39,6 +39,9 @@ async def admin_dashboard():
 
     # Get database connection (handled by @handle_async_errors)
     conn = await connect_to_db()
+    if conn is None:
+        await flash("Database connection failed", "danger")
+        return await render_template("admin/dashboard.html", databases=[], tables={}, query_result=None, query_error=None)
     madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
     
     databases = []
@@ -97,7 +100,7 @@ async def admin_dashboard():
                 # Forbid dangerous keywords (whole‑word match)
                 elif _FORBIDDEN_RE.search(raw_sql):
                     await flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
-                    log_event("forbidden_query_attempt", username, raw_sql)
+                    log.warning(action="forbidden_query_attempt", trace_info=username, message=raw_sql, secure=False)
                 else:
                     try:
                         await cursor.execute(raw_sql)
@@ -107,10 +110,10 @@ async def admin_dashboard():
                         else:
                             await conn.commit()
                             query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
-                        log_event("query_run", username, raw_sql)
+                        log.info(action="query_run", trace_info=username, message=raw_sql, secure=False)
                     except Exception as e:
                         query_error = str(e)
-                        log_event("query_error", username, f"{raw_sql} | {str(e)}")
+                        log.error(action="query_error", trace_info=username, message=f"{raw_sql} | {str(e)}", secure=False)
 
             # --- Fetch transactions ---
             txn_sql = "SELECT * FROM global.transactions ORDER BY date DESC"
@@ -301,6 +304,9 @@ async def members():
         return redirect(url_for('admin_routes.login'))
 
     conn = await connect_to_db()
+    if conn is None:
+        await flash("Database connection failed", "danger")
+        return await render_template("admin/members.html", types=[], selected_type=None, members=[], pending=[])
     madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
     
     async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -442,6 +448,9 @@ async def routines():
     sort = request.args.get('sort', 'default')
 
     conn = await connect_to_db()
+    if conn is None:
+        await flash("Database connection failed", "danger")
+        return await render_template("admin/routines.html", routines_by_class={}, sort=sort)
     try:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("""
@@ -492,6 +501,9 @@ async def events():
         return redirect(url_for('admin_routes.login'))
 
     conn = await connect_to_db()
+    if conn is None:
+        await flash("Database connection failed", "danger")
+        return await render_template("admin/events.html", events=[])
     madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
     
     async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -619,6 +631,11 @@ async def exams():
         return await render_template('admin/exams.html', exams=[])
 
     conn = await connect_to_db()
+    if conn is None:
+        await flash("Database connection failed", "danger")
+        return await render_template('admin/exams.html', exams=[])
+
+    # Fetch all exams from the database
     async with conn.cursor(aiomysql.DictCursor) as cursor:
 
         # Fetch all exams
@@ -774,6 +791,9 @@ async def interactions():
 
     sort = request.args.get('sort', 'default')
     conn = await connect_to_db()
+    if conn is None:
+        await flash("Database connection failed", "danger")
+        return await render_template('admin/interactions.html', interactions=[], sort=sort)
     
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         await cursor.execute("SELECT * FROM global.interactions")
@@ -836,7 +856,7 @@ async def power_management():
                     await flash(f"✅ Git pull successful\n{result.stdout}", "success")
                 else:
                     await flash(f"❌ Git pull failed\n{result.stderr}", "danger")
-                log_event("git_pull", "admin", f"Git pull executed: {result.stdout[:100]}...")
+                log.info(action="git_pull", trace_info="admin", message=f"Git pull executed: {result.stdout[:100]}...", secure=False)
                 
             elif action == 'git_push':
                 # Git push
@@ -851,16 +871,15 @@ async def power_management():
                     await flash(f"✅ Git push successful\n{result.stdout}", "success")
                 else:
                     await flash(f"❌ Git push failed\n{result.stderr}", "danger")
-                log_event("git_push", "admin", f"Git push executed: {result.stdout[:100]}...")
+                log.info(action="git_push", trace_info="admin", message=f"Git push executed: {result.stdout[:100]}...", secure=False)
                 
             elif action == 'server_stop':
                 # Enhanced server stop using advanced server runner
                 await flash("🛑 Server stop initiated. The server will stop gracefully...", "warning")
-                log_event("server_stop", "admin", "Server stop initiated via power management")
+                log.info(action="server_stop", trace_info="admin", message="Server stop initiated via power management", secure=False)
                 
                 # Use the advanced server runner's stop functionality
                 try:
-                    import subprocess
                     import sys
                     from pathlib import Path
                     
@@ -881,16 +900,15 @@ async def power_management():
                     await flash("⚠️ Server stop command timed out, but may still be processing", "warning")
                 except Exception as e:
                     await flash(f"❌ Error sending stop command: {str(e)}", "danger")
-                    log_event("server_stop_error", "admin", f"Error: {str(e)}")
+                    log.error(action="server_stop_error", trace_info="admin", message=f"Error: {str(e)}", secure=False)
                 
             elif action == 'server_restart':
                 # Enhanced server restart using advanced server runner
                 await flash("🔄 Server restart initiated. The server will restart gracefully...", "warning")
-                log_event("server_restart", "admin", "Server restart initiated via power management")
+                log.info(action="server_restart", trace_info="admin", message="Server restart initiated via power management", secure=False)
                 
                 # Use the advanced server runner's restart functionality
                 try:
-                    import subprocess
                     import sys
                     from pathlib import Path
                     
@@ -905,7 +923,7 @@ async def power_management():
                     
                     if stop_result.returncode == 0:
                         await flash("✅ Server restart command sent successfully", "success")
-                        log_event("server_restart_success", "admin", "Server restart command sent successfully")
+                        log.info(action="server_restart_success", trace_info="admin", message="Server restart command sent successfully", secure=False)
                     else:
                         await flash(f"⚠️ Server restart command sent with warnings: {stop_result.stderr}", "warning")
                         
@@ -913,16 +931,16 @@ async def power_management():
                     await flash("⚠️ Server restart command timed out, but may still be processing", "warning")
                 except Exception as e:
                     await flash(f"❌ Error sending restart command: {str(e)}", "danger")
-                    log_event("server_restart_error", "admin", f"Error: {str(e)}")
+                    log.error(action="server_restart_error", trace_info="admin", message=f"Error: {str(e)}", secure=False)
                 
             else:
                 await flash("Invalid action", "danger")
                 
         except subprocess.TimeoutExpired:
             await flash("❌ Operation timed out (30 seconds)", "danger")
-            log_event("power_timeout", "admin", f"Operation timed out: {action}")
+            log.error(action="power_timeout", trace_info="admin", message=f"Operation timed out: {action}", secure=False)
         except Exception as e:
             await flash(f"❌ Error: {str(e)}", "danger")
-            log_event("power_error", "admin", f"Error in {action}: {str(e)}")
+            log.error(action="power_error", trace_info="admin", message=f"Error in {action}: {str(e)}", secure=False)
     
     return await render_template('admin/power.html')

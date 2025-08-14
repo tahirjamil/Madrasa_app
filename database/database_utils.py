@@ -1,44 +1,115 @@
-import aiomysql
-import os
-from config import config, MadrasaConfig
+import asyncio
+import aiomysql, os
+from typing import Any, cast, TypedDict, Optional
+from myapp import MyApp
+from quart import current_app
+from config import config
+
+class AiomysqlConnectConfig(TypedDict, total=False):
+    host: str
+    unix_socket: str
+    user: str
+    password: str
+    db: str
+    port: int
+    autocommit: bool
+    charset: str
+    connect_timeout: int
+
 
 # Centralized Async DB Connection
-def get_db_config():
-    # Ensure all required config values are present and not None
+def get_db_config() -> AiomysqlConnectConfig:
+    # Basic presence checks
     if not all([
         config.MYSQL_HOST,
         config.MYSQL_USER,
-        config.MYSQL_PASSWORD is not None,  # Password can be empty string but not None
+        config.MYSQL_PASSWORD is not None,
         config.MYSQL_DB
     ]):
         raise ValueError("Database configuration is incomplete. Please check your config settings.")
-    return dict(
-        host=config.MYSQL_HOST,
-        user=config.MYSQL_USER,
-        password=config.MYSQL_PASSWORD or "",
-        db=config.MYSQL_DB,
-        autocommit=False,
-        charset='utf8mb4',
-        connect_timeout=60
-    )
 
-async def connect_to_db():
+    # Cast/normalize primitive values to explicit typed locals
+    host: str = str(config.MYSQL_HOST)
+    user: str = str(config.MYSQL_USER)
+    password: str = str(config.MYSQL_PASSWORD)
+    db: str = str(config.MYSQL_DB)
+
+    # Port (int)
+    port: int = 3306
+    if hasattr(config, "MYSQL_PORT") and config.MYSQL_PORT is not None:
+        try:
+            port = int(config.MYSQL_PORT)
+        except Exception:
+            raise ValueError(f"MYSQL_PORT must be an integer, got: {config.MYSQL_PORT}")
+        if port <= 0 or port > 65535:
+            port = 3306  # Default MySQL port
+            print(f"Invalid MySQL port: {port}. Must be between 1 and 65535.")
+
+    # Timeout (int)
     try:
-        config = get_db_config()
-        return await aiomysql.connect(**MadrasaConfig)
+        timeout: int = int(config.DB_TIMEOUT) if hasattr(config, "DB_TIMEOUT") and config.DB_TIMEOUT is not None else 60
+    except Exception:
+        timeout = 60
+
+    autocommit: bool = True
+    charset: str = "utf8mb4"
+
+    # Build unix-socket config
+    if hasattr(config, "MYSQL_UNIX_SOCKET") and config.MYSQL_UNIX_SOCKET:
+        unix_socket: str = str(config.MYSQL_UNIX_SOCKET)
+        unix_cfg: AiomysqlConnectConfig = {
+            "unix_socket": unix_socket,
+            "user": user,
+            "password": password,
+            "db": db,
+            "autocommit": autocommit,
+            "charset": charset,
+            "connect_timeout": timeout,
+        }
+        return unix_cfg
+
+    # Build TCP config
+    tcp_cfg: AiomysqlConnectConfig = {
+        "host": host,
+        "user": user,
+        "password": password,
+        "db": db,
+        "port": port,
+        "autocommit": autocommit,
+        "charset": charset,
+        "connect_timeout": timeout,
+    }
+    return tcp_cfg
+
+async def connect_to_db() -> Optional[aiomysql.Connection]:
+    try:
+        SQL_config: AiomysqlConnectConfig = get_db_config()
+        return await aiomysql.connect(**SQL_config)
     except Exception as e:
+        # Prefer raising in production, but printing is okay for dev
         print(f"Database connection failed: {e}")
         return None
 
-async def get_db_connection():
-    """
-    Get the database connection from the app context.
-    This should be used in route handlers to access the single connection.
-    """
-    from quart import current_app
-    if not hasattr(current_app, 'db') or current_app.db is None:
+async def get_db():
+    """Get the database connection from the app context."""
+    app = cast(MyApp, current_app)
+    if not hasattr(app, 'db') or app.db is None:
         raise RuntimeError("Database connection not available")
-    return current_app.db
+    return app.db
+
+async def get_db_connection(max_retries: int = 3) -> Any:
+    """Get database connection with retry logic"""
+    for attempt in range(max_retries):
+        try:
+            conn = await get_db()
+            return conn
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            else:
+                await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+    
+    raise Exception("Database connection failed")
 
 # Table Creation
 async def create_tables():

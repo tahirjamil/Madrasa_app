@@ -1,8 +1,9 @@
 from . import admin_routes
 from database.database_utils import connect_to_db
-from helpers import handle_async_errors, is_test_mode
+from helpers import handle_async_errors
 from quart import jsonify, session, redirect, url_for, current_app
 import aiomysql
+from config import config
 
 @admin_routes.route('/logs/data')
 @handle_async_errors

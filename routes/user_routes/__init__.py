@@ -1,6 +1,7 @@
 from quart import Blueprint, jsonify, request
-from helpers import is_maintenance_mode, require_api_key
+from helpers import require_api_key
 from quart_babel import gettext as _
+from config import config
 
 user_routes = Blueprint("user_routes", __name__)
 

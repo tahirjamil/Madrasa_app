@@ -2,20 +2,21 @@ import os, time, logging
 from datetime import datetime, timezone
 from pathlib import Path
 from quart import (
-    Quart, Response, render_template, request, session, g,
+    Response, render_template, request, session, g,
     send_from_directory, jsonify
 )
 from quart_cors import cors
 from dotenv import load_dotenv
 from quart_babel import Babel
 import socket
+from myapp import MyApp
 
 from config import config, MadrasaConfig
 from database import create_tables
 from database.database_utils import connect_to_db
 
 # API & Web Blueprints
-from helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter
+from helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter, security_manager
 from routes.admin_routes import admin_routes
 from routes.user_routes import user_routes
 from routes.web_routes import web_routes
@@ -40,7 +41,7 @@ env = BASE_DIR / ".env"
 
 load_dotenv(env)
 
-app = Quart(__name__)
+app = MyApp(__name__)
 app = cors(app, allow_origin="*")
 app.config.from_object(MadrasaConfig)
 
@@ -51,10 +52,13 @@ babel = Babel(app)
 
 # Locale selector for Babel
 async def get_locale():
-    # Try to get language from request args, headers, or session
-    return request.args.get('lang') or request.accept_languages.best_match(['en', 'bn', 'ar'])
+    json_data = await request.get_json(silent=True)
+    return (
+        request.args.get('lang')
+        or request.accept_languages.best_match(['en', 'bn', 'ar'])
+        or (json_data or {}).get('lang')
+    )
 
-# Set the locale selector
 babel.localeselector = get_locale
 
 # Import CSRF protection from dedicated module
@@ -111,6 +115,47 @@ async def after_serving():
 # ─── Request/Response Logging ───────────────────────────────
 request_response_log = []
 setattr(app, 'request_response_log', request_response_log)
+
+@app.before_request
+async def block_xss_inputs():
+    """Block requests containing obvious XSS indicators in args, form, or JSON."""
+    try:
+        # Check query parameters
+        for value in request.args.values():
+            if isinstance(value, str) and security_manager.detect_xss(value):
+                logger.warning(f"Blocked potential XSS via query params: {request.path}")
+                return jsonify({"error": "Invalid input"}), 400
+
+        # Check form data (if present)
+        try:
+            form = await request.form
+        except Exception:
+            form = None
+        if form:
+            for value in form.values():
+                if isinstance(value, str) and security_manager.detect_xss(value):
+                    logger.warning(f"Blocked potential XSS via form data: {request.path}")
+                    return jsonify({"error": "Invalid input"}), 400
+
+        # Check JSON payload (if present)
+        json_data = await request.get_json(silent=True)
+
+        def _contains_xss(obj):
+            if isinstance(obj, str):
+                return security_manager.detect_xss(obj)
+            if isinstance(obj, dict):
+                return any(_contains_xss(v) for v in obj.values())
+            if isinstance(obj, (list, tuple, set)):
+                return any(_contains_xss(v) for v in obj)
+            return False
+
+        if json_data and _contains_xss(json_data):
+            logger.warning(f"Blocked potential XSS via JSON body: {request.path}")
+            return jsonify({"error": "Invalid input"}), 400
+    except Exception as e:
+        # Fail-safe: never break requests due to guard errors
+        logger.error(f"XSS guard error: {str(e)}")
+        return None
 
 @app.before_request
 async def log_every_request():

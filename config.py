@@ -10,8 +10,8 @@ Version: 1.0.0
 """
 
 import os
-import secrets
 from dotenv import load_dotenv
+from functools import lru_cache
 
 # Load environment variables
 load_dotenv()
@@ -34,7 +34,7 @@ class MadrasaConfig:
     # ============================================================================
     
     # Secret Keys and Encryption
-    SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
+    SECRET_KEY = os.getenv("SECRET_KEY") # secrets.token_urlsafe(32)
     WTF_CSRF_SECRET_KEY = os.getenv("WTF_CSRF_SECRET_KEY")
     ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
     
@@ -88,6 +88,7 @@ class MadrasaConfig:
     # Account Management
     ACCOUNT_DELETION_DAYS = 30
     ACCOUNT_REACTIVATION_DAYS = 14
+    GLOBAL_REQUIRED_FIELDS = ["madrasa_name"]
     
     # Verification Settings
     CODE_EXPIRY_MINUTES = 10
@@ -110,6 +111,8 @@ class MadrasaConfig:
     DEV_EMAIL = os.getenv("DEV_EMAIL")
     DEV_PHONE = os.getenv("DEV_PHONE")
 
+    MADRASA_NAMES_LIST = ['annur']
+    
     
     # ============================================================================
     # DATABASE CONFIGURATION
@@ -120,6 +123,13 @@ class MadrasaConfig:
     MYSQL_USER = os.getenv("MYSQL_USER", "admin")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "admin")
     MYSQL_DB = os.getenv("MYSQL_DB", "default")
+    MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
+    MYSQL_UNIX_SOCKET = os.getenv("MYSQL_UNIX_SOCKET", None)
+
+    # Database Connection Pooling
+    DB_POOL_SIZE = 10
+    DB_MAX_OVERFLOW = 5
+    DB_TIMEOUT = 60
     
     # ============================================================================
     # FILE UPLOAD AND STORAGE
@@ -245,38 +255,27 @@ class MadrasaConfig:
         for warning in warnings:
             print(f"WARNING: {warning}")
     
+    @lru_cache(maxsize=1)
     def get_database_url(self) -> str:
         """Generate database connection URL."""
         return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
     
+    @lru_cache(maxsize=1)
     def is_maintenance(self) -> bool:
         """Check if running in production environment."""
         verify = os.getenv("MAINTENANCE_MODE", "")
         return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
     
+    @lru_cache(maxsize=1)
     def is_development(self) -> bool:
         """Check if running in development environment."""
         return os.getenv("FLASK_ENV", "development") == "development"
     
+    @lru_cache(maxsize=1)
     def is_testing(self) -> bool:
         """Check if running in testing environment."""
         verify = os.getenv("TEST_MODE", "")
         return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
-
-    def get_rate_limit(self, endpoint_type: str = "default") -> int:
-        """Get rate limit for specific endpoint type."""
-        rate_limits = {
-            "default": self.DEFAULT_RATE_LIMIT,
-            "strict": self.STRICT_RATE_LIMIT,
-            "high": self.DEFAULT_RATE_LIMIT,
-            "auth": self.LOGIN_ATTEMPTS_LIMIT
-        }
-        return rate_limits.get(endpoint_type, self.DEFAULT_RATE_LIMIT)
-
-
-# ============================================================================
-# CONFIGURATION INSTANCE
-# ============================================================================
 
 # Create global configuration instance
 config = MadrasaConfig()

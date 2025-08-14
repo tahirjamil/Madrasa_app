@@ -256,6 +256,10 @@ class ProcessManager:
     
     def _check_resource_usage(self):
         """Check CPU and memory usage"""
+        if not self.process:
+            self.logger.warning("No process to monitor.")
+            return
+    
         try:
             process = psutil.Process(self.process.pid)
             
@@ -343,7 +347,7 @@ class HealthChecker:
             self.logger.warning(f"Health check failed: {e}")
             return False
     
-    def wait_for_server(self, timeout: int = None) -> bool:
+    def wait_for_server(self, timeout = None) -> bool:
         """Wait for server to become available"""
         if timeout is None:
             timeout = self.config.config["monitoring"]["health_check_interval"]
@@ -372,17 +376,21 @@ class HealthChecker:
 
 def setup_signal_handlers(process_manager: ProcessManager, logger: AdvancedLogger):
     """Setup signal handlers for graceful shutdown"""
-    
+
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down gracefully...")
         process_manager.stop_server(graceful=True)
         sys.exit(0)
-    
+
+    # Always handle SIGINT & SIGTERM
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
+    # Only handle SIGHUP on non-Windows
     if platform.system() != "Windows":
-        signal.signal(signal.SIGHUP, signal_handler)
+        sighup = getattr(signal, "SIGHUP", None)
+        if sighup is not None:
+            signal.signal(sighup, signal_handler)
 
 # ─── Main Application ──────────────────────────────────────────────────────────
 

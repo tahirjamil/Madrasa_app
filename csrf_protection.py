@@ -5,13 +5,13 @@ CSRF Protection Module
 """
 
 import secrets, hashlib, time, logging
-from config import Config
+from config import config
 
 class CSRFProtect:
     """Enhanced CSRF protection with better security and logging"""
     
     def __init__(self):
-        self.secret_key = Config.WTF_CSRF_SECRET_KEY
+        self.secret_key = config.WTF_CSRF_SECRET_KEY
         self.logger = logging.getLogger(__name__)
         
     def generate_csrf(self):

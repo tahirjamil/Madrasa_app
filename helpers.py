@@ -6,20 +6,17 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
 from functools import wraps
-from typing import Any, Dict, List, Optional, Tuple, Callable
+from typing import Any, Dict, List, Optional, Tuple, Callable, Union
 
 from aiomysql import IntegrityError
 from dotenv import load_dotenv
-from quart import Response, flash, jsonify, redirect, request
+from quart import Request, Response, flash, g, jsonify, redirect, request
 from quart_babel import gettext as _
 from cryptography.fernet import Fernet
 from database.database_utils import get_db_connection
-from logger import log
 from config import config
+from logger import log
 
-
-# Load environment variables
-load_dotenv()
 
 # ─── Caching and Performance ─────────────────────────────────────────────────
 
@@ -98,7 +95,7 @@ async def _send_async_email(to_email: str, subject: str, body: str) -> bool:
         await loop.run_in_executor(None, _send_smtp_email, msg, to_email)
         return True
     except Exception as e:
-        log.critical(action="email_error", trace_info=to_email, trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
+        log.critical(action="email_error", trace_info=to_email, message=str(e), secure=True)
         return False
 
 def _send_smtp_email(msg: MIMEText, to_email: str) -> None:
@@ -115,13 +112,6 @@ def send_email(to_email: str, subject: str,
                body: str) -> bool:
     """Send email with enhanced error handling"""
     asyncio.create_task(delete_code())
-    # if not subject: TODO
-    #     subject = _("Verification Email")
-    # if not body:
-    #     body = ""
-    #     if code:
-    #         body += f"\n{_('Your code is: %(code)s') % {'code': code}}"
-    #     body += "\n\n@An-Nur.app"
     return asyncio.run(_send_async_email(to_email, subject, body))
 
 async def _send_async_sms(phone: str, msg: str) -> bool:
@@ -131,7 +121,7 @@ async def _send_async_sms(phone: str, msg: str) -> bool:
         result = await loop.run_in_executor(None, _send_sms_request, phone, msg)
         return result
     except Exception as e:
-        log.critical(action="sms_error", trace_info=phone, message=str(e))
+        log.critical(action="sms_error", trace_info=phone, message=str(e), secure=True)
         return False
 
 def _send_sms_request(phone: str, msg: str) -> bool:
@@ -146,17 +136,12 @@ def _send_sms_request(phone: str, msg: str) -> bool:
         result = response.json()
         return result.get("success", False)
     except Exception as e:
-        log.critical(action="sms_parse_error", trace_info=phone, trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
+        log.critical(action="sms_parse_error", trace_info=phone, message=str(e), secure=True)
         return False
 
 def send_sms(phone: str, msg: str) -> bool:
     """Send SMS with enhanced error handling"""
     asyncio.create_task(delete_code())
-    # if not msg:
-    #     msg = _("Verification code sent to %(target)s") % {"target": phone}
-    #     if code:
-    #         msg += f"\n{_('Your code is: %(code)s') % {'code': code}}"
-    #     msg += f"\n\n@An-Nur.app\nAppSignature: {signature}"
     return asyncio.run(_send_async_sms(phone, msg))
 
 # ─── Database Functions ──────────────────────────────────────────────────────
@@ -194,7 +179,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
                     cache.set(cache_key, email, ttl=3600)  # Cache for 1 hour
                 return email
         except Exception as e:
-            log.critical(action="db_error with get_email", trace_info=phone, trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
+            log.critical(action="db_error with get_email", trace_info=phone, message=str(e), secure=True)
             return None
 
 async def get_id(phone: str, fullname: str) -> Optional[int]:
@@ -222,7 +207,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
                     cache.set(cache_key, user_id, ttl=3600)  # Cache for 1 hour
                 return user_id
         except Exception as e:
-            log.critical(action="get_id_error", trace_info=phone,trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
+            log.critical(action="get_id_error", trace_info=phone,message=str(e), secure=True)
             return None
 
 async def upsert_translation(conn, translation_text: str, madrasa_name: str, bn_text = None, ar_text = None, context = None) -> Optional[str]:
@@ -383,69 +368,73 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                 await cursor.execute(sql, list(peoples_fields.values()))
                 
             await conn.commit()
-            log.info(action="insert_success", trace_info=phone, trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message="Upserted into peoples with translations")
+            log.info(action="insert_success", trace_info=phone, message="Upserted into peoples with translations", secure=True)
         except Exception as e:
             await conn.rollback()
-            log.critical(action="db_insert_error", trace_info=phone,trace_info_hash=hash_sensitive_data(phone),trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
+            log.critical(action="db_insert_error", trace_info=phone,message=str(e), secure=True)
             raise
 
-async def delete_users(madrasa_name: str, uid = None, acc_type = None) -> bool:
+async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid = None, acc_type = None) -> bool:
     """Enhanced user deletion with comprehensive cleanup"""
-    async with get_db_context() as conn:
-        try:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                if not uid and not acc_type:
-                    await cursor.execute(f"""
-                        SELECT u.user_id, p.acc_type 
-                        FROM global.users u
-                        JOIN {madrasa_name}.peoples p ON u.user_id = p.user_id
-                        WHERE u.scheduled_deletion_at IS NOT NULL
-                        AND u.scheduled_deletion_at < NOW()
-                    """)
-                    users_to_delete = await cursor.fetchall()
-                else:
-                    users_to_delete = [{'user_id': uid, 'acc_type': acc_type}]
-            
-            for user in users_to_delete:
-                uid = user["user_id"]
-                acc_type = user["acc_type"]
+    if not madrasa_name:
+        madrasa_name = config.MADRASA_NAMES_LIST
+    for madrasa in madrasa_name if isinstance(madrasa_name, list) else [madrasa_name]:
+        async with get_db_context() as conn:
+            try:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    if not uid and not acc_type:
+                        await cursor.execute(f"""
+                            SELECT u.user_id, p.acc_type 
+                            FROM global.users u
+                            JOIN {madrasa}.peoples p ON u.user_id = p.user_id
+                            WHERE u.scheduled_deletion_at IS NOT NULL
+                            AND u.scheduled_deletion_at < NOW()
+                        """)
+                        users_to_delete = await cursor.fetchall()
+                    else:
+                        users_to_delete = [{'user_id': uid, 'acc_type': acc_type}]
                 
-                if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
-                    await cursor.execute(f"DELETE FROM {madrasa_name}.peoples WHERE user_id = %s", (uid,))
-                else:
-                    await cursor.execute(f"""
-                        UPDATE {madrasa_name}.peoples SET 
-                            date_of_birth = NULL,
-                            birth_certificate = NULL,
-                            national_id = NULL,
-                            source = NULL,
-                            present_address = NULL,
-                            permanent_address = NULL,
-                            father_or_spouse = NULL,
-                            mother_en = NULL,
-                            mother_bn = NULL,
-                            mother_ar = NULL,
-                            guardian_number = NULL,
-                            available = NULL,
-                            is_donor = NULL,
-                            is_badri_member = NULL,
-                            is_foundation_member = NULL
-                        WHERE user_id = %s
-                    """, (uid,))
+                for user in users_to_delete:
+                    uid = user["user_id"]
+                    acc_type = user["acc_type"]
+                    
+                    if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
+                        await cursor.execute(f"DELETE FROM {madrasa_name}.peoples WHERE user_id = %s", (uid,))
+                    else:
+                        await cursor.execute(f"""
+                            UPDATE {madrasa_name}.peoples SET 
+                                date_of_birth = NULL,
+                                birth_certificate = NULL,
+                                national_id = NULL,
+                                source = NULL,
+                                present_address = NULL,
+                                permanent_address = NULL,
+                                father_or_spouse = NULL,
+                                mother_en = NULL,
+                                mother_bn = NULL,
+                                mother_ar = NULL,
+                                guardian_number = NULL,
+                                available = NULL,
+                                is_donor = NULL,
+                                is_badri_member = NULL,
+                                is_foundation_member = NULL
+                            WHERE user_id = %s
+                        """, (uid,))
+                    
+                    await cursor.execute(f"DELETE FROM global.transactions WHERE user_id = %s", (uid,))
+                    await cursor.execute(f"DELETE FROM global.verifications WHERE user_id = %s", (uid,))
+                    await cursor.execute(f"DELETE FROM global.users WHERE user_id = %s", (uid,))
                 
-                await cursor.execute(f"DELETE FROM global.transactions WHERE user_id = %s", (uid,))
-                await cursor.execute(f"DELETE FROM global.verifications WHERE user_id = %s", (uid,))
-                await cursor.execute(f"DELETE FROM global.users WHERE user_id = %s", (uid,))
-            
-            await conn.commit()
-            return True
-            
-        except IntegrityError as e:
-            log.critical(action="auto_delete_error", trace_info="Null", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"IntegrityError: {e}")
-            return True
-        except Exception as e:
-            log.critical(action="auto_delete_error", trace_info="Null", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
-            return True
+                await conn.commit()
+                return True
+                
+            except IntegrityError as e:
+                log.critical(action="auto_delete_error", trace_info="Null", message=f"IntegrityError: {e}", secure=False)
+                return False
+            except Exception as e:
+                log.critical(action="auto_delete_error", trace_info="Null", message=str(e), secure=False)
+                return False
+    return False
 
 # ─── Business Logic Functions ────────────────────────────────────────────────
 
@@ -493,47 +482,63 @@ def calculate_fees(class_name: str, gender: str, special_food: int,
 # ─── File Management Functions ───────────────────────────────────────────────
 
 def load_results() -> List[Dict[str, Any]]:
-    """Load exams results with error handling"""
+    """Load exams results with caching and error handling."""
+    cache_key = "load_results:default"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         with open(config.EXAM_RESULTS_INDEX_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return []
+        data = []
+    cache.set(cache_key, data, ttl=config.CACHE_TTL)
+    return data
 
 def save_results(data: List[Dict[str, Any]]) -> None:
-    """Save exam results with atomic write"""
+    """Save exam results with atomic write and cache invalidation."""
     temp_file = config.EXAM_RESULTS_INDEX_FILE + '.tmp'
     try:
         with open(temp_file, 'w') as f:
             json.dump(data, f, indent=2)
         os.replace(temp_file, config.EXAM_RESULTS_INDEX_FILE)
+        # Invalidate cached loads
+        invalidate_cache_pattern("load_results:")
     except Exception as e:
-        log.critical(action="save_results_error", trace_info="file_ops", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
+        log.critical(action="save_results_error", trace_info="file_ops", message=str(e), secure=False)
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
 def load_notices() -> List[Dict[str, Any]]:
-    """Load notices with auto-recovery from corrupted files"""
+    """Load notices with caching and auto-recovery from corrupted files."""
+    cache_key = "load_notices:default"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         with open(config.NOTICES_INDEX_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
     except json.JSONDecodeError:
         # Auto-fix broken JSON
         with open(config.NOTICES_INDEX_FILE, 'w') as f:
             json.dump([], f)
-        return []
+        data = []
     except FileNotFoundError:
-        return []
+        data = []
+    cache.set(cache_key, data, ttl=config.CACHE_TTL)
+    return data
 
 def save_notices(data: List[Dict[str, Any]]) -> None:
-    """Save notices with atomic write"""
+    """Save notices with atomic write and cache invalidation."""
     temp_file = config.NOTICES_INDEX_FILE + '.tmp'
     try:
         with open(temp_file, 'w') as f:
             json.dump(data, f, indent=2)
         os.replace(temp_file, config.NOTICES_INDEX_FILE)
+        # Invalidate cached loads
+        invalidate_cache_pattern("load_notices:")
     except Exception as e:
-        log.critical(action="save_notices_error", trace_info="file_ops", message=str(e))
+        log.critical(action="save_notices_error", trace_info="file_ops", message=str(e), secure=False)
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
@@ -710,14 +715,14 @@ def handle_async_errors(func: Callable) -> Callable:
         try:
             return await func(*args, **kwargs)
         except AppError as e:
-            log.critical(action="app_error", trace_info="error_handler", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"{e.error_code}: {e.message}")
+            log.critical(action="app_error", trace_info="error_handler", message=f"{e.error_code}: {e.message}", secure=False)
             return jsonify({
                 "error": e.message,
                 "error_code": e.error_code,
                 "details": e.details
             }), 400
         except Exception as e:
-            log.critical(action="unexpected_error", trace_info="error_handler", trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
+            log.critical(action="unexpected_error", trace_info="error_handler", message=str(e), secure=False)
             performance_monitor.record_error("unexpected", str(e))
             return jsonify({
                 "error": "An unexpected error occurred",
@@ -774,11 +779,11 @@ def initialize_application() -> bool:
         rate_limiter._requests.clear()
         
         # Log successful initialization  
-        log.info(action="app_initialized", trace_info="system", message="Application initialized successfully")
+        log.info(action="app_initialized", trace_info="system", message="Application initialized successfully", secure=False)
         return True
         
     except Exception as e:
-        log.critical(action="init_error", trace_info="system", message=str(e))
+        log.critical(action="init_error", trace_info="system", message=str(e), secure=False)
         return False
 
 # ─── CSRF Protection ───────────────────────────────────────────────────────
@@ -899,24 +904,6 @@ async def check_rate_limit(identifier: str, max_requests = None, window = None) 
     
     return True
 
-async def is_device_unsafe(ip_address: str, device_id: str, info = None) -> bool:
-    """Enhanced device safety check with comprehensive logging"""
-    if config.is_testing():
-        return False
-    
-    # Validate inputs
-    if not ip_address or not device_id:
-        log.critical(action="security_breach", trace_info=ip_address or device_id or info, message="Missing device information")
-        
-        # Send notifications
-        await _send_security_notifications(ip_address=ip_address, device_id=device_id, info=info or "No information")
-        
-        # Update blocklist
-        await _update_blocklist(ip_address=ip_address, device_id=device_id, info=info or "No information")
-        return True
-    
-    return False
-
 async def _send_security_notifications(ip_address: str, device_id: str, info: str) -> None:
     """Send security breach notifications"""
     notification_data = {
@@ -962,21 +949,21 @@ async def _send_security_notifications(ip_address: str, device_id: str, info: st
                         @An-Nur.app"""
                         )
 
-async def _update_blocklist(ip_address: str, device_id: str, info: str) -> None:
-    """Update blocklist with security breach information"""
-    conn = await get_db_connection()
-    basic_info = ip_address or device_id or "Basic Info Breached"
-    additional_info = info or "NULL"
+# async def _update_blocklist(ip_address: str, device_id: str, info: str) -> None:
+#     """Update blocklist with security breach information"""
+#     conn = await get_db_connection()
+#     basic_info = ip_address or device_id or "Basic Info Breached"
+#     additional_info = info or "NULL"
     
-    try:
-        async with conn.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO global.blocklist (basic_info, additional_info) VALUES (%s, %s)",
-                (basic_info, additional_info)
-            )
-            await conn.commit()
-    except Exception as e:
-        log.critical(action="update_blocklist_failed", trace_info=info, message=f"Failed to update blocklist: {e}")
+#     try:
+#         async with conn.cursor() as cursor:
+#             await cursor.execute(
+#                 "INSERT INTO global.blocklist (basic_info, additional_info) VALUES (%s, %s)",
+#                 (basic_info, additional_info)
+#             )
+#             await conn.commit()
+#     except Exception as e:
+#         log.critical(action="update_blocklist_failed", trace_info=info, message=f"Failed to update blocklist: {e}", secure=True)
 
 
 # ─── Verification Functions ───────────────────────────────────────────────────
@@ -1019,11 +1006,11 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
                 await delete_code()
                 return None
             else:
-                log.warning(action="verification_failed", trace_info=phone, message="Code mismatch")
+                log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
                 return jsonify({"message": "Verification code mismatch"}), 400
     
     except Exception as e:
-        log.critical(action="verification_error", trace_info=phone, trace_info_hash="N/A", trace_info_encrypted="N/A", message=str(e))
+        log.critical(action="verification_error", trace_info=phone, message=str(e), secure=True)
         return jsonify({"message": f"Error: {str(e)}"}), 500
 
 async def delete_code() -> None:
@@ -1037,7 +1024,7 @@ async def delete_code() -> None:
             """)
         await conn.commit()
     except Exception as e:
-        log.critical(action="failed_to_delete_verifications", trace_info="Null", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Database Error {str(e)}")
+        log.critical(action="failed_to_delete_verifications", trace_info="N/A", message=f"Database Error {str(e)}", secure=False)
 
 # ─── Validation Functions ────────────────────────────────────────────────────
 
@@ -1061,6 +1048,7 @@ def format_phone_number(phone: str) -> Tuple[Optional[str], str]:
     try:
         number = phonenumbers.parse(phone, None)
         if not phonenumbers.is_valid_number(number):
+            log.error(action="invalid_phone_number", trace_info=phone, message="Invalid phone number format", secure=True)
             return None, "Invalid phone number"
 
         number_type = phonenumbers.number_type(number)
@@ -1070,6 +1058,7 @@ def format_phone_number(phone: str) -> Tuple[Optional[str], str]:
         return formatted, ""
 
     except phonenumbers.NumberParseException:
+        log.error(action="invalid_phone_number", trace_info=phone, message="Invalid phone number format", secure=True)
         return None, "Invalid phone number format"
 
 
@@ -1099,11 +1088,8 @@ def validate_request_data(data: Dict[str, Any], required_fields: List[str]) -> T
             missing_fields.append(field)
     return len(missing_fields) == 0, missing_fields
 
-async def validate_device_info(device_id: str, ip_address: str) -> Tuple[bool, str]:
+async def validate_device_info(device_id: str, ip_address: str, device_brand: str, device_model: str, device_os: str) -> Tuple[bool, str]:
     """Validate device information for security"""
-    if not device_id or not ip_address:
-        return False, "Device information is required"
-    
     # Validate IP address format
     ip_pattern = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
     if not ip_pattern.match(ip_address):
@@ -1119,7 +1105,7 @@ async def validate_device_info(device_id: str, ip_address: str) -> Tuple[bool, s
     ]
     
     for pattern in suspicious_patterns:
-        if re.search(pattern, device_id, re.IGNORECASE):
+        if re.search(pattern, device_id, re.IGNORECASE) or re.search(pattern, device_brand, re.IGNORECASE) or re.search(pattern, device_model, re.IGNORECASE) or re.search(pattern, device_os, re.IGNORECASE):
             await _send_security_notifications(ip_address, device_id, "Suspicious device identifier detected")
             return False, "Suspicious device identifier detected"
     
@@ -1145,9 +1131,6 @@ class SecurityManager:
     
     def detect_sql_injection(self, input_str: str) -> bool:
         """Detect potential SQL injection attempts"""
-        if not input_str:
-            return False
-        
         input_lower = input_str.lower()
         for pattern in self.suspicious_patterns:
             if re.search(pattern, input_lower, re.IGNORECASE):
@@ -1196,7 +1179,7 @@ class SecurityManager:
         if len(self.suspicious_activities[ip_address]) > 10:
             self.blocked_ips.add(ip_address)
             await _send_security_notifications(ip_address, "system", f"Too many suspicious activities: {activity}")
-            log.critical(action="ip_blocked", trace_info=ip_address, trace_info_hash=hash_sensitive_data(ip_address), trace_info_encrypted=encrypt_sensitive_data(ip_address), message=f"Too many suspicious activities: {activity}")
+            log.critical(action="ip_blocked", trace_info=ip_address, message=f"Too many suspicious activities: {activity}", secure=False)
 
 # Global security manager
 security_manager = SecurityManager()
@@ -1278,7 +1261,8 @@ def validate_file_upload(file, allowed_extensions: List[str], max_size: Optional
             log.warning(
                 action="suspicious_filename",
                 trace_info=get_client_info()["ip_address"],
-                message=f"Suspicious filename detected: {file.filename}"
+                message=f"Suspicious filename detected: {file.filename}",
+                secure=False
             )
             return False, "Invalid filename"
     
@@ -1316,7 +1300,8 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
         log.critical(
             action="device_limit_check_error",
             trace_info=str(user_id),
-            message=f"Error checking device limit: {str(e)}"
+            message=f"Error checking device limit: {str(e)}",
+            secure=False
         )
         return False, "Error checking device limit"
 
@@ -1347,64 +1332,194 @@ def hash_sensitive_data(data: str) -> str:
     return hashlib.sha256(data.encode()).hexdigest()[:8]
 
 def get_encryption_key() -> bytes:
-    """Get the encryption key from config"""
     key = config.ENCRYPTION_KEY
-    if key:
-        if isinstance(key, str):
-            return key.encode()
-        else:
-            return key
-    raise ValueError("Encryption key is not set in the configuration")
+    if not key:
+        raise ValueError("Encryption key is not set in the configuration")
+    return key.encode() if isinstance(key, str) else key
+
+def get_fernet() -> Fernet:
+    global _cached_fernet
+    if _cached_fernet is None:
+        _cached_fernet = Fernet(get_encryption_key())
+    return _cached_fernet
+
+def reset_crypto_cache() -> None:
+    global _cached_fernet
+    _cached_fernet = None
 
 def encrypt_sensitive_data(data: str) -> str:
-    """Encrypt sensitive data using Fernet encryption"""
-    if not data:
-        return data
-    
     try:
-        fernet = Fernet(get_encryption_key())
-        encrypted_data = fernet.encrypt(data.encode())
-        return base64.urlsafe_b64encode(encrypted_data).decode()
+        return base64.urlsafe_b64encode(get_fernet().encrypt(data.encode())).decode()
     except Exception as e:
-        log.critical(action="encryption_error", trace_info="system", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Failed to encrypt data: {str(e)}")
-        # In case of encryption failure, return original data (not recommended for production)
+        log.critical(action="encryption_error", trace_info="system", message=f"Failed to encrypt data: {str(e)}", secure=False)
         return data
 
 def decrypt_sensitive_data(encrypted_data: str) -> str:
-    """Decrypt sensitive data using Fernet encryption"""
     if not encrypted_data:
         return encrypted_data
-    
     try:
-        fernet = Fernet(get_encryption_key())
-        decoded_data = base64.urlsafe_b64decode(encrypted_data.encode())
-        decrypted_data = fernet.decrypt(decoded_data)
-        return decrypted_data.decode()
+        decoded = base64.urlsafe_b64decode(encrypted_data.encode())
+        return get_fernet().decrypt(decoded).decode()
     except Exception as e:
-        log.critical(action="decryption_error", trace_info="system", trace_info_hash="N/A", trace_info_encrypted="N/A", message=f"Failed to decrypt data: {str(e)}")
-        # In case of decryption failure, return original data (might be unencrypted legacy data)
+        log.critical(action="decryption_error", trace_info="system", message=f"Failed to decrypt data: {str(e)}", secure=False)
         return encrypted_data
 
-def get_client_info() -> Dict[str, Any]:
+# ─── Client Request Info ───────────────────────────────────────────────────
+
+async def get_client_info() -> Dict[str, Any] | None:
     """Get client IP address and device metadata with fallback and proxy support."""
-    forwarded_for = request.headers.get('X-Forwarded-For')
-    real_ip = request.headers.get('X-Real-IP')
+    if hasattr(g, "_client_info_cached"):
+        return g._client_info_cached
 
-    if real_ip:
-        ip_address = real_ip
-    elif forwarded_for:
-        ip_address = forwarded_for.split(',')[0].strip()
-    else:
-        ip_address = request.remote_addr
-
-    return {
-        "ip_address": ip_address,
+    info = {
+        "ip_address": get_ip_address(),
         "device_id": request.headers.get('X-Device-ID'),
         "device_brand": request.headers.get('X-Device-Brand'),
         "device_model": request.headers.get('X-Device-Model'),
         "device_os": request.headers.get('X-Device-OS'),
+        "app_version": request.headers.get('X-App-Version'),
+        "os_version": request.headers.get('X-OS-Version'),
     }
+    if not await validate_request_headers():
+        return None
+    if not await validate_device_fingerprint(info):
+        g._client_info_cached = None
+        return None
 
-def sanitize_input(input_string: str) -> str:
-    security_manager.sanitize_inputs(input_string)
-    return input_string.strip()
+    g._client_info_cached = info
+    return info
+
+def get_ip_address():
+    forwarded_for = request.headers.get('X-Forwarded-For')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    real_ip = request.headers.get('X-Real-IP')
+    if real_ip:
+        return real_ip
+    return request.remote_addr
+
+async def validate_device_fingerprint(device_data: Dict[str, Any]) -> bool:
+    """Validate device fingerprint for security"""
+    required_device_fields = ['device_id', 'device_brand', 'ip_address', 'os_version', 'app_version', 'device_model', 'device_os']
+    
+    for field in required_device_fields:
+        if not device_data.get(field):
+            return False
+    
+    # Check for suspicious device patterns
+    device_id = device_data['device_id']
+    suspicious_patterns = [
+        r'^(test|dummy|fake|null|undefined)$',
+        r'[<>"\']',
+        r'\.\.',
+        r'javascript:',
+        r'<script'
+    ]
+    
+    for pattern in suspicious_patterns:
+        if re.search(pattern, device_id, re.IGNORECASE):
+            await _send_security_notifications(device_data['ip_address'], device_data['device_id'], "Suspicious device identifier detected")
+            return False
+    
+    if not await validate_request_origin(request):
+        print("Suspicious referer")
+    
+    return True
+
+def validate_request_origin(request: Request) -> bool:
+    """Validate request origin for security"""
+    # Check referer header
+    referer = request.headers.get('Referer')
+    if referer:
+        # Validate referer is from same domain
+        try:
+            from urllib.parse import urlparse
+            parsed_referer = urlparse(referer)
+            parsed_host = urlparse(request.url_root)
+            
+            if parsed_referer.netloc != parsed_host.netloc:
+                log.warning(action="suspicious_referer", trace_info=get_client_info()["ip_address"], message=f"Suspicious referer: {referer}", secure=False)
+                return False
+        except Exception:
+            return False
+    
+    return True
+
+from quart import g
+
+async def secure_data(required_fields: list[str] = None) -> tuple[dict | None, str]:
+    cache_key = tuple(sorted(required_fields))
+    if hasattr(g, "_secure_data_cache") and cache_key in g._secure_data_cache:
+        return g._secure_data_cache[cache_key]
+
+    if required_fields:
+        required_fields.extend(config.GLOBAL_REQUIRED_FIELDS)
+    else:
+        required_fields = config.GLOBAL_REQUIRED_FIELDS
+
+    if request.method == 'POST':
+        data = request.get_json()
+    elif request.method == 'GET':
+        data = request.args.to_dict()
+
+    if not data:
+        return None, "No data provided"
+
+    client_info = await get_client_info()
+    if client_info:
+        data.update(client_info)
+    else:
+        return None, "Invalid device information"
+
+    # Validate device information
+    device_id = data.get("device_id")
+    ip_address = data.get("ip_address")
+    is_valid_device, device_error = await validate_device_info(device_id, ip_address)
+    if not is_valid_device:
+        log.warning(action="login_invalid_device", trace_info=ip_address, message=f"Invalid device: {device_error}", secure=False)
+        return None, device_error
+    
+    missing_fields = [f for f in required_fields if not data.get(f)]
+    if missing_fields:
+        log.warning(action="register_missing_fields", trace_info=ip_address, message=f"Missing fields: {missing_fields}", secure=False)
+        return None, _("Missing required fields: %(fields)s") % {"fields": ", ".join(missing_fields)}
+
+    # Important: get api_key directly from request (client_info currently doesn’t include it)
+    api_key = data.get("api_key") if data.get("api_key") else None
+    admin_key = config.ADMIN_KEY
+
+    for key, value in list(data.items()):
+        if isinstance(value, str):
+            data[key] = security_manager.sanitize_inputs(value)
+        if api_key != admin_key and isinstance(value, str) and security_manager.detect_sql_injection(value):
+            client_info = await get_client_info()
+            ip = (client_info or {}).get("ip_address")
+            device_id = (client_info or {}).get("device_id")
+            await _send_security_notifications(ip, device_id, "SQL injection detected")
+            log.critical(action="sql_injection_detected", trace_info=ip or "unknown", message=f"SQL injection detected: {value}", secure=False)
+            return None, "SQL injection detected"
+
+    if not hasattr(g, "_secure_data_cache"):
+        g._secure_data_cache = {}
+    g._secure_data_cache[cache_key] = (data, "")
+    return data, ""
+
+async def validate_request_headers(request: Request) -> Tuple[bool, str]:
+    """Validate request headers for security"""
+    # Check for required headers
+    required_headers = ['User-Agent', 'Accept']
+    for header in required_headers:
+        if not request.headers.get(header):
+            return False, f"Missing required header: {header}"
+    
+    ip_address = get_ip_address()
+    device_id = request.headers.get("X-Device-ID")
+    
+    # Check for suspicious headers
+    suspicious_headers = ['X-Forwarded-Host', 'X-Original-URL']
+    for header in suspicious_headers:
+        if request.headers.get(header):
+            log.critical(action="suspicious_header", trace_info=ip_address, message=f"Suspicious header detected: {header}", secure=False)
+            await _send_security_notifications(ip_address, device_id, "Suspicious header detected")
+    
+    return True, ""

@@ -31,7 +31,7 @@ async def contact():
         description    = form.get('description', '').strip()
 
         if not fullname or not email_or_phone or not description:
-            flash('All fields are required.', 'danger')
+            await flash('All fields are required.', 'danger')
             return redirect(url_for('web_routes.contact'))
 
         try:
@@ -41,10 +41,10 @@ async def contact():
                 body=f"Name: {fullname}\nContact: {email_or_phone}\n\nDescription: {description}"
             )
         except Exception as e:
-            flash(f'An error occurred: {e}', 'danger')
+            await flash(f'An error occurred: {e}', 'danger')
             return redirect(url_for('web_routes.contact'))
 
-        flash('Your message has been sent successfully!', 'success')
+        await flash('Your message has been sent successfully!', 'success')
         return redirect(url_for('web_routes.contact'))
 
     # GET: render with lists

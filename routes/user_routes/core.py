@@ -1,8 +1,7 @@
-import asyncio
 import os
 import re
 from datetime import datetime, date, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import aiomysql
@@ -19,9 +18,9 @@ from database.database_utils import get_db_connection
 from config import config
 from helpers import (
     format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, 
-    rate_limit, cache_with_invalidation, security_manager,
+    rate_limit, cache_with_invalidation, secure_data, security_manager,
     encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
-    cache, performance_monitor, metrics_collector, validate_file_upload, validate_fullname
+    cache, performance_monitor, metrics_collector, validate_file_upload, validate_fullname, validate_request_origin
 )
 from quart_babel import gettext as _
 from logger import log
@@ -47,26 +46,6 @@ ERROR_MESSAGES = {
 
 # ─── Security and Validation Functions ───────────────────────────────────────
 
-def validate_request_headers(request: Request) -> Tuple[bool, str]:
-    """Validate request headers for security"""
-    # Check for required headers
-    required_headers = ['User-Agent', 'Accept']
-    for header in required_headers:
-        if not request.headers.get(header):
-            return False, f"Missing required header: {header}"
-    
-    # Check for suspicious headers
-    suspicious_headers = ['X-Forwarded-Host', 'X-Original-URL']
-    for header in suspicious_headers:
-        if request.headers.get(header):
-            log.critical(
-                action="suspicious_header",
-                trace_info=get_client_info()["ip_address"],
-                message=f"Suspicious header detected: {header}"
-            )
-    
-    return True, ""
-
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename for security"""
     if not filename:
@@ -84,11 +63,7 @@ def sanitize_filename(filename: str) -> str:
     
     return secure_filename(filename)
 
-def validate_folder_access(folder: str, allowed_folders: List[str]) -> bool:
-    """Validate folder access permissions"""
-    return folder in allowed_folders
-
-def get_safe_file_path(base_path: str, filename: str) -> Optional[Tuple[str, str]]:
+def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str] | Tuple[None, None]:
     """Get safe file path and validate existence"""
     safe_filename = sanitize_filename(filename)
     file_path = os.path.join(base_path, safe_filename)
@@ -102,14 +77,8 @@ def get_safe_file_path(base_path: str, filename: str) -> Optional[Tuple[str, str
             raise ValueError("Path traversal detected")
             
     except (OSError, ValueError) as e:
-        log.critical(
-            action="path_traversal_attempt",
-            trace_info=filename,
-            trace_info_hash=hash_sensitive_data(filename),
-            trace_info_encrypted=encrypt_sensitive_data(filename),
-            message=f"Path traversal attempt: {str(e)}"
-        )
-        return None
+        log.critical(action="path_traversal_attempt", trace_info=filename, message=f"Path traversal attempt: {str(e)}", secure=False)
+        return None, None
     
     return file_path, safe_filename
 
@@ -119,41 +88,24 @@ def get_safe_file_path(base_path: str, filename: str) -> Optional[Tuple[str, str
 @handle_async_errors
 async def uploaded_file(filename: str) -> Tuple[Response, int]:
     """Serve user profile images with enhanced security"""
-    # Validate request headers
-    is_valid, error_msg = validate_request_headers(request)
-    if not is_valid:
-        return jsonify({"error": error_msg}), 400
-    
     # Get client info for logging
-    client_info = get_client_info()
+    client_info = await get_client_info()
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(config.PROFILE_IMG_UPLOAD_FOLDER, filename)
     
-    if not file_path:
-        log.warning(
-            action="invalid_profile_image_request",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid filename: {filename}"
-        )
+    if not file_path or not safe_filename:
+        log.warning(action="invalid_profile_image_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists and is accessible
     if not os.path.isfile(file_path):
-        log.warning(
-            action="profile_image_not_found",
-            trace_info=client_info["ip_address"],
-            message=f"Profile image not found: {filename}"
-        )
+        log.warning(action="profile_image_not_found", trace_info=client_info["ip_address"], message=f"Profile image not found: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Validate file type
-    if not any(safe_filename.lower().endswith(ext) for ext in config.ALLOWED_IMAGE_EXTENSIONS):
-        log.warning(
-            action="invalid_image_type",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid image type: {filename}"
-        )
+    if not safe_filename or not any(safe_filename.lower().endswith(ext) for ext in config.ALLOWED_IMAGE_EXTENSIONS):
+        log.warning(action="invalid_image_type", trace_info=client_info["ip_address"], message=f"Invalid image type: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['invalid_file_type']}), 400
     
     try:
@@ -169,35 +121,20 @@ async def uploaded_file(filename: str) -> Tuple[Response, int]:
         response.headers['Cache-Control'] = 'public, max-age=3600'
         
         # Log successful access
-        log.info(
-            action="profile_image_served",
-            trace_info=client_info["ip_address"],
-            message=f"Profile image served: {safe_filename}"
-        )
+        log.info(action="profile_image_served", trace_info=client_info["ip_address"], message=f"Profile image served: {safe_filename}", secure=False)
         
         return response, 200
         
     except Exception as e:
-        log.critical(
-            action="file_serving_error",
-            trace_info=client_info["ip_address"],
-            trace_info_hash=hash_sensitive_data(filename),
-            trace_info_encrypted=encrypt_sensitive_data(filename),
-            message=f"Error serving file {filename}: {str(e)}"
-        )
+        log.critical(action="file_serving_error", trace_info=client_info["ip_address"], message=f"Error serving file {filename}: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/notices/<path:filename>')
 @handle_async_errors
 async def notices_file(filename: str) -> Tuple[Response, int]:
     """Serve notice files with enhanced security"""
-    # Validate request headers
-    is_valid, error_msg = validate_request_headers(request)
-    if not is_valid:
-        return jsonify({"error": error_msg}), 400
-    
     # Get client info for logging
-    client_info = get_client_info()
+    client_info = await get_client_info()
     
     # Get upload folder from config
     upload_folder = config.NOTICES_UPLOAD_FOLDER
@@ -205,21 +142,13 @@ async def notices_file(filename: str) -> Tuple[Response, int]:
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
-    if not file_path:
-        log.warning(
-            action="invalid_notice_request",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid filename: {filename}"
-        )
+    if not file_path or not safe_filename:
+        log.warning(action="invalid_notice_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log.warning(
-            action="notice_file_not_found",
-            trace_info=client_info["ip_address"],
-            message=f"Notice file not found: {filename}"
-        )
+        log.warning(action="notice_file_not_found", trace_info=client_info["ip_address"], message=f"Notice file not found: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
@@ -232,35 +161,20 @@ async def notices_file(filename: str) -> Tuple[Response, int]:
         response.headers['Cache-Control'] = 'public, max-age=1800'  # 30 minutes
         
         # Log successful access
-        log.info(
-            action="notice_file_served",
-            trace_info=client_info["ip_address"],
-            message=f"Notice file served: {safe_filename}"
-        )
+        log.info(action="notice_file_served", trace_info=client_info["ip_address"], message=f"Notice file served: {safe_filename}", secure=False)
         
         return response, 200
         
     except Exception as e:
-        log.critical(
-            action="notice_serving_error",
-            trace_info=client_info["ip_address"],
-            trace_info_hash=hash_sensitive_data(filename),
-            trace_info_encrypted=encrypt_sensitive_data(filename),
-            message=f"Error serving notice file {filename}: {str(e)}"
-        )
+        log.critical(action="notice_serving_error", trace_info=client_info["ip_address"], message=f"Error serving notice file {filename}: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/exam_results/<path:filename>')
 @handle_async_errors
 async def exam_results_file(filename: str) -> Tuple[Response, int]:
     """Serve exam result files with enhanced security"""
-    # Validate request headers
-    is_valid, error_msg = validate_request_headers(request)
-    if not is_valid:
-        return jsonify({"error": error_msg}), 400
-    
     # Get client info for logging
-    client_info = get_client_info()
+    client_info = await get_client_info()
     
     # Get upload folder from config
     upload_folder = config.EXAM_RESULTS_UPLOAD_FOLDER
@@ -268,21 +182,13 @@ async def exam_results_file(filename: str) -> Tuple[Response, int]:
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
-    if not file_path:
-        log.warning(
-            action="invalid_exam_result_request",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid filename: {filename}"
-        )
+    if not file_path or not safe_filename:
+        log.warning(action="invalid_exam_result_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log.warning(
-            action="exam_result_file_not_found",
-            trace_info=client_info["ip_address"],
-            message=f"Exam result file not found: {filename}"
-        )
+        log.warning(action="exam_result_file_not_found", trace_info=client_info["ip_address"], message=f"Exam result file not found: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
@@ -295,52 +201,29 @@ async def exam_results_file(filename: str) -> Tuple[Response, int]:
         response.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour
         
         # Log successful access
-        log.info(
-            action="exam_result_file_served",
-            trace_info=client_info["ip_address"],
-            message=f"Exam result file served: {safe_filename}"
-        )
+        log.info(action="exam_result_file_served", trace_info=client_info["ip_address"], message=f"Exam result file served: {safe_filename}", secure=False)
         
         return response, 200
         
     except Exception as e:
-        log.critical(
-            action="exam_result_serving_error",
-            trace_info=client_info["ip_address"],
-            trace_info_hash=hash_sensitive_data(filename),
-            trace_info_encrypted=encrypt_sensitive_data(filename),
-            message=f"Error serving exam result file {filename}: {str(e)}"
-        )
+        log.critical(action="exam_result_serving_error", trace_info=client_info["ip_address"], message=f"Error serving exam result file {filename}: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/gallery/<gender>/<folder>/<path:filename>')
 @handle_async_errors
 async def gallery_file(gender: str, folder: str, filename: str) -> Tuple[Response, int]:
     """Serve gallery files with enhanced security and validation"""
-    # Validate request headers
-    is_valid, error_msg = validate_request_headers(request)
-    if not is_valid:
-        return jsonify({"error": error_msg}), 400
-    
     # Get client info for logging
-    client_info = get_client_info()
+    client_info = await get_client_info()
     
     # Validate gender parameter
     if gender not in config.ALLOWED_GALLERY_GENDERS:
-        log.warning(
-            action="invalid_gallery_gender",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid gender parameter: {gender}"
-        )
+        log.warning(action="invalid_gallery_gender", trace_info=client_info["ip_address"], message=f"Invalid gender parameter: {gender}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['invalid_gender']}), 400
     
     # Validate folder parameter
     if not validate_folder_access(folder, config.ALLOWED_GALLERY_FOLDERS):
-        log.warning(
-            action="invalid_gallery_folder",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid folder parameter: {folder}"
-        )
+        log.warning(action="invalid_gallery_folder", trace_info=client_info["ip_address"], message=f"Invalid folder parameter: {folder}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['invalid_folder']}), 400
     
     # Get upload folder path
@@ -352,21 +235,13 @@ async def gallery_file(gender: str, folder: str, filename: str) -> Tuple[Respons
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
-    if not file_path:
-        log.warning(
-            action="invalid_gallery_file_request",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid filename: {filename}"
-        )
+    if not file_path or not safe_filename:
+        log.warning(action="invalid_gallery_file_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log.warning(
-            action="gallery_file_not_found",
-            trace_info=client_info["ip_address"],
-            message=f"Gallery file not found: {filename}"
-        )
+        log.warning(action="gallery_file_not_found", trace_info=client_info["ip_address"], message=f"Gallery file not found: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
@@ -379,43 +254,24 @@ async def gallery_file(gender: str, folder: str, filename: str) -> Tuple[Respons
         response.headers['Cache-Control'] = 'public, max-age=7200'  # 2 hours
         
         # Log successful access
-        log.info(
-            action="gallery_file_served",
-            trace_info=client_info["ip_address"],
-            message=f"Gallery file served: {gender}/{folder}/{safe_filename}"
-        )
+        log.info(action="gallery_file_served", trace_info=client_info["ip_address"], message=f"Gallery file served: {gender}/{folder}/{safe_filename}", secure=False)
         
         return response, 200
         
     except Exception as e:
-        log.critical(
-            action="gallery_serving_error",
-            trace_info=client_info["ip_address"],
-            trace_info_hash=hash_sensitive_data(filename),
-            trace_info_encrypted=encrypt_sensitive_data(filename),
-            message=f"Error serving gallery file {filename}: {str(e)}"
-        )
+        log.critical(action="gallery_serving_error", trace_info=client_info["ip_address"], message=f"Error serving gallery file {filename}: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/uploads/gallery/classes/<folder>/<path:filename>')
 @handle_async_errors
 async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, int]:
     """Serve gallery class files with enhanced security and validation"""
-    # Validate request headers
-    is_valid, error_msg = validate_request_headers(request)
-    if not is_valid:
-        return jsonify({"error": error_msg}), 400
-    
     # Get client info for logging
-    client_info = get_client_info()
+    client_info = await get_client_info()
     
     # Validate folder parameter
     if not validate_folder_access(folder, config.ALLOWED_CLASS_FOLDERS):
-        log.warning(
-            action="invalid_class_folder",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid class folder parameter: {folder}"
-        )
+        log.warning(action="invalid_class_folder", trace_info=client_info["ip_address"], message=f"Invalid class folder parameter: {folder}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['invalid_folder']}), 400
     
     # Get upload folder path
@@ -427,21 +283,13 @@ async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, in
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
     
-    if not file_path:
-        log.warning(
-            action="invalid_class_file_request",
-            trace_info=client_info["ip_address"],
-            message=f"Invalid filename: {filename}"
-        )
+    if not file_path or not safe_filename:
+        log.warning(action="invalid_class_file_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        log.warning(
-            action="class_file_not_found",
-            trace_info=client_info["ip_address"],
-            message=f"Class file not found: {filename}"
-        )
+        log.warning(action="class_file_not_found", trace_info=client_info["ip_address"], message=f"Class file not found: {filename}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
     
     try:
@@ -454,22 +302,12 @@ async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, in
         response.headers['Cache-Control'] = 'public, max-age=7200'  # 2 hours
         
         # Log successful access
-        log.info(
-            action="class_file_served",
-            trace_info=client_info["ip_address"],
-            message=f"Class file served: {folder}/{safe_filename}"
-        )
+        log.info(action="class_file_served", trace_info=client_info["ip_address"], message=f"Class file served: {folder}/{safe_filename}", secure=False)
         
         return response, 200
         
     except Exception as e:
-        log.critical(
-            action="class_file_serving_error",
-            trace_info=client_info["ip_address"],
-            trace_info_hash=hash_sensitive_data(filename),
-            trace_info_encrypted=encrypt_sensitive_data(filename),
-            message=f"Error serving class file {filename}: {str(e)}"
-        )
+        log.critical(action="class_file_serving_error", trace_info=client_info["ip_address"], message=f"Error serving class file {filename}: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 # ─── Data Management Routes ─────────────────────────────────────────────────
@@ -479,15 +317,6 @@ async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, in
 @handle_async_errors
 async def add_person() -> Tuple[Response, int]:
     """Add a new person to the system with comprehensive validation and security """
-    # Check maintenance mode
-    if config.is_maintenance:
-        return jsonify({
-            "error": ERROR_MESSAGES['maintenance_mode']
-        }), 503
-    
-    # Get client info for logging
-    # client_info = get_client_info()
-    
     # Test mode handling
     if config.is_testing():
         return jsonify({
@@ -502,26 +331,21 @@ async def add_person() -> Tuple[Response, int]:
         data = await request.form
         files = await request.files
         image = files.get('image')
-        madrasa_name = os.getenv("MADRASA_NAME") or "Null"
+        madrasa_name = data.get("madrasa_name") or os.getenv("MADRASA_NAME")
         
         # Validate required fields using enhanced validation
         required_fields = ['name_en', 'phone', 'acc_type']
-        is_valid, missing_fields = validate_input_data(data, required_fields)
-        
-        if not is_valid:
-            log.warning(
-                action="add_people_missing_fields",
-                trace_info=data.get("ip_address", ""),
-                message=f"Missing required fields: {missing_fields}"
-            )
+        missing_fields = [f for f in required_fields if not data.get(f)]
+        if missing_fields:
+            log.warning(action="add_people_missing_fields", trace_info=data.get("ip_address", ""), message=f"Missing required fields: {missing_fields}", secure=False)
             return jsonify({
                 "message": _("Missing required fields: %(fields)s") % {"fields": ", ".join(missing_fields)}
             }), 400
         
         # Extract and validate basic fields with sanitization
-        fullname = sanitize_sql_input(data.get('name_en', '').strip())
-        phone = sanitize_sql_input(data.get('phone', '').strip())
-        acc_type = sanitize_sql_input(data.get('acc_type', '').strip())
+        fullname = data.get('name_en')
+        phone = data.get('phone')
+        acc_type = data.get('acc_type')
         
         # Validate fullname
         is_valid_name, name_error = validate_fullname(fullname)
@@ -547,17 +371,11 @@ async def add_person() -> Tuple[Response, int]:
         # Get user ID
         person_id = await get_id(formatted_phone, fullname.lower())
         if not person_id:
-            log.error(
-                action="add_people_id_not_found",
-                trace_info=formatted_phone,
-                trace_info_hash=hash_sensitive_data(formatted_phone),
-                trace_info_encrypted=encrypt_sensitive_data(formatted_phone),
-                message="User ID not found"
-            )
+            log.error(action="add_people_id_not_found", trace_info=formatted_phone, message="User ID not found", secure=True)
             return jsonify({"message": _("ID not found")}), 404
         
         # Initialize fields dictionary
-        fields = {"user_id": person_id}
+        fields: Dict[str, Any] = {"user_id": person_id}
         
         # Set account type boolean fields
         fields.update({
@@ -574,7 +392,7 @@ async def add_person() -> Tuple[Response, int]:
             # Validate file upload
             is_valid_file, file_error = validate_file_upload(
                 file=image,
-                allowed_extensions=config.ALLOWED_PROFILE_IMG_EXTENSIONS,
+                allowed_extensions=list(config.ALLOWED_PROFILE_IMG_EXTENSIONS),
             )
             
             if not is_valid_file:
@@ -605,13 +423,7 @@ async def add_person() -> Tuple[Response, int]:
                 fields["image_path"] = f"{BASE_URL}/uploads/profile_pics/{filename}"
                 
             except Exception as e:
-                log.critical(
-                    action="image_processing_error",
-                    trace_info=data.get("ip_address", ""),
-                    trace_info_hash=hash_sensitive_data(image.filename),
-                    trace_info_encrypted=encrypt_sensitive_data(image.filename),
-                    message=f"Failed to process image: {str(e)}"
-                )
+                log.critical(action="image_processing_error", trace_info=data.get("ip_address", ""), message=f"Failed to process image: {str(e)}", secure=False)
                 return jsonify({"message": "Failed to process image"}), 500
         else:
             return jsonify({"message": "Image file is required"}), 400
@@ -711,11 +523,11 @@ async def add_person() -> Tuple[Response, int]:
         
         for field in encrypted_fields:
             if field in fields and fields[field]:
-                fields[field] = encrypt_sensitive_data(fields[field])
+                fields[field] = encrypt_sensitive_data(str(fields[field]))
         
         for field in hash_fields:
             if field in fields and fields[field]:
-                fields[field] = hash_sensitive_data(fields[field])
+                fields[field] = hash_sensitive_data(str(fields[field]))
         
         # Insert into database
         await insert_person(madrasa_name, fields, acc_type, formatted_phone)
@@ -724,7 +536,7 @@ async def add_person() -> Tuple[Response, int]:
         invalidate_related_cache('add_person', user_id=person_id)
         
         # Get image path for response
-        conn = await get_db_connection_with_retry()
+        conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(
                 f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
@@ -748,35 +560,17 @@ async def add_person() -> Tuple[Response, int]:
         }), 201
         
     except Exception as e:
-        log.critical(
-            action="add_person_error",
-            trace_info="system",
-            message=f"Error adding person: {str(e)}"
-        )
+        log.critical(action="add_person_error", trace_info="system", message=f"Error adding person: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
 @user_routes.route('/members', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
 async def get_info() -> Tuple[Response, int]:
-    """
-    Get member information with caching and incremental updates
-    
-    Returns:
-        JSON response with member data and sync timestamp
-    """
-    # Check maintenance mode
-    if config.is_maintenance:
-        return jsonify({
-            "error": ERROR_MESSAGES['maintenance_mode']
-        }), 503
-    
-    # Get client info for logging
-    # client_info = get_client_info()
-    
+    """Get member information with caching and incremental updates"""
     try:
         # Get request data
-        data = await request.get_json()
+        data = await request.get_json() # TODO: Validate request data
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
         
@@ -786,21 +580,10 @@ async def get_info() -> Tuple[Response, int]:
         # Process timestamp using enhanced validation
         corrected_time = None
         if lastfetched:
-            if not validate_timestamp_format(lastfetched):
-                log.warning(
-                    action="invalid_timestamp_format",
-                    trace_info=data.get("ip_address", ""),
-                    message=f"Invalid timestamp format: {lastfetched}"
-                )
-                return jsonify({"error": "Invalid timestamp format"}), 400
             try:
                 corrected_time = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
-                log.warning(
-                    action="timestamp_processing_error",
-                    trace_info=data.get("ip_address", ""),
-                    message=f"Error processing timestamp: {lastfetched}"
-                )
+                log.warning(action="timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
                 return jsonify({"error": "Invalid timestamp format"}), 400
         
         # Build SQL query with proper joins
@@ -843,7 +626,7 @@ async def get_info() -> Tuple[Response, int]:
         if cached_members is not None:
             return jsonify(cached_members), 200
         
-        conn = await get_db_connection_with_retry()
+        conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(sql, params)
             members = await cursor.fetchall()
@@ -864,11 +647,7 @@ async def get_info() -> Tuple[Response, int]:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log.critical(
-            action="get_members_error",
-            trace_info="system",
-            message=f"Error retrieving members: {str(e)}"
-        )
+        log.critical(action="get_members_error", trace_info="system", message=f"Error retrieving members: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route("/routines", methods=["POST"])
@@ -898,20 +677,12 @@ async def get_routine() -> Tuple[Response, int]:
         corrected_time = None
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
-                log.warning(
-                    action="invalid_routine_timestamp",
-                    trace_info=data.get("ip_address", ""),
-                    message=f"Invalid timestamp format: {lastfetched}"
-                )
+                log.warning(action="invalid_routine_timestamp", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp format: {lastfetched}", secure=False)
                 return jsonify({"error": "Invalid timestamp format"}), 400
             try:
                 corrected_time = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
-                log.warning(
-                    action="routine_timestamp_processing_error",
-                    trace_info=data.get("ip_address", ""),
-                    message=f"Error processing timestamp: {lastfetched}"
-                )
+                log.warning(action="routine_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
                 return jsonify({"error": "Invalid timestamp format"}), 400
         
         # Build SQL query
@@ -943,7 +714,7 @@ async def get_routine() -> Tuple[Response, int]:
         if cached_routines is not None:
             return jsonify(cached_routines), 200
         
-        conn = await get_db_connection_with_retry()
+        conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
@@ -964,11 +735,7 @@ async def get_routine() -> Tuple[Response, int]:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log.critical(
-            action="get_routines_error",
-            trace_info="system",
-            message=f"Error retrieving routines: {str(e)}"
-        )
+        log.critical(action="get_routines_error", trace_info="system", message=f"Error retrieving routines: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route('/events', methods=['POST'])
@@ -1011,26 +778,14 @@ async def events() -> Tuple[Response, int]:
         params = []
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
-                log.error(
-                    action="get_events_failed",
-                    trace_info=data.get("ip_address", ""),
-                    trace_info_hash=hash_sensitive_data(lastfetched),
-                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
-                    message=f"Invalid timestamp: {lastfetched}"
-                )
+                log.error(action="get_events_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
                 return jsonify({"error": "Invalid updatedSince format"}), 400
             try:
                 cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
                 sql += " WHERE e.created_at > %s"
                 params.append(cutoff)
             except ValueError as e:
-                log.error(
-                    action="events_timestamp_processing_error",
-                    trace_info=data.get("ip_address", ""),
-                    trace_info_hash=hash_sensitive_data(lastfetched),
-                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
-                    message=f"Error processing timestamp: {lastfetched}"
-                )
+                log.error(action="events_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
                 return jsonify({"error": "Invalid updatedSince format"}), 400
         
         sql += " ORDER BY e.event_id DESC"
@@ -1042,7 +797,7 @@ async def events() -> Tuple[Response, int]:
         if cached_events is not None:
             return jsonify(cached_events), 200
         
-        conn = await get_db_connection_with_retry()
+        conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(sql, params)
             rows = await cursor.fetchall()
@@ -1091,11 +846,7 @@ async def events() -> Tuple[Response, int]:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log.critical(
-            action="get_events_error",
-            trace_info="system",
-            message=f"Error retrieving events: {str(e)}"
-        )
+        log.critical(action="get_events_error", trace_info="system", message=f"Error retrieving events: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 @user_routes.route('/exams', methods=['POST'])
@@ -1114,9 +865,9 @@ async def get_exams() -> Tuple[Response, int]:
     
     try:
         # Get request data
-        data = await request.get_json()
+        data, error = await secure_data()
         if not data:
-            return jsonify({"error": "Invalid request data"}), 400
+            return jsonify({"error": error}), 400
         
         madrasa_name = os.getenv("MADRASA_NAME")
         lastfetched = data.get("updatedSince")
@@ -1125,24 +876,12 @@ async def get_exams() -> Tuple[Response, int]:
         cutoff = None
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
-                log.error(
-                    action="get_exams_failed",
-                    trace_info=data.get("ip_address", ""),
-                    trace_info_hash=hash_sensitive_data(lastfetched),
-                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
-                    message=f"Invalid timestamp: {lastfetched}"
-                )
+                log.error(action="get_exams_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
                 return jsonify({"error": "Invalid updatedSince format"}), 400
             try:
                 cutoff = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
-                log.error(
-                    action="exams_timestamp_processing_error",
-                    trace_info=data.get("ip_address", ""),
-                    trace_info_hash=hash_sensitive_data(lastfetched),
-                    trace_info_encrypted=encrypt_sensitive_data(lastfetched),
-                    message=f"Error processing timestamp: {lastfetched}"
-                )
+                log.error(action="exams_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
                 return jsonify({"error": "Invalid updatedSince format"}), 400
         
         # Build SQL query
@@ -1171,7 +910,7 @@ async def get_exams() -> Tuple[Response, int]:
         if cached_exams is not None:
             return jsonify(cached_exams), 200
         
-        conn = await get_db_connection_with_retry()
+        conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
@@ -1192,50 +931,10 @@ async def get_exams() -> Tuple[Response, int]:
         return jsonify(result_data), 200
         
     except Exception as e:
-        log.critical(
-            action="get_exams_error",
-            trace_info="system",
-            message=f"Error retrieving exams: {str(e)}"
-        )
+        log.critical(action="get_exams_error", trace_info="system", message=f"Error retrieving exams: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
 
 # ─── Advanced Utility Functions ───────────────────────────────────────────────
-
-def validate_input_data(data: Dict[str, Any], required_fields: List[str]) -> Tuple[bool, List[str]]:
-    """Validate input data against required fields"""
-    missing_fields = []
-    for field in required_fields:
-        if not data.get(field):
-            missing_fields.append(field)
-    return len(missing_fields) == 0, missing_fields
-
-def sanitize_sql_input(input_str: str) -> str:
-    """Sanitize input for SQL queries"""
-    if not input_str:
-        return ""
-    
-    # Remove potentially dangerous characters
-    dangerous_chars = [';', '--', '/*', '*/', 'union', 'select', 'insert', 'update', 'delete', 'drop', 'create']
-    sanitized = input_str.lower()
-    
-    for char in dangerous_chars:
-        if char in sanitized:
-            log.warning(
-                action="sql_injection_attempt",
-                trace_info=get_client_info()["ip_address"],
-                message=f"Potential SQL injection attempt: {char}"
-            )
-            return ""
-    
-    return input_str.strip()
-
-def validate_timestamp_format(timestamp: str) -> bool:
-    """Validate timestamp format"""
-    try:
-        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        return True
-    except ValueError:
-        return False
 
 def get_cache_key(prefix: str, **kwargs) -> str:
     """Generate cache key with parameters"""
@@ -1261,36 +960,7 @@ def monitor_database_performance(query: str, duration: float) -> None:
     
     if duration > 1.0:  # Log slow queries
         metrics_collector.increment('slow_queries')
-        log.warning(
-            action="slow_database_query",
-            trace_info=get_client_info()["ip_address"],
-            message=f"Slow query detected: {duration:.2f}s"
-        )
-
-# ─── Security Enhancements ───────────────────────────────────────────────────
-
-def validate_request_origin(request: Request) -> bool:
-    """Validate request origin for security"""
-    # Check referer header
-    referer = request.headers.get('Referer')
-    if referer:
-        # Validate referer is from same domain
-        try:
-            from urllib.parse import urlparse
-            parsed_referer = urlparse(referer)
-            parsed_host = urlparse(request.url_root)
-            
-            if parsed_referer.netloc != parsed_host.netloc:
-                log.warning(
-                    action="suspicious_referer",
-                    trace_info=get_client_info()["ip_address"],
-                    message=f"Suspicious referer: {referer}"
-                )
-                return False
-        except Exception:
-            return False
-    
-    return True
+        log.warning(action="slow_database_query", trace_info=get_client_info()["ip_address"], message=f"Slow query detected: {duration:.2f}s", secure=False)
 
 # ─── Cache Management and Invalidation ───────────────────────────────────────
 
@@ -1311,7 +981,7 @@ def invalidate_related_cache(operation: str, **kwargs) -> None:
     for pattern in patterns:
         invalidate_cache_pattern(pattern)
 
-def get_cached_data(cache_key: str, ttl: int = None) -> Any:
+def get_cached_data(cache_key: str, ttl: Optional[int] = None) -> Any:
     """Get data from cache with fallback"""
     if ttl is None:
         ttl = config.CACHE_TTL
@@ -1324,7 +994,7 @@ def get_cached_data(cache_key: str, ttl: int = None) -> Any:
     metrics_collector.increment('cache_misses')
     return None
 
-def set_cached_data(cache_key: str, data: Any, ttl: int = None) -> None:
+def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) -> None:
     """Set data in cache with TTL"""
     if ttl is None:
         ttl = config.CACHE_TTL
@@ -1338,11 +1008,6 @@ async def process_request_middleware(request: Request) -> Tuple[bool, str]:
     # Check maintenance mode
     if config.is_maintenance:
         return False, ERROR_MESSAGES['maintenance_mode']
-    
-    # Validate request headers
-    is_valid, error_msg = validate_request_headers(request)
-    if not is_valid:
-        return False, error_msg
     
     # Validate request origin
     if not validate_request_origin(request):
@@ -1372,138 +1037,29 @@ def enhance_response_headers(response: Response) -> Response:
     response.headers['Expires'] = '0'
     return response
 
-def create_error_response(error_type: str, message: str, status_code: int = 400) -> Response:
-    """Create standardized error response"""
-    response = jsonify({
-        "error": error_type,
-        "message": message,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    })
-    response.status_code = status_code
-    return enhance_response_headers(response)
-
 # ─── Database Connection Management ───────────────────────────────────────────
 
-async def get_db_connection_with_retry(max_retries: int = 3) -> Any:
-    """Get database connection with retry logic"""
-    for attempt in range(max_retries):
-        try:
-            conn = await get_db_connection()
-            return conn
-        except Exception as e:
-            if attempt == max_retries - 1:
-                log.critical(
-                    action="database_connection_failed",
-                    trace_info=get_client_info()["ip_address"],
-                    trace_info_hash="N/A",
-                    trace_info_encrypted="N/A",
-                    message=f"Database connection failed after {max_retries} attempts: {str(e)}"
-                )
-                raise
-            else:
-                await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
-    
-    raise Exception("Database connection failed")
+def validate_timestamp_format(timestamp: str) -> bool:
+    """Validate timestamp format"""
+    try:
+        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return True
+    except ValueError:
+        return False
 
-# ─── Logging and Monitoring Enhancements ─────────────────────────────────────
+
 
 def log_operation_success(operation: str, details: Dict[str, Any]) -> None:
     """Log successful operation with details"""
-    log.info(
-        action=f"{operation}_success",
-        trace_info=get_client_info()["ip_address"],
-        message=f"Operation {operation} completed successfully",
-        **details
-    )
+    log.info(action=f"{operation}_success", trace_info=get_client_info()["ip_address"], message=f"Operation {operation} completed successfully", secure=False, **details)
 
-def log_operation_failure(operation: str, error: Exception, details: Dict[str, Any] = None) -> None:
+def log_operation_failure(operation: str, error: Exception, details: Dict[str, Any] | None = None) -> None:
     """Log failed operation with error details"""
     if details is None:
         details = {}
     
-    log.critical(
-        action=f"{operation}_failure",
-        trace_info=get_client_info()["ip_address"],
-        trace_info_hash=hash_sensitive_data(str(error)),
-        trace_info_encrypted=encrypt_sensitive_data(str(error)),
-        message=f"Operation {operation} failed: {str(error)}",
-        **details
-    )
+    log.critical(action=f"{operation}_failure", trace_info=get_client_info()["ip_address"], message=f"Operation {operation} failed: {str(error)}", secure=False, **details)
 
-# ─── Configuration Validation ───────────────────────────────────────────────
-
-def validate_core_config() -> List[str]:
-    """Validate core configuration and return any issues"""
-    issues = []
-    
-    # Check required environment variables
-    required_env_vars = ['MADRASA_NAME', 'BASE_URL']
-    for var in required_env_vars:
-        if not os.getenv(var):
-            issues.append(f"Missing required environment variable: {var}")
-    
-    # Check upload directories
-    upload_dirs = [
-        config.PROFILE_IMG_UPLOAD_FOLDER,
-        os.path.join(current_app.config.get('BASE_UPLOAD_FOLDER', ''), 'notices'),
-        os.path.join(current_app.config.get('BASE_UPLOAD_FOLDER', ''), 'exam_results')
-    ]
-    
-    for directory in upload_dirs:
-        if directory and not os.path.exists(directory):
-            try:
-                os.makedirs(directory, exist_ok=True)
-            except Exception as e:
-                issues.append(f"Cannot create directory {directory}: {e}")
-    
-    return issues
-
-# ─── Initialization and Cleanup ─────────────────────────────────────────────
-
-def initialize_core_module() -> bool:
-    """Initialize core module with validation"""
-    try:
-        # Validate configuration
-        config_issues = validate_core_config()
-        if config_issues:
-            for issue in config_issues:
-                log.critical(
-                    action="core_config_error",
-                    trace_info="initialization",
-                    trace_info_hash="N/A",
-                    trace_info_encrypted="N/A",
-                    message=issue
-                )
-            return False
-        
-        # Initialize security manager
-        security_manager.suspicious_patterns.extend([
-            r'(?i)(union(\s+all)?\s+select|select\s+.*from|insert\s+into|update\s+.*set|delete\s+from|drop\s+table|create\s+table|alter\s+table|--|#|;|\bor\b|\band\b|\bexec\b|\bsp_\b|\bxp_\b)',
-            r'<script[^>]*>.*?</script>',
-            r'javascript:',
-            r'on\w+\s*=',
-            r'<iframe[^>]*>',
-            r'<object[^>]*>',
-            r'<embed[^>]*>'
-        ])
-        
-        log.info(
-            action="core_module_initialized",
-            trace_info="initialization",
-            message="Core module initialized successfully"
-        )
-        return True
-        
-    except Exception as e:
-        log.critical(
-            action="core_init_error",
-            trace_info="initialization",
-            trace_info_hash="N/A",
-            trace_info_encrypted="N/A",
-            message=f"Core module initialization failed: {str(e)}"
-        )
-        return False
-
-# Initialize the core module
-if not initialize_core_module():
-    raise RuntimeError("Failed to initialize core module")
+def validate_folder_access(folder: str, allowed_folders: List[str]) -> bool:
+    """Validate folder access permissions"""
+    return folder in allowed_folders

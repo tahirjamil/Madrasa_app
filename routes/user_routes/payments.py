@@ -3,9 +3,9 @@ from . import user_routes
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from database.database_utils import get_db_connection
-from helpers import calculate_fees, encrypt_sensitive_data, format_phone_number, is_test_mode, hash_sensitive_data, handle_async_errors, cache_with_invalidation
-from config import Config
-from logger import log_error, log_critical, log_warning, log_info
+from helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation
+from config import config
+from logger import log
 from quart_babel import gettext as _
 
 # ====== Payment Fee Info ======
@@ -21,12 +21,12 @@ async def payments():
     madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
 
     if config.is_testing():
-        fullname = Config.DUMMY_FULLNAME
-        phone = Config.DUMMY_PHONE
+        fullname = config.DUMMY_FULLNAME
+        phone = config.DUMMY_PHONE
 
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
-        return await jsonify({"error": msg}), 400
+        return jsonify({"error": msg}), 400
 
 
     async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -41,8 +41,8 @@ async def payments():
         result = await cursor.fetchone()
 
         if not result:
-            log_error(action="payments_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=f"User {hash_sensitive_data(fullname)} not found")
-            return await jsonify({"message": _("User not found for payments")}), 404
+            log.error(action="payments_user_not_found", trace_info=formatted_phone, message=f"User {fullname} not found", secure=True)
+            return jsonify({"message": _("User not found for payments")}), 404
 
 
     # Extract data
@@ -56,7 +56,7 @@ async def payments():
     # Calculate fees
     fees = calculate_fees(class_name, gender, special_food, reduced_fee, food)
 
-    return await jsonify({"amount": fees, "month": due_months}), 200
+    return jsonify({"amount": fees, "month": due_months}), 200
 
 
 # ====== Get Transaction History ======
@@ -71,18 +71,18 @@ async def get_transactions():
     lastfetched      = data.get('updatedSince')
     
     if config.is_testing():
-        fullname = Config.DUMMY_FULLNAME
-        phone = Config.DUMMY_PHONE
+        fullname = config.DUMMY_FULLNAME
+        phone = config.DUMMY_PHONE
 
     if not phone or not fullname or not transaction_type:
-        log_error(action="payment_missing_fields", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Phone, fullname or transaction type missing")
-        return await jsonify({"error": _("Phone, fullname and payment type required")}), 400
+        log.error(action="payment_missing_fields", trace_info=phone or "", message="Phone, fullname or transaction type missing", secure=True)
+        return jsonify({"error": _("Phone, fullname and payment type required")}), 400
 
     fullname = fullname.strip().lower()
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
-        log_error(action="payment_invalid_phone", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Invalid phone format")
-        return await jsonify({"error": _("Invalid phone number")}), 400
+        log.error(action="payment_invalid_phone", trace_info=phone, message="Invalid phone format", secure=True)
+        return jsonify({"error": _("Invalid phone number")}), 400
 
     # Build base query and params
     sql = """
@@ -108,8 +108,8 @@ async def get_transactions():
             sql += " AND t.updated_at > %s"
             params.append(cutoff)
         except ValueError:
-            log_error(action="payment_invalid_timestamp", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=lastfetched)
-            return await jsonify({"error": _("Invalid updatedSince format")}), 400
+            log.error(action="payment_invalid_timestamp", trace_info=formatted_phone, message=lastfetched, secure=True)
+            return jsonify({"error": _("Invalid updatedSince format")}), 400
 
     # Final ordering
     sql += " ORDER BY t.date DESC"
@@ -122,12 +122,12 @@ async def get_transactions():
             transactions = await cursor.fetchall()
     except Exception as e:
         await conn.rollback()
-        log_critical(action="payment_transaction_error", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=str(e))
-        return await jsonify({"error": _("Internal server error during payments processing")}), 500
+        log.critical(action="payment_transaction_error", trace_info=formatted_phone, message=str(e), secure=True)
+        return jsonify({"error": _("Internal server error during payments processing")}), 500
 
     # Handle no‐results
     if not transactions:
-        return await jsonify({"message": _("No transactions found")}), 404
+        return jsonify({"message": _("No transactions found")}), 404
 
     # Normalize dates to ISO-8601 Z format
     for tx in transactions:
@@ -137,7 +137,7 @@ async def get_transactions():
                          .isoformat().replace("+00:00","Z")
                          
     # Return payload
-    return await jsonify({
+    return jsonify({
         "transactions": transactions,
         "lastSyncedAt": datetime.now(timezone.utc)
                               .isoformat().replace("+00:00","Z")
@@ -156,18 +156,18 @@ async def pay_sslcommerz():
 
     # fallback dummy email .
     if not email:
-       email = Config.DUMMY_EMAIL
+       email = config.DUMMY_EMAIL
 
     if not transaction_type or amount is None:
-        log_error(action="payment_missing_fields", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Missing payment info")
-        return await jsonify({"error": _("Amount and payment type are required")}), 400
+        log.error(action="payment_missing_fields", trace_info=phone, message="Missing payment info", secure=True)
+        return jsonify({"error": _("Amount and payment type are required")}), 400
 
     tran_id    = f"ssl_{int(time.time())}"
     store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
     store_pass = os.getenv("SSLCOMMERZ_STORE_PASS")
     if not store_id or not store_pass:
-        log_warning(action="sslcommerz_config_missing", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="SSLCommerz credentials not set")
-        return await jsonify({"error": _("Payment gateway is not properly configured")}), 500
+        log.warning(action="sslcommerz_config_missing", trace_info=phone, message="SSLCommerz credentials not set", secure=True)
+        return jsonify({"error": _("Payment gateway is not properly configured")}), 500
 
     payload = {
         # merchant + txn
@@ -176,10 +176,10 @@ async def pay_sslcommerz():
         "total_amount":  amount,
         "currency":      "BDT",
         "tran_id":       tran_id,
-        "success_url":   f"{Config.BASE_URL}payments/payment_success_ssl",
-        "fail_url":      f"{Config.BASE_URL}payments/payment_fail_ssl",
-        "cancel_url":    f"{Config.BASE_URL}payments/payment_cancel_ssl",   # new
-        "ipn_url":       f"{Config.BASE_URL}payments/payment_ipn",          # optional
+        "success_url":   f"{config.BASE_URL}payments/payment_success_ssl",
+        "fail_url":      f"{config.BASE_URL}payments/payment_fail_ssl",
+        "cancel_url":    f"{config.BASE_URL}payments/payment_cancel_ssl",   # new
+        "ipn_url":       f"{config.BASE_URL}payments/payment_ipn",          # optional
 
         # product
         "product_name":      transaction_type.capitalize(),
@@ -213,7 +213,7 @@ async def pay_sslcommerz():
     }
 
     try:
-        log_info(action="sslcommerz_request", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=f"Initiating {tran_id} for {amount}")
+        log.info(action="sslcommerz_request", trace_info=phone, message=f"Initiating {tran_id} for {amount}", secure=True)
         r   = requests.post(
             'https://sandbox.sslcommerz.com/gwprocess/v4/api.php',
             data=payload,
@@ -221,14 +221,14 @@ async def pay_sslcommerz():
         )
         res = r.json()
     except Exception as e:
-        log_critical(action="sslcommerz_request_error", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=str(e))
-        return await jsonify({"error": _("Payment gateway is currently unreachable")}), 502
+        log.critical(action="sslcommerz_request_error", trace_info=phone, message=str(e), secure=True)
+        return jsonify({"error": _("Payment gateway is currently unreachable")}), 502
 
     if res.get('status') == 'SUCCESS':
-        return await jsonify({"GatewayPageURL": res.get('GatewayPageURL')}), 200
+        return jsonify({"GatewayPageURL": res.get('GatewayPageURL')}), 200
     else:
-        log_critical(action="sslcommerz_initiation_failed", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message=f"{res.get('status')} – {res.get('failedreason')}")
-        return await jsonify({
+        log.critical(action="sslcommerz_initiation_failed", trace_info=phone, message=f"{res.get('status')} – {res.get('failedreason')}", secure=True)
+        return jsonify({
             "error":  _("Payment initiation failed"),
             "reason": res.get('failedreason')
         }), 400
@@ -239,15 +239,15 @@ async def pay_sslcommerz():
 async def payments_success_ssl(return_type):
     valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']
     if return_type not in valid_types:
-        return await jsonify({"error": _("Invalid return type")}), 400
+        return jsonify({"error": _("Invalid return type")}), 400
     if return_type == 'payment_fail_ssl':
-        return await jsonify({"error": _("Payment failed")}), 400
+        return jsonify({"error": _("Payment failed")}), 400
     elif return_type == 'payment_cancel_ssl':
-        return await jsonify({"error": _("Payment cancelled")}), 400
+        return jsonify({"error": _("Payment cancelled")}), 400
     
     data            = (await request.form).to_dict() or {}
-    phone           = data.get('value_a')
-    fullname        = data.get('value_b')
+    phone           = str(data.get('value_a'))
+    fullname        = str(data.get('value_b'))
     amount          = data.get('amount')
     months          = data.get('value_c')
     transaction_type= data.get('value_d')
@@ -255,12 +255,12 @@ async def payments_success_ssl(return_type):
 
     # Ensure we received our transaction identifier back
     if not tran_id:
-        log_error(action="sslcommerz_callback_no_tranid", trace_info=phone, trace_info_hash=hash_sensitive_data(phone), trace_info_encrypted=encrypt_sensitive_data(phone), message="Missing value_e")
-        return await jsonify({"error": _("Missing transaction identifier")}), 400
+        log.error(action="sslcommerz_callback_no_tranid", trace_info=phone, message="Missing value_e", secure=True)
+        return jsonify({"error": _("Missing transaction identifier")}), 400
         
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
-        return await jsonify({"error": msg}), 400
+        return jsonify({"error": msg}), 400
 
     # 1️⃣ Validate callback with SSLCommerz
     store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
@@ -276,11 +276,11 @@ async def payments_success_ssl(return_type):
             timeout=10
         ).json()
         if validation.get('status') != 'VALID':
-            log_warning(action="sslcommerz_validation_failed", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=validation.get('status'))
-            return await jsonify({"error": _("Payment validation failed")}), 400
+            log.warning(action="sslcommerz_validation_failed", trace_info=formatted_phone, message=validation.get('status'), secure=True)
+            return jsonify({"error": _("Payment validation failed")}), 400
     except Exception as e:
-        log_critical(action="sslcommerz_validation_error", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=str(e))
-        return await jsonify({"error": _("Error during payments validation")}), 502
+        log.critical(action="sslcommerz_validation_error", trace_info=formatted_phone, message=str(e), secure=True)
+        return jsonify({"error": _("Error during payments validation")}), 502
 
         
     # 2️⃣ Record transaction directly in the database
@@ -298,8 +298,8 @@ async def payments_success_ssl(return_type):
             )
             user = await cursor.fetchone()
             if not user:
-                log_error(action="transaction_user_not_found", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=hash_sensitive_data(fullname))
-                return await jsonify({"error": _("User not found for payments")}), 404
+                log.error(action="transaction_user_not_found", trace_info=formatted_phone, message=fullname, secure=True)
+                return jsonify({"error": _("User not found for payments")}), 404
                 
             # Insert the new transaction
             await cursor.execute(
@@ -312,7 +312,7 @@ async def payments_success_ssl(return_type):
     except Exception as e:
         if db:
             await db.rollback()
-        log_critical(action="payment_insert_fail", trace_info=formatted_phone, trace_info_hash=hash_sensitive_data(formatted_phone), trace_info_encrypted=encrypt_sensitive_data(formatted_phone), message=str(e))
-        return await jsonify({"error": _("Transaction failed")}), 500
+        log.critical(action="payment_insert_fail", trace_info=formatted_phone, message=str(e), secure=True)
+        return jsonify({"error": _("Transaction failed")}), 500
             
-    return await jsonify({"message": _("Payment recorded successfully")}), 200
+    return jsonify({"message": _("Payment recorded successfully")}), 200

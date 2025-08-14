@@ -2,9 +2,8 @@ import requests
 from datetime import datetime
 from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
-from config import Config
-from functools import wraps
-from helpers import is_test_mode, rate_limit, require_csrf
+from config import config
+from helpers import rate_limit, require_csrf
 
 login_attempts = {}
 
@@ -31,16 +30,16 @@ async def login():
     show_captcha = False
 
     # Load keys safely
-    RECAPTCHA_SITE_KEY = Config.RECAPTCHA_SITE_KEY
-    RECAPTCHA_SECRET_KEY = Config.RECAPTCHA_SECRET_KEY
+    RECAPTCHA_SITE_KEY = config.RECAPTCHA_SITE_KEY
+    RECAPTCHA_SECRET_KEY = config.RECAPTCHA_SECRET_KEY
 
     if request.method == 'POST':
         form = await request.form
         username = form.get('username')
         password = form.get('password')
 
-        ADMIN_USER = Config.ADMIN_USERNAME
-        ADMIN_PASS = Config.ADMIN_PASSWORD
+        ADMIN_USER = config.ADMIN_USERNAME
+        ADMIN_PASS = config.ADMIN_PASSWORD
 
         session['login_attempts'] += 1
 

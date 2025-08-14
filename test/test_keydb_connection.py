@@ -20,7 +20,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from config import config  # noqa: E402
 from keydb.keydb_utils import (  # noqa: E402
-    get_keydb_config,
     connect_to_keydb,
     close_keydb,
 )

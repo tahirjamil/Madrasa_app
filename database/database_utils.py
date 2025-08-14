@@ -139,9 +139,9 @@ async def create_tables():
             return
 
         # Suppress MySQL warnings
-    async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from observability.db_tracing import TracedCursorWrapper
-        cursor = TracedCursorWrapper(_cursor)
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("SET sql_notes = 0")
             await conn.commit()
 
@@ -165,9 +165,9 @@ async def create_tables():
                 current_statement = ""
 
         # Execute each SQL statement
-    async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from observability.db_tracing import TracedCursorWrapper
-        cursor = TracedCursorWrapper(_cursor)
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             for statement in sql_statements:
                 if statement.strip():  # Skip empty statements
                     try:
@@ -179,9 +179,9 @@ async def create_tables():
                         continue
 
         # Re-enable MySQL warnings
-    async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from observability.db_tracing import TracedCursorWrapper
-        cursor = TracedCursorWrapper(_cursor)
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("SET sql_notes = 1")
             await conn.commit()
             

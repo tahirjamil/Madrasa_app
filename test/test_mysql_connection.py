@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.config import Config
+from config import config
 
 def test_config_loading():
     """Test if configuration is loaded correctly"""
@@ -24,10 +24,10 @@ def test_config_loading():
     
     try:
         print(f"✅ Config loaded successfully")
-        print(f"   MYSQL_HOST: {Config.MYSQL_HOST}")
-        print(f"   MYSQL_USER: {Config.MYSQL_USER}")
-        print(f"   MYSQL_DB: {Config.MYSQL_DB}")
-        print(f"   MYSQL_PASSWORD: {'*' * len(Config.MYSQL_PASSWORD) if Config.MYSQL_PASSWORD else 'None'}")
+        print(f"   MYSQL_HOST: {config.MYSQL_HOST}")
+        print(f"   MYSQL_USER: {config.MYSQL_USER}")
+        print(f"   MYSQL_DB: {config.MYSQL_DB}")
+        print(f"   MYSQL_PASSWORD: {'*' * len(config.MYSQL_PASSWORD) if config.MYSQL_PASSWORD else 'None'}")
         return True
     except Exception as e:
         print(f"❌ Config loading failed: {e}")
@@ -43,10 +43,10 @@ def test_mysql_connection_sync():
         
         # Test connection
         connection = pymysql.connect(
-            host=Config.MYSQL_HOST,
-            user=Config.MYSQL_USER,
-            password=Config.MYSQL_PASSWORD,
-            database=Config.MYSQL_DB,
+            host=config.MYSQL_HOST,
+            user=config.MYSQL_USER,
+            password=config.MYSQL_PASSWORD,
+            database=config.MYSQL_DB,
             charset='utf8mb4',
             connect_timeout=10
         )
@@ -65,7 +65,7 @@ def test_mysql_connection_sync():
             
             cursor.execute("SHOW TABLES")
             tables = cursor.fetchall()
-            print(f"   Tables in {Config.MYSQL_DB}: {[table[0] for table in tables]}")
+            print(f"   Tables in {config.MYSQL_DB}: {[table[0] for table in tables]}")
         
         connection.close()
         return True
@@ -82,10 +82,10 @@ async def test_mysql_connection_async():
     try:
         # Test connection using aiomysql (same as the app)
         connection = await aiomysql.connect(
-            host=Config.MYSQL_HOST,
-            user=Config.MYSQL_USER,
-            password=Config.MYSQL_PASSWORD,
-            db=Config.MYSQL_DB,
+            host=config.MYSQL_HOST,
+            user=config.MYSQL_USER,
+            password=config.MYSQL_PASSWORD,
+            db=config.MYSQL_DB,
             charset='utf8mb4',
             connect_timeout=10
         )
@@ -104,7 +104,7 @@ async def test_mysql_connection_async():
             
             await cursor.execute("SHOW TABLES")
             tables = await cursor.fetchall()
-            print(f"   Tables in {Config.MYSQL_DB}: {[table[0] for table in tables]}")
+            print(f"   Tables in {config.MYSQL_DB}: {[table[0] for table in tables]}")
         
         connection.close()
         return True
@@ -123,18 +123,18 @@ def test_database_creation():
         
         # Connect without specifying database
         connection = pymysql.connect(
-            host=Config.MYSQL_HOST,
-            user=Config.MYSQL_USER,
-            password=Config.MYSQL_PASSWORD,
+            host=config.MYSQL_HOST,
+            user=config.MYSQL_USER,
+            password=config.MYSQL_PASSWORD,
             charset='utf8mb4',
             connect_timeout=10
         )
         
         with connection.cursor() as cursor:
             # Try to create database if it doesn't exist
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{Config.MYSQL_DB}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{config.MYSQL_DB}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
             connection.commit()
-            print(f"✅ Database '{Config.MYSQL_DB}' created/verified successfully")
+            print(f"✅ Database '{config.MYSQL_DB}' created/verified successfully")
         
         connection.close()
         return True

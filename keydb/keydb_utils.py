@@ -72,8 +72,14 @@ def get_keydb_config() -> AioredisConnectConfig:
 
 async def connect_to_keydb():
     """Create a global KeyDB/Redis pool connection using aioredis."""
+    # Check if redis is disabled
+    if os.getenv("USE_REDIS_CACHE", "true").lower() in ("false", "no", "0"):
+        print("Redis cache is disabled via USE_REDIS_CACHE=false")
+        return None
+    
     if aioredis is None:  # pragma: no cover
-        raise RuntimeError("aioredis is not installed. Please add 'aioredis' to requirements.txt")
+        print("Warning: aioredis is not available, skipping Redis connection")
+        return None
 
     cfg = get_keydb_config()
 

@@ -22,7 +22,7 @@ from quart_babel import gettext as _
 from cryptography.fernet import Fernet
 from database.database_utils import get_db_connection
 from config import config
-from logger import log
+from utils.logger import log
 
 
 # ---------- improved CacheManager ----------

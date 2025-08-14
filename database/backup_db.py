@@ -1,6 +1,6 @@
 import os, subprocess, glob
 from datetime import datetime, timezone, timedelta
-from logger import log
+from utils.logger import log
 from config import config
 
 # ======= Configuration ========

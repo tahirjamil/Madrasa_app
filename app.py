@@ -14,11 +14,12 @@ from myapp import MyApp
 from config import config, MadrasaConfig
 from database import create_tables
 from database.database_utils import connect_to_db
+from keydb.keydb_utils import connect_to_keydb, close_keydb
 
 # API & Web Blueprints
-from helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter, security_manager
+from utils.helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter, security_manager
 from routes.admin_routes import admin_routes
-from routes.user_routes import user_routes
+from routes.api import api
 from routes.web_routes import web_routes
 
 # ─── Setup Logging ──────────────────────────────────────────
@@ -62,7 +63,7 @@ async def get_locale():
 babel.localeselector = get_locale
 
 # Import CSRF protection from dedicated module
-from csrf_protection import csrf
+from utils.csrf_protection import csrf
 
 # Security headers
 @app.after_request
@@ -90,7 +91,7 @@ async def create_tables_async():
         logger.error(f"Database initialization error: {str(e)}")
 
 @app.before_serving
-async def before_serving():
+async def startup():
     # Set app start time for health checks
     app.start_time = time.time()
 
@@ -98,12 +99,13 @@ async def before_serving():
     await create_tables_async()
     # Create single database connection for server lifetime
     app.db = await connect_to_db()
+    app.keydb = await connect_to_keydb()
     if app.db is None:
         raise RuntimeError("Failed to establish database connection")
     print("Database connection established successfully")
 
 @app.after_serving
-async def after_serving():
+async def shutdown():
     # Close database connection when server shuts down
     if hasattr(app, 'db') and app.db:
         try:
@@ -111,6 +113,12 @@ async def after_serving():
             print("Database connection closed successfully")
         except Exception as e:
             print(f"Error closing database connection: {e}")
+    if hasattr(app, 'keydb') and app.keydb:
+        try:
+            await close_keydb(app.keydb)
+            print("Keydb connection closed successfully")
+        except Exception as e:
+            print(f"Error closing keydb connection: {e}")
 
 # ─── Request/Response Logging ───────────────────────────────
 request_response_log = []
@@ -277,12 +285,12 @@ async def get_metrics() -> Response:
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')
 app.register_blueprint(web_routes)
-app.register_blueprint(user_routes)
+app.register_blueprint(api)
  
 # Inject CSRF token into templates (for forms)
 @app.context_processor
 def inject_csrf_token():
-    from csrf_protection import generate_csrf_token
+    from utils.csrf_protection import generate_csrf_token
     return dict(csrf_token=generate_csrf_token)
 
 # ─── Note ───────────────────────────────────────────────────

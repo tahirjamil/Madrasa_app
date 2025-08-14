@@ -29,7 +29,7 @@ try:
     import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     
-    from helpers import *
+    from utils.helpers import *
     IMPORT_SUCCESS = True
 except Exception as e:
     print(f"Import failed: {e}")

@@ -6,12 +6,12 @@ from typing import Callable
 
 # Enhanced logger with better error handling and performance
 def get_crypto_funcs(data: str, which: str) -> str | None:
-    """Lazily import crypto helpers from helpers to avoid circular imports."""
+    """Lazily import crypto helpers from utils.helpers to avoid circular imports."""
     if not which in ["hash", "encrypt"]:
         raise ValueError("Invalid which value. Must be 'hash' or 'encrypt'.")
     
     try:
-        from helpers import encrypt_sensitive_data, hash_sensitive_data
+        from utils.helpers import encrypt_sensitive_data, hash_sensitive_data
         if which == "hash":
             return hash_sensitive_data(data)
         elif which == "encrypt":
@@ -19,7 +19,7 @@ def get_crypto_funcs(data: str, which: str) -> str | None:
         else:
             return None
     except Exception:
-        print("Failed to import crypto helpers from helpers.py")
+        print("Failed to import crypto helpers from utils.helpers.py")
         return None
 
 async def log_event(action: str, trace_info: str, message: str, secure: bool, level: str= "info", metadata=None) -> None:

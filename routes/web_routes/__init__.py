@@ -1,5 +1,5 @@
 from quart import Blueprint, render_template, request
-from helpers import require_api_key
+from utils.helpers import require_api_key
 from config import config
 
 web_routes = Blueprint('web_routes', __name__)

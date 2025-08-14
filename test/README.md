@@ -4,7 +4,7 @@ This directory contains integration tests for the user routes that test the actu
 
 ## Files
 
-- `test_user_routes.py` - Main integration test file
+- `test_api.py` - Main integration test file
 - `start_server_for_testing.py` - Script to start the server for testing
 - `README.md` - This file
 
@@ -29,7 +29,7 @@ The server should be running on `http://localhost:8000`
 In a new terminal, run the integration tests:
 
 ```bash
-python test/test_user_routes.py
+python test/test_api.py
 ```
 
 ## Test Coverage

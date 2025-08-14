@@ -113,24 +113,39 @@ class MadrasaConfig:
 
     MADRASA_NAMES_LIST = ['annur']
     
-    
+
     # ============================================================================
-    # DATABASE CONFIGURATION
+    # MYSQL CONFIGURATION
     # ============================================================================
-    
+
     # MySQL Connection Settings
-    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-    MYSQL_USER = os.getenv("MYSQL_USER", "admin")
-    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "admin")
+    MYSQL_HOST = "localhost"
+    MYSQL_USER = "tahir"
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
     MYSQL_DB = os.getenv("MYSQL_DB", "default")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
     MYSQL_UNIX_SOCKET = os.getenv("MYSQL_UNIX_SOCKET", None)
+    MYSQL_POOL_SIZE = 10
+    MYSQL_MAX_OVERFLOW = 5
+    MYSQL_TIMEOUT = 60.0
 
-    # Database Connection Pooling
-    DB_POOL_SIZE = 10
-    DB_MAX_OVERFLOW = 5
-    DB_TIMEOUT = 60
-    
+    # ============================================================================
+    # REDIS CONFIGURATION
+    # ============================================================================
+
+    # Redis Connection Settings
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+    REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+    REDIS_DB = int(os.getenv("REDIS_DB", 0))
+    REDIS_SSL = os.getenv("REDIS_SSL", "false")
+    REDIS_MINSIZE = 1
+    REDIS_MAXSIZE = 10
+    REDIS_TIMEOUT = 10.0
+    REDIS_ENCODING = "utf-8"
+    REDIS_PREFIX = "madrasa"
+    USE_REDIS_CACHE = True
+
     # ============================================================================
     # FILE UPLOAD AND STORAGE
     # ============================================================================
@@ -256,9 +271,26 @@ class MadrasaConfig:
             print(f"WARNING: {warning}")
     
     @lru_cache(maxsize=1)
-    def get_database_url(self) -> str:
+    def get_database_url(self) -> str | None:
         """Generate database connection URL."""
-        return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
+        try:
+            return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
+        except Exception as e:
+            print(f"Error generating database connection URL: {e}")
+            return None
+
+    @lru_cache(maxsize=1)
+    def get_keydb_url(self) -> str | None:
+        """Generate keydb connection URL."""
+        try:
+            url = "redis://"
+            if self.REDIS_PASSWORD:
+                url += f":{self.REDIS_PASSWORD}@"
+            url += f"{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+            return url
+        except Exception as e:
+            print(f"Error generating keydb connection URL: {e}")
+            return None
     
     @lru_cache(maxsize=1)
     def is_maintenance(self) -> bool:

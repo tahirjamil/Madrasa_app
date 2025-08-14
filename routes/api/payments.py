@@ -1,15 +1,15 @@
 from quart import request, jsonify
-from . import user_routes
+from . import api
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from database.database_utils import get_db_connection
-from helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation
+from utils.helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation
 from config import config
-from logger import log
+from utils.logger import log
 from quart_babel import gettext as _
 
 # ====== Payment Fee Info ======
-@user_routes.route('/due_payments', methods=['POST'])
+@api.route('/due_payments', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
 async def payments():
@@ -60,7 +60,7 @@ async def payments():
 
 
 # ====== Get Transaction History ======
-@user_routes.route('/get_transactions', methods=['POST'])
+@api.route('/get_transactions', methods=['POST'])
 @cache_with_invalidation
 @handle_async_errors
 async def get_transactions():
@@ -143,7 +143,7 @@ async def get_transactions():
                               .isoformat().replace("+00:00","Z")
     }), 200
 
-@user_routes.route('/pay_sslcommerz', methods=['POST'])
+@api.route('/pay_sslcommerz', methods=['POST'])
 @handle_async_errors
 async def pay_sslcommerz():
     data = await request.get_json() or {}
@@ -234,7 +234,7 @@ async def pay_sslcommerz():
         }), 400
 
 
-@user_routes.route('/payments/<return_type>', methods=['POST'])
+@api.route('/payments/<return_type>', methods=['POST'])
 @handle_async_errors
 async def payments_success_ssl(return_type):
     valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']

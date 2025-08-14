@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS transactions (
                 user_id             INT     NOT NULL,
                 type           VARCHAR(20)  NOT NULL CHECK (type IN ('fees','donations','others')),
                 month          VARCHAR(50),
-                amount         INT    NOT NULL  CHECK (amount > 0),
+                amount         INT    NOT NULL  CHECK (amount > 0), -- TODO: float?
                 date           DATETIME NOT NULL,
 
                 updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS translations (
 CREATE TABLE IF NOT EXISTS peoples (
                     person_id            INT            NOT NULL AUTO_INCREMENT PRIMARY KEY,
                     user_id              INT            NULL,
-                    member_id          INT              CHECK (member_id >= 0),
+                    serial          INT              CHECK (serial >= 0),
                     student_id         INT              CHECK (student_id >= 0),
                     name               VARCHAR(255)     NOT NULL,
                     date_of_birth      DATE,
@@ -241,9 +241,9 @@ CREATE TABLE IF NOT EXISTS payments (
                 user_id        INT           NULL,
                 food         BOOLEAN       NOT NULL,
                 special_food BOOLEAN       NOT NULL,
-                reduced_fee   INT           DEFAULT 0    CHECK (reduced_fee >= 0),
+                reduced_fee   INT           DEFAULT 0    CHECK (reduced_fee >= 0), -- TODO: float?
                 due_months   INT           NOT NULL     CHECK (due_months >= 0),
-                tax           INT           NOT NULL     CHECK (tax >= 0),
+                tax           INT           NOT NULL     CHECK (tax >= 0), -- TODO: float?
 
                 updated_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,

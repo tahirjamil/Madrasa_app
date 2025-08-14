@@ -9,8 +9,8 @@ import logging
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from helpers import delete_users
-from logger import log
+from utils.helpers import delete_users
+from utils.logger import log
 from database.backup_db import main as backup_main
 
 # Add project root to path

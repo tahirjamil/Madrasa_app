@@ -82,6 +82,9 @@ def get_db_config() -> AiomysqlConnectConfig:
     return tcp_cfg
 
 async def connect_to_db() -> Optional[aiomysql.Connection]:
+    if aiomysql is None:  # pragma: no cover
+        raise RuntimeError("aiomysql is not installed. Please add 'aiomysql' to requirements.txt")
+
     try:
         SQL_config: AiomysqlConnectConfig = get_db_config()
         return await aiomysql.connect(**SQL_config)

@@ -3,6 +3,7 @@ Quart
 quart-cors
 quart-csrf
 aiomysql
+aioredis
 hypercorn
 quart-babel
 Babel

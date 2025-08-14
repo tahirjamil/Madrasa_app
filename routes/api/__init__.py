@@ -1,11 +1,11 @@
 from quart import Blueprint, jsonify, request
-from helpers import require_api_key
+from utils.helpers import require_api_key
 from quart_babel import gettext as _
 from config import config
 
-user_routes = Blueprint("user_routes", __name__)
+api = Blueprint("api", __name__)
 
-@user_routes.before_request
+@api.before_request
 # @require_api_key TODO: fix this
 async def check():
     lang = request.accept_languages.best_match(["en", "bn", "ar"])

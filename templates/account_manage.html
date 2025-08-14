@@ -13,7 +13,7 @@
 
       <div id="alert-placeholder"></div>
 
-      <form id="manageForm" method="get" action="{{ url_for('user_routes.manage_account', page_type=page_type|lower) }}">
+      <form id="manageForm" method="get" action="{{ url_for('api.manage_account', page_type=page_type|lower) }}">
         <div class="mb-3">
           <label for="fullname" class="form-label">Full Name (English)</label>
           <input type="text" class="form-control" id="fullname" name="fullname" required>

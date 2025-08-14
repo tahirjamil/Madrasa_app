@@ -1,6 +1,6 @@
 from . import admin_routes
 from database.database_utils import connect_to_db
-from helpers import handle_async_errors
+from utils.helpers import handle_async_errors
 from quart import jsonify, session, redirect, url_for, current_app
 import aiomysql
 from config import config

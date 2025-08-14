@@ -101,7 +101,7 @@ You can run maintenance tasks manually:
 python maintenance.py
 
 # Run auto deletion only
-python -c "from helpers import delete_users; import asyncio; asyncio.run(delete_users())"
+python -c "from utils.helpers import delete_users; import asyncio; asyncio.run(delete_users())"
 
 # Run backup only
 python database/backup_db.py

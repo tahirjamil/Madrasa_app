@@ -11,17 +11,17 @@ from quart import (
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Local imports
-from . import user_routes
+from . import api
 from database.database_utils import get_db_connection
 from config import config
-from helpers import (
+from utils.helpers import (
     cache, check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, 
     get_client_info, record_login_attempt, secure_data, send_sms, send_email, 
     get_email, rate_limit, encrypt_sensitive_data, hash_sensitive_data,
     handle_async_errors, validate_device_info, validate_email, validate_fullname, validate_password_strength,
 )
 from quart_babel import gettext as _
-from logger import log
+from utils.logger import log
 
 # ─── Errors ───────────────────────────────────────────────
 ERROR_MESSAGES = {
@@ -49,7 +49,7 @@ ERROR_MESSAGES = {
 
 # ─── Enhanced Authentication Routes ───────────────────────────────────────────
 
-@user_routes.route("/register", methods=["POST"])
+@api.route("/register", methods=["POST"])
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def register() -> Tuple[Response, int]:
@@ -220,7 +220,7 @@ async def register() -> Tuple[Response, int]:
         log.critical(action="register_error", trace_info="system", message=f"Registration error: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
-@user_routes.route("/login", methods=["POST"])
+@api.route("/login", methods=["POST"])
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def login() -> Tuple[Response, int] | None:
@@ -352,7 +352,7 @@ async def login() -> Tuple[Response, int] | None:
         log.critical(action="login_error", trace_info=ip_address, message=f"Login error: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
-@user_routes.route("/send_code", methods=["POST"])
+@api.route("/send_code", methods=["POST"])
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def send_verification_code() -> Tuple[Response, int]:
@@ -477,7 +477,7 @@ async def send_verification_code() -> Tuple[Response, int]:
         log.critical(action="send_code_error", trace_info="system", message=f"Error sending verification code: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
-@user_routes.route("/reset_password", methods=["POST"])
+@api.route("/reset_password", methods=["POST"])
 @handle_async_errors
 async def reset_password() -> Tuple[Response, int]:
     """Reset user password with enhanced security validation"""
@@ -584,7 +584,7 @@ async def reset_password() -> Tuple[Response, int]:
         log.critical(action="reset_password_error", trace_info="system", message=f"Password reset error: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
-@user_routes.route("/account/<page_type>", methods=["GET", "POST"])
+@api.route("/account/<page_type>", methods=["GET", "POST"])
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def manage_account(page_type: str): # -> Tuple[Response, int] TODO: remove get
@@ -687,7 +687,7 @@ async def manage_account(page_type: str): # -> Tuple[Response, int] TODO: remove
         log.critical(action="manage_account_error", trace_info="system", message=f"Account management error: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
-@user_routes.route("/account/reactivate", methods=['POST'])
+@api.route("/account/reactivate", methods=['POST'])
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def undo_remove() -> Tuple[Response, int]:
@@ -755,7 +755,7 @@ async def undo_remove() -> Tuple[Response, int]:
         log.critical(action="reactivate_error", trace_info="system", message=f"Account reactivation error: {str(e)}", secure=False)
         return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
 
-@user_routes.route("/account/check", methods=['POST'])
+@api.route("/account/check", methods=['POST'])
 @handle_async_errors
 async def get_account_status() -> Tuple[Response, int]:
     """Check account status and validate session with enhanced security"""

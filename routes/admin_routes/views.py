@@ -119,10 +119,10 @@ async def admin_dashboard():
                         log.error(action="query_error", trace_info=username, message=f"{raw_sql} | {str(e)}", secure=False)
 
             # --- Fetch transactions ---
-            txn_sql = "SELECT * FROM global.transactions ORDER BY date DESC"
             if txn_limit_val:
-                txn_sql += f" LIMIT {txn_limit_val}"
-            await cursor.execute(txn_sql)
+                await cursor.execute("SELECT * FROM global.transactions ORDER BY date DESC LIMIT %s", (txn_limit_val,))
+            else:
+                await cursor.execute("SELECT * FROM global.transactions ORDER BY date DESC")
             transactions = await cursor.fetchall()
 
             # --- Fetch all students payment info ---

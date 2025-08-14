@@ -53,8 +53,8 @@ async def contact():
 @web_routes.route('/privacy')
 async def privacy():
     # Load contact info from environment variables
-    contact_email = os.getenv('EMAIL_ADDRESS'   )
-    contact_phone = os.getenv('MADRASA_PHONE')
+    contact_email = os.getenv('BUSINESS_EMAIL')
+    contact_phone = os.getenv('BUSINESS_PHONE')
     effective_date = os.getenv('PRIVACY_POLICY_EFFECTIVE_DATE')
 
     if not contact_email or not contact_phone or not effective_date:
@@ -100,8 +100,8 @@ async def privacy():
 @web_routes.route('/terms')
 async def terms():
     # Load contact info from environment variables
-    contact_email = os.getenv('EMAIL_ADDRESS')
-    contact_phone = os.getenv('MADRASA_PHONE')
+    contact_email = os.getenv('BUSINESS_EMAIL')
+    contact_phone = os.getenv('BUSINESS_PHONE')
     effective_date = os.getenv('TERMS_EFFECTIVE_DATE')
 
     if not contact_email or not contact_phone or not effective_date:

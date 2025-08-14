@@ -1,3 +1,4 @@
 from .config import config, MadrasaConfig
+from .config import MadrasaApp
 
-__all__ = ["config", "MadrasaConfig"]
+__all__ = ["config", "MadrasaConfig", "MadrasaApp"]

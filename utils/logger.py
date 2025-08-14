@@ -42,7 +42,7 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
                 "message": message
             })
 
-            sql = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_secure) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            sql = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s)"
             params = [action, trace_info, message, level, json.dumps(log_metadata)]
 
             if secure:

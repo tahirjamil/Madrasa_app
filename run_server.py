@@ -420,6 +420,20 @@ def setup_signal_handlers(process_manager: ProcessManager, logger: AdvancedLogge
         if sighup is not None:
             signal.signal(sighup, signal_handler)
 
+        # Optional restart controls via user signals
+        usr1 = getattr(signal, "SIGUSR1", None)
+        usr2 = getattr(signal, "SIGUSR2", None)
+        if usr1 is not None:
+            def _graceful_restart(_s, _f):
+                logger.info("Signal SIGUSR1 received: graceful restart")
+                process_manager.restart_server(graceful=True)
+            signal.signal(usr1, _graceful_restart)
+        if usr2 is not None:
+            def _force_restart(_s, _f):
+                logger.info("Signal SIGUSR2 received: force restart")
+                process_manager.restart_server(graceful=False)
+            signal.signal(usr2, _force_restart)
+
 # ─── Main Application ──────────────────────────────────────────────────────────
 
 class AdvancedServerRunner:
@@ -458,7 +472,7 @@ class AdvancedServerRunner:
             
             self.logger.info("Server is running successfully")
             if not daemon and sys.stdin.isatty():
-                self.logger.info("Keyboard: Ctrl+G=graceful restart, Ctrl+F=force restart, Ctrl+Q=quit")
+                self.logger.info("Keyboard: g=graceful, f=force, q=quit (also Ctrl+G/Ctrl+F/Ctrl+Q when terminal permits)")
                 self._start_keyboard_listener()
             
             if dev_mode:
@@ -488,20 +502,34 @@ class AdvancedServerRunner:
 
     def _keyboard_loop(self):
         fd = sys.stdin.fileno()
+        old_settings = None
+        raw_enabled = False
         try:
             old_settings = termios.tcgetattr(fd)
-        except Exception:
-            return
-        try:
             tty.setraw(fd)
+            raw_enabled = True
+        except Exception:
+            raw_enabled = False
+
+        try:
             while not self.process_manager.shutdown_event.is_set():
-                r, _, _ = select.select([sys.stdin], [], [], 0.2)
-                if not r:
-                    continue
-                ch = sys.stdin.read(1)
+                if raw_enabled:
+                    r, _, _ = select.select([sys.stdin], [], [], 0.2)
+                    if not r:
+                        continue
+                    ch = sys.stdin.read(1)
+                else:
+                    # Fallback: line-based input
+                    try:
+                        ch = sys.stdin.read(1)
+                    except Exception:
+                        time.sleep(0.2)
+                        continue
+
                 if not ch:
                     continue
                 code = ord(ch)
+                # Control keys
                 if code == 7:  # Ctrl+G
                     self.logger.info("Shortcut: Ctrl+G (graceful restart)")
                     self.process_manager.restart_server(graceful=True)
@@ -512,13 +540,25 @@ class AdvancedServerRunner:
                     self.logger.info("Shortcut: Ctrl+Q (quit)")
                     self.process_manager.stop_server(graceful=True)
                     os._exit(0)
+                # Plain keys
+                elif ch in ('g', 'G'):
+                    self.logger.info("Shortcut: g (graceful restart)")
+                    self.process_manager.restart_server(graceful=True)
+                elif ch in ('f', 'F'):
+                    self.logger.info("Shortcut: f (force restart)")
+                    self.process_manager.restart_server(graceful=False)
+                elif ch in ('q', 'Q'):
+                    self.logger.info("Shortcut: q (quit)")
+                    self.process_manager.stop_server(graceful=True)
+                    os._exit(0)
         except Exception as e:
             self.logger.error(f"Keyboard listener error: {e}")
         finally:
-            try:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            except Exception:
-                pass
+            if old_settings is not None:
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                except Exception:
+                    pass
     
     def _is_server_running(self) -> bool:
         """Check if server is already running"""
@@ -583,6 +623,7 @@ Examples:
   python run_server.py --daemon           # Start as daemon
   python run_server.py --config           # Show current configuration
   python run_server.py --stop             # Stop running server
+  python run_server.py --status           # Check server status
         """
     )
     

@@ -362,11 +362,11 @@ def _send_smtp_email(msg: MIMEText, to_email: str) -> None:
     server.sendmail(config.BUSINESS_EMAIL, to_email, msg.as_string())
     server.quit()
 
-def send_email(to_email: str, subject: str, 
-               body: str) -> bool:
+async def send_email(to_email: str, subject: str, 
+                    body: str) -> bool:
     """Send email with enhanced error handling"""
-    asyncio.create_task(delete_code())
-    return asyncio.run(_send_async_email(to_email, subject, body))
+    await delete_code()
+    return await _send_async_email(to_email, subject, body)
 
 async def _send_async_sms(phone: str, msg: str) -> bool:
     """Send SMS asynchronously"""
@@ -393,10 +393,10 @@ def _send_sms_request(phone: str, msg: str) -> bool:
         log.critical(action="sms_parse_error", trace_info=phone, message=str(e), secure=True)
         return False
 
-def send_sms(phone: str, msg: str) -> bool:
+async def send_sms(phone: str, msg: str) -> bool:
     """Send SMS with enhanced error handling"""
-    asyncio.create_task(delete_code())
-    return asyncio.run(_send_async_sms(phone, msg))
+    await delete_code()
+    return await _send_async_sms(phone, msg)
 
 # ─── Database Functions ──────────────────────────────────────────────────────
 

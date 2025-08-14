@@ -447,7 +447,7 @@ async def send_verification_code() -> Tuple[Response, int]:
             
             # Try SMS first if under SMS limit
             if count < config.SMS_LIMIT_PER_HOUR:
-                if send_sms(phone=formatted_phone, msg=_("Verification code sent to %(target)s") % {"target": formatted_phone} + f"\n{_('Your code is: %(code)s') % {'code': code}}" + f"\n\n@An-Nur.app\nAppSignature: {signature}"):
+                if await send_sms(phone=formatted_phone, msg=_("Verification code sent to %(target)s") % {"target": formatted_phone} + f"\n{_('Your code is: %(code)s') % {'code': code}}" + f"\n\n@An-Nur.app\nAppSignature: {signature}"):
                     await cursor.execute(
                         "INSERT INTO global.verifications (phone, phone_hash, phone_encrypted, code, ip_address) VALUES (%s, %s, %s, %s, %s)",
                         (formatted_phone, hashed_phone, encrypted_phone, code, ip_address)
@@ -463,7 +463,7 @@ async def send_verification_code() -> Tuple[Response, int]:
             
             # Try email if SMS failed or limit reached
             if email and count < config.EMAIL_LIMIT_PER_HOUR:
-                if send_email(to_email=email, body= f"\n{_('Your code is: %(code)s') % {'code': code}}" + "\n\n@An-Nur.app", subject=  _("Verification Email")):
+                if await send_email(to_email=email, body= f"\n{_('Your code is: %(code)s') % {'code': code}}" + "\n\n@An-Nur.app", subject=  _("Verification Email")):
                     await cursor.execute(
                         "INSERT INTO global.verifications (phone, phone_hash, phone_encrypted, code, ip_address) VALUES (%s, %s, %s, %s, %s)",
                         (formatted_phone, hashed_phone, encrypted_phone, code, ip_address)
@@ -658,12 +658,12 @@ async def manage_account(page_type: str): # -> Tuple[Response, int] TODO: remove
                 is_valid_email, email_error = validate_email(email)
                 if not is_valid_email:
                     return jsonify({"message": email_error}), 400
-                if not send_email(to_email=email, subject=subject, body=msg):
+                if not await send_email(to_email=email, subject=subject, body=msg):
                     errors += 1
             else:
                 errors += 1
             
-            if not send_sms(phone=formatted_phone, msg=msg):
+            if not await send_sms(phone=formatted_phone, msg=msg):
                 errors += 1
             
             if errors > 1:

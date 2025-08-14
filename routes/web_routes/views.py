@@ -35,7 +35,7 @@ async def contact():
             return redirect(url_for('web_routes.contact'))
 
         try:
-            send_email(
+            await send_email(
                 to_email=emails[0],  # primary admin address
                 subject="Contact Form Submission",
                 body=f"Name: {fullname}\nContact: {email_or_phone}\n\nDescription: {description}"

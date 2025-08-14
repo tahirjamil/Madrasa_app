@@ -8,14 +8,12 @@ from myapp import MyApp
 from config import config
 from observability.db_tracing import TracedRedisPool
 
-try:
-    import aioredis  # type: ignore
-except Exception as _e:  # pragma: no cover
-    aioredis = None  # Fallback to allow import-time safety; runtime will raise
+# Redis asyncio client (redis-py >= 4.2 / 5.x)
+import redis.asyncio as redis
 
 
-class AioredisConnectConfig(TypedDict, total=False):
-    """Connection options for aioredis.create_redis_pool."""
+class RedisConnectConfig(TypedDict, total=False):
+    """Connection options for redis.asyncio client."""
 
     url: str
     address: Tuple[str, int]
@@ -28,7 +26,7 @@ class AioredisConnectConfig(TypedDict, total=False):
     timeout: float
 
 
-def get_keydb_config() -> AioredisConnectConfig:
+def get_keydb_config() -> RedisConnectConfig:
     """Build KeyDB/Redis connection config from config/env with sane defaults."""
     # URL first (supports redis://, rediss://)
     url = config.get_keydb_url()
@@ -51,7 +49,7 @@ def get_keydb_config() -> AioredisConnectConfig:
     timeout = config.REDIS_TIMEOUT or 10.0
     encoding = config.REDIS_ENCODING or "utf-8"
 
-    cfg: AioredisConnectConfig = {
+    cfg: RedisConnectConfig = {
         "db": db_idx,
         "ssl": ssl_flag,
         "encoding": encoding,
@@ -71,38 +69,33 @@ def get_keydb_config() -> AioredisConnectConfig:
 
 
 async def connect_to_keydb():
-    """Create a global KeyDB/Redis pool connection using aioredis."""
-    if aioredis is None:  # pragma: no cover
-        raise RuntimeError("aioredis is not installed. Please add 'aioredis' to requirements.txt")
-
+    """Create a global KeyDB/Redis client using redis.asyncio (redis-py)."""
     cfg = get_keydb_config()
 
     try:
-        # Prefer URL if provided, otherwise address tuple
+        # Prefer URL if provided, otherwise explicit host/port
         if "url" in cfg:
-            pool = await aioredis.create_redis_pool(
+            client = redis.from_url(
                 cfg["url"],
-                db=cfg.get("db"),
+                db=cfg.get("db", 0),
                 encoding=cfg.get("encoding", "utf-8"),
-                minsize=cfg.get("minsize"),
-                maxsize=cfg.get("maxsize"),
-                timeout=cfg.get("timeout"),
-                ssl=cfg.get("ssl"),
+                decode_responses=True,
+                socket_connect_timeout=cfg.get("timeout", 10.0),
             )
         else:
-            address: Union[str, Tuple[str, int]] = cfg.get("address", ("localhost", 6379))  # type: ignore[assignment]
-            pool = await aioredis.create_redis_pool(  # type: ignore[attr-defined]
-                address,
-                db=cfg.get("db"),
+            address: Tuple[str, int] = cfg.get("address", ("localhost", 6379))  # type: ignore[assignment]
+            client = redis.Redis(
+                host=address[0],
+                port=address[1],
+                db=cfg.get("db", 0),
                 password=cfg.get("password"),
                 encoding=cfg.get("encoding", "utf-8"),
-                minsize=cfg.get("minsize"),
-                maxsize=cfg.get("maxsize"),
-                timeout=cfg.get("timeout"),
-                ssl=cfg.get("ssl"),
+                decode_responses=True,
+                ssl=cfg.get("ssl", False),
+                socket_connect_timeout=cfg.get("timeout", 10.0),
             )
 
-        return TracedRedisPool(pool)
+        return TracedRedisPool(client)
 
     except Exception as e:
         print(f"KeyDB connection failed: {e}")
@@ -131,12 +124,36 @@ async def get_keydb_connection(max_retries: int = 3) -> Any:
 
 
 async def close_keydb(pool: Any) -> None:
-    """Gracefully close the KeyDB pool if it follows aioredis 1.x semantics."""
+    """Gracefully close the KeyDB client for redis.asyncio and compatibility."""
     try:
-        if hasattr(pool, "close"):
-            pool.close()  # type: ignore[func-returns-value]
-        if hasattr(pool, "wait_closed"):
-            await pool.wait_closed()  # type: ignore[attr-defined]
+        # TracedRedisPool proxies attributes to the underlying client
+        target = getattr(pool, "_pool", pool)
+        # Prefer async close when available (redis>=5.0)
+        aclose_attr = getattr(target, "aclose", None)
+        if callable(aclose_attr):
+            try:
+                await aclose_attr()
+            except Exception:
+                pass
+        else:
+            close_attr = getattr(target, "close", None)
+            if callable(close_attr):
+                maybe_coro = close_attr()
+                try:
+                    if asyncio.iscoroutine(maybe_coro):
+                        await maybe_coro
+                except Exception:
+                    # Some implementations may have sync close()
+                    pass
+        # Ensure the connection pool is disconnected
+        cp = getattr(target, "connection_pool", None)
+        if cp is not None and hasattr(cp, "disconnect"):
+            try:
+                maybe_disc = cp.disconnect()
+                if asyncio.iscoroutine(maybe_disc):
+                    await maybe_disc
+            except Exception:
+                pass
     except Exception as e:  # pragma: no cover
         print(f"Error closing KeyDB connection: {e}")
 

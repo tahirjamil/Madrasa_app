@@ -62,6 +62,10 @@ class TracedRedisPool:
             span.set_attribute("db.operation", "set")
             span.set_attribute("db.redis.key", key)
             try:
+                # Map aioredis-style "expire" kwarg to redis-py "ex"
+                if "expire" in kwargs and "ex" not in kwargs:
+                    kwargs = {**kwargs}
+                    kwargs["ex"] = kwargs.pop("expire")
                 return await self._pool.set(key, value, *args, **kwargs)
             except Exception as exc:
                 span.record_exception(exc)
@@ -85,6 +89,17 @@ class TracedRedisPool:
             span.set_attribute("db.redis.pattern", pattern)
             try:
                 return await self._pool.keys(pattern)
+            except Exception as exc:
+                span.record_exception(exc)
+                raise
+
+    async def execute(self, *args) -> Any:
+        """Compatibility shim: map execute(...) to redis-py's execute_command."""
+        with _tracer.start_as_current_span("redis.execute") as span:
+            span.set_attribute("db.system", "redis")
+            try:
+                # redis.asyncio exposes execute_command
+                return await getattr(self._pool, "execute_command")(*args)
             except Exception as exc:
                 span.record_exception(exc)
                 raise

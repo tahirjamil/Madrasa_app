@@ -3,10 +3,12 @@
 KeyDB/Redis Connection Diagnostic Tool
 
 This standalone script exercises multiple connection methods and error cases
-for the KeyDB/Redis client used by the app (aioredis 1.x style).
+for the KeyDB/Redis client used by the app (redis.asyncio / redis-py 5.x).
 
 It mirrors the style of the MySQL diagnostic test and can be run directly:
-    python test/test_keydb/test_keydb_connection.py
+    python -m test.test_keydb_connection
+or
+    python test/test_keydb_connection.py
 """
 
 import sys
@@ -16,7 +18,7 @@ from typing import Any
 
 
 # Add project root to path to import modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import config  # noqa: E402
 from keydb.keydb_utils import (  # noqa: E402
@@ -92,10 +94,10 @@ def test_url_generation() -> bool:
 
 
 async def _try_connect_direct_via_url() -> bool:
-    print("\n🔌 Testing Direct Connection (URL) via aioredis.create_redis_pool...")
+    print("\n🔌 Testing Direct Connection (URL) via redis.asyncio.from_url...")
     print("-" * 50)
     try:
-        import aioredis  # Local import for isolation
+        import redis.asyncio as redis  # Local import for isolation
 
         # Ensure we use latest URL based on current config
         try:
@@ -108,19 +110,19 @@ async def _try_connect_direct_via_url() -> bool:
             print("❌ No URL generated; skipping direct URL test")
             return False
 
-        pool = await aioredis.create_redis_pool(
+        client = redis.from_url(
             url,
             db=config.REDIS_DB,
             encoding="utf-8",
-            minsize=1,
-            maxsize=2,
-            timeout=2.0,
-            ssl=str(config.REDIS_SSL).lower() in ("1", "true", "yes", "on"),
+            decode_responses=True,
+            socket_connect_timeout=2.0,
         )
-        pong = await pool.ping()
+        pong = await client.ping()
         print(f"✅ Direct URL connection successful, PING: {pong}")
-        pool.close()
-        await pool.wait_closed()
+        if hasattr(client, "aclose"):
+            await client.aclose()
+        else:
+            await client.close()
         return True
     except Exception as e:
         print(f"❌ Direct URL connection failed: {e}")
@@ -131,13 +133,13 @@ async def _try_connect_via_utils() -> bool:
     print("\n🔌 Testing Connection via keydb_utils.connect_to_keydb()...")
     print("-" * 50)
     try:
-        pool = await connect_to_keydb()
-        if not pool:
+        client = await connect_to_keydb()
+        if not client:
             print("❌ keydb_utils returned None (connection failed)")
             return False
-        pong = await pool.ping()
+        pong = await client.ping()
         print(f"✅ keydb_utils connection successful, PING: {pong}")
-        await close_keydb(pool)
+        await close_keydb(client)
         return True
     except Exception as e:
         print(f"❌ keydb_utils connection failed: {e}")
@@ -145,29 +147,31 @@ async def _try_connect_via_utils() -> bool:
 
 
 async def _try_connect_direct_via_address(bogus: bool = False) -> bool:
-    print("\n🔌 Testing Direct Connection (address tuple) via aioredis.create_redis_pool...")
+    print("\n🔌 Testing Direct Connection (address) via redis.asyncio.Redis...")
     print("-" * 50)
     try:
-        import aioredis
+        import redis.asyncio as redis
 
         host = "invalid.host.local" if bogus else config.REDIS_HOST
         port = 6390 if bogus else config.REDIS_PORT
 
         password = config.REDIS_PASSWORD or None
-        pool = await aioredis.create_redis_pool(
-            (host, port),
+        client = redis.Redis(
+            host=host,
+            port=port,
             db=config.REDIS_DB,
             password=password,
             encoding="utf-8",
-            minsize=1,
-            maxsize=2,
-            timeout=1.0 if bogus else 2.0,
+            decode_responses=True,
             ssl=str(config.REDIS_SSL).lower() in ("1", "true", "yes", "on"),
+            socket_connect_timeout=1.0 if bogus else 2.0,
         )
-        pong = await pool.ping()
+        pong = await client.ping()
         print(f"✅ Direct address connection successful, PING: {pong}")
-        pool.close()
-        await pool.wait_closed()
+        if hasattr(client, "aclose"):
+            await client.aclose()
+        else:
+            await client.close()
         return True
     except Exception as e:
         if bogus:
@@ -181,11 +185,12 @@ def test_invalid_url_scheme() -> bool:
     print("\n🧪 Testing Invalid URL Scheme Handling...")
     print("-" * 50)
     try:
-        import aioredis
+        import redis.asyncio as redis
         # Use an intentionally invalid scheme
         url = "http://localhost:6379/0"
         async def _run() -> None:
-            await aioredis.create_redis_pool(url, timeout=0.5)
+            client = redis.from_url(url, socket_connect_timeout=0.5)
+            await client.ping()
         try:
             asyncio.run(_run())
             print("❌ Unexpected success with invalid URL scheme")
@@ -237,7 +242,6 @@ def main() -> None:
         ("Direct Address Connection (Bogus Host)", lambda: asyncio.run(_try_connect_direct_via_address(bogus=True))),
         ("Connect via keydb_utils", lambda: asyncio.run(_try_connect_via_utils())),
         ("Invalid URL Scheme", test_invalid_url_scheme),
-        ("aioredis Missing Handling", test_aioredis_missing),
     ]
 
     results: list[tuple[str, bool]] = []

@@ -974,7 +974,7 @@ def initialize_application() -> bool:
 
 async def validate_csrf_token():
     """Validate CSRF token from form data"""
-    from csrf_protection import validate_csrf_token
+    from utils import validate_csrf_token
     form = await request.form
     token = form.get('csrf_token')
     if not validate_csrf_token(token):

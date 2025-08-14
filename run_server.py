@@ -5,9 +5,6 @@ Advanced Server Runner for Madrasha App
 """
 
 import os, sys, platform, subprocess, signal, time, json, logging, argparse, threading, psutil, socket
-import select
-import tty
-import termios
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -471,9 +468,6 @@ class AdvancedServerRunner:
                 return False
             
             self.logger.info("Server is running successfully")
-            if not daemon and sys.stdin.isatty():
-                self.logger.info("Keyboard: g=graceful, f=force, q=quit (also Ctrl+G/Ctrl+F/Ctrl+Q when terminal permits)")
-                self._start_keyboard_listener()
             
             if dev_mode:
                 # In dev mode, wait for the server process to complete
@@ -495,70 +489,6 @@ class AdvancedServerRunner:
             return False
         finally:
             self.process_manager.stop_server()
-
-    def _start_keyboard_listener(self):
-        t = threading.Thread(target=self._keyboard_loop, daemon=True)
-        t.start()
-
-    def _keyboard_loop(self):
-        fd = sys.stdin.fileno()
-        old_settings = None
-        raw_enabled = False
-        try:
-            old_settings = termios.tcgetattr(fd)
-            tty.setraw(fd)
-            raw_enabled = True
-        except Exception:
-            raw_enabled = False
-
-        try:
-            while not self.process_manager.shutdown_event.is_set():
-                if raw_enabled:
-                    r, _, _ = select.select([sys.stdin], [], [], 0.2)
-                    if not r:
-                        continue
-                    ch = sys.stdin.read(1)
-                else:
-                    # Fallback: line-based input
-                    try:
-                        ch = sys.stdin.read(1)
-                    except Exception:
-                        time.sleep(0.2)
-                        continue
-
-                if not ch:
-                    continue
-                code = ord(ch)
-                # Control keys
-                if code == 7:  # Ctrl+G
-                    self.logger.info("Shortcut: Ctrl+G (graceful restart)")
-                    self.process_manager.restart_server(graceful=True)
-                elif code == 6:  # Ctrl+F
-                    self.logger.info("Shortcut: Ctrl+F (force restart)")
-                    self.process_manager.restart_server(graceful=False)
-                elif code == 17:  # Ctrl+Q
-                    self.logger.info("Shortcut: Ctrl+Q (quit)")
-                    self.process_manager.stop_server(graceful=True)
-                    os._exit(0)
-                # Plain keys
-                elif ch in ('g', 'G'):
-                    self.logger.info("Shortcut: g (graceful restart)")
-                    self.process_manager.restart_server(graceful=True)
-                elif ch in ('f', 'F'):
-                    self.logger.info("Shortcut: f (force restart)")
-                    self.process_manager.restart_server(graceful=False)
-                elif ch in ('q', 'Q'):
-                    self.logger.info("Shortcut: q (quit)")
-                    self.process_manager.stop_server(graceful=True)
-                    os._exit(0)
-        except Exception as e:
-            self.logger.error(f"Keyboard listener error: {e}")
-        finally:
-            if old_settings is not None:
-                try:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                except Exception:
-                    pass
     
     def _is_server_running(self) -> bool:
         """Check if server is already running"""
@@ -632,6 +562,8 @@ Examples:
     parser.add_argument("--config", action="store_true", help="Show current configuration")
     parser.add_argument("--stop", action="store_true", help="Stop running server")
     parser.add_argument("--status", action="store_true", help="Check server status")
+    parser.add_argument("--restart", action="store_true", help="Gracefully restart running server")
+    parser.add_argument("--force-restart", action="store_true", help="Force restart running server")
     
     args = parser.parse_args()
     
@@ -667,6 +599,20 @@ Examples:
                 pass
         else:
             print("Server is not running")
+        return
+
+    if args.restart or args.force_restart:
+        if runner._is_server_running():
+            try:
+                with open(runner.config.pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                sig = getattr(signal, 'SIGUSR1') if args.restart else getattr(signal, 'SIGUSR2')
+                os.kill(pid, sig)
+                print("Restart signal sent" + (" (graceful)" if args.restart else " (force)"))
+            except Exception as e:
+                print(f"Error restarting server: {e}")
+        else:
+            print("No server is currently running")
         return
     
     # Check for dev mode file

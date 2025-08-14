@@ -2,4 +2,4 @@ from .helpers import *
 from .csrf_protection import *
 from .logger import *
 
-__all__ = ["helpers", "csrf_protection", "logger"]
+__all__ = ["helpers", "csrf_protection", "logger", "validate_csrf_token"]

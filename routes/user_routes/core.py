@@ -16,14 +16,14 @@ from werkzeug.utils import secure_filename
 from . import user_routes
 from database.database_utils import get_db_connection
 from config import config
-from utils.helpers.helpers import (
+from utils.helpers import (
     format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, get_cache_key,
     rate_limit, cache_with_invalidation, secure_data, security_manager, set_cached_data, get_cached_data,
     encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
     cache, performance_monitor, metrics_collector, validate_file_upload, validate_fullname, validate_request_origin,
 )
 from quart_babel import gettext as _
-from logger import log
+from utils.logger import log
 
 # ─── Configuration and Constants ───────────────────────────────────────────────
 

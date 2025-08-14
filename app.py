@@ -25,7 +25,7 @@ from routes.api import api
 from routes.web_routes import web_routes
 
 # ─── Validate Environment Variables ─────────────────────────
-from config.env_validator import validate_environment
+from utils.env_validator import validate_environment
 if not validate_environment():
     import sys
     print("❌ Application startup aborted due to environment validation failures")
@@ -74,8 +74,9 @@ babel.localeselector = get_locale
 # Import CSRF protection from dedicated module
 from utils.csrf_protection import csrf
 
-# Wrap ASGI app with basic tracing middleware
-app.asgi_app = RequestTracingMiddleware(app.asgi_app)
+# Wrap ASGI app with tracing middleware only if OTEL is enabled
+if getattr(config, 'OTEL_ENABLED', True):
+    app.asgi_app = RequestTracingMiddleware(app.asgi_app)
 
 # Security headers
 @app.after_request
@@ -107,8 +108,13 @@ async def startup():
     # Set app start time for health checks
     app.start_time = time.time()
 
-    # Initialize observability (traces/metrics)
-    init_otel(service_name="madrasa-app", environment="development", service_version=getattr(config, 'SERVER_VERSION', '0.0.0'))
+    # Initialize observability (traces/metrics) only if enabled
+    if getattr(config, 'OTEL_ENABLED', True):
+        init_otel(
+            service_name="madrasa-app",
+            environment="development",
+            service_version=getattr(config, 'SERVER_VERSION', '0.0.0')
+        )
 
     initialize_application()
     await create_tables_async()

@@ -127,9 +127,9 @@ class ProcessManager:
             
             # Use Hypercorn for all platforms
             if dev_mode:
-                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "hypercorn.toml", "--log-level", "debug", "--access-logformat", "%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s \"%(f)s\" \"%(a)s\""]
+                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "config/hypercorn.toml", "--log-level", "debug", "--access-logformat", "%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s \"%(f)s\" \"%(a)s\""]
             else:
-                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "hypercorn.toml"]
+                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "config/hypercorn.toml"]
             
             # Set environment variables
             env = os.environ.copy()
@@ -488,7 +488,7 @@ class AdvancedServerRunner:
                 return False
             
             # Check required files
-            required_files = ["app.py", "hypercorn.toml"]
+            required_files = ["app.py", "config/hypercorn.toml"]
             for file in required_files:
                 if not (self.config.base_dir / file).exists():
                     self.logger.error(f"Required file not found: {file}")
@@ -560,11 +560,11 @@ Examples:
         return
     
     # Check for dev mode file
-    dev_md = Path(__file__).resolve().parent / "dev.md"
-    dev_mode = dev_md.is_file() or args.dev
+    if args.dev or args.dev is not None:
+        dev_mode = True
     
     print(f"Detected OS: {platform.system()}")
-    print(f"Dev mode: {'ON' if dev_mode else 'OFF'}")
+    print(f"Dev mode: {'ON' if dev_mode is not None else 'OFF'}")
     
     # Run server
     success = runner.run(dev_mode=dev_mode, daemon=args.daemon)

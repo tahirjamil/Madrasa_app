@@ -4,7 +4,7 @@ quart-cors
 quart-csrf
 aiomysql
 # Use redis-py asyncio client instead of deprecated aioredis
-redis[hiredis]>=5.0
+redis[hiredis]
 hypercorn
 quart-babel
 Babel

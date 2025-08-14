@@ -92,8 +92,8 @@ CREATE TABLE IF NOT EXISTS logs (
 
                 action     VARCHAR(100) NOT NULL,
                 trace_info      VARCHAR(255),
-                trace_info_hash  CHAR(64) NOT NULL,
-                trace_info_encrypted VARCHAR(255) NOT NULL,
+                trace_info_hash  CHAR(64) NULL,
+                trace_info_encrypted VARCHAR(255) NULL,
                 level      VARCHAR(10)  NOT NULL CHECK (level IN ('info','warning','error','critical')) DEFAULT 'info',
                 message    TEXT NOT NULL,
                 metadata   JSON,

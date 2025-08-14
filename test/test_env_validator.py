@@ -14,7 +14,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.env_validator import EnvValidator, validate_environment
+from utils.env_validator import EnvValidator, validate_environment
 
 
 class TestEnvValidator(unittest.TestCase):

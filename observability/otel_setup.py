@@ -1,4 +1,6 @@
 from typing import Optional
+import os
+import time
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
@@ -52,5 +54,30 @@ def init_otel(service_name: str, environment: Optional[str] = None, service_vers
         except Exception:
             # Metrics are optional; tracing remains active
             pass
+
+    # If strict mode is requested, verify exporter connectivity up-front to fail fast
+    otel_strict = os.getenv("OTEL_STRICT", "true").lower() in ("1", "true", "yes", "on")
+    if otel_strict:
+        # Create a quick test span and force a flush; if exporter is unavailable, the SDK exporter
+        # will raise or log errors synchronously in flush path shortly thereafter.
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span("otel.startup.healthcheck"):
+            pass
+        # Give the BatchSpanProcessor a brief moment to export, then shutdown to surface errors
+        # (shutdown flushes processors synchronously)
+        try:
+            # Try a very short sleep to allow background batch to kick in
+            time.sleep(0.05)
+            # Explicit provider shutdown ensures exporter connectivity gets exercised now
+            trace.get_tracer_provider().shutdown()
+        except Exception as exc:  # pragma: no cover
+            # Re-raise so the app can fail fast when strict mode is on
+            raise RuntimeError(f"OpenTelemetry strict startup check failed: {exc}")
+        finally:
+            # Recreate provider after shutdown for normal runtime (since we shut it down above)
+            tracer_provider = TracerProvider(resource=resource)
+            span_exporter = OTLPSpanExporter()
+            tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
+            trace.set_tracer_provider(tracer_provider)
 
 

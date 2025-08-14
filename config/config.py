@@ -30,6 +30,15 @@ class MadrasaConfig:
     BASE_URL = "http://www.annurcomplex.com/"
     
     # ============================================================================
+    # OBSERVABILITY / OPENTELEMETRY CONFIGURATION
+    # ============================================================================
+    # Enable/disable OpenTelemetry completely. If disabled, no tracing/metrics are initialized.
+    OTEL_ENABLED = os.getenv("OTEL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+    # Strict mode: if enabled and exporter is unreachable, the app raises (fails fast) instead of logging warnings.
+    OTEL_STRICT = os.getenv("OTEL_STRICT", "true").lower() in ("1", "true", "yes", "on")
+
+    
+    # ============================================================================
     # SECURITY CONFIGURATION
     # ============================================================================
     

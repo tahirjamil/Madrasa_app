@@ -9,9 +9,8 @@ from quart_cors import cors
 from dotenv import load_dotenv
 from quart_babel import Babel
 import socket
-from myapp import MyApp
 
-from config import config, MadrasaConfig
+from config import config, MadrasaConfig, MadrasaApp
 from database import create_tables
 from database.database_utils import connect_to_db
 from keydb.keydb_utils import connect_to_keydb, close_keydb
@@ -51,7 +50,7 @@ env = BASE_DIR / ".env"
 
 load_dotenv(env)
 
-app = MyApp(__name__)
+app = MadrasaApp(__name__)
 app = cors(app, allow_origin="*")
 app.config.from_object(MadrasaConfig)
 

@@ -1,9 +1,8 @@
 import asyncio
 import aiomysql, os
 from typing import Any, cast, TypedDict, Optional
-from myapp import MyApp
 from quart import current_app
-from config import config
+from config import config, MadrasaApp
 
 class AiomysqlConnectConfig(TypedDict, total=False):
     host: str
@@ -95,7 +94,7 @@ async def connect_to_db() -> Optional[aiomysql.Connection]:
 
 async def get_db():
     """Get the database connection from the app context."""
-    app = cast(MyApp, current_app)
+    app = cast(MadrasaApp, current_app)
     if not hasattr(app, 'db') or app.db is None:
         raise RuntimeError("Database connection not available")
     return app.db

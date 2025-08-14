@@ -12,10 +12,17 @@ Version: 1.0.0
 import os
 from dotenv import load_dotenv
 from functools import lru_cache
+from quart import Quart
+from typing import Optional
+from aiomysql import Connection
 
 # Load environment variables
 load_dotenv()
 
+
+class MadrasaApp(Quart):
+    start_time: float
+    db: Optional[Connection]
 
 class MadrasaConfig:
     """ Configuration class for the Madrasha application. """

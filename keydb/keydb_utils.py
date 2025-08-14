@@ -4,8 +4,7 @@ from typing import Any, Optional, Tuple, TypedDict, Union, cast
 
 from quart import current_app
 
-from myapp import MyApp
-from config import config
+from config import config, MadrasaApp
 from observability.db_tracing import TracedRedisPool
 
 # Redis asyncio client (redis-py >= 4.2 / 5.x)
@@ -104,7 +103,7 @@ async def connect_to_keydb():
 
 async def get_keydb():
     """Get the KeyDB pool from the app context."""
-    app = cast(MyApp, current_app)
+    app = cast(MadrasaApp, current_app)
     if not hasattr(app, "keydb") or app.keydb is None:
         raise RuntimeError("KeyDB connection not available")
     return app.keydb

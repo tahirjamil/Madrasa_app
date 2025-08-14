@@ -25,6 +25,7 @@ from keydb.keydb_utils import get_keydb_connection
 from config import config
 from utils.logger import log
 
+load_dotenv()
 
 # CacheManager removed; KeyDB is required for all caching operations
 
@@ -895,51 +896,8 @@ async def get_system_health() -> Dict[str, Any]:
     }
 
 
-# ─── Performance Monitoring ─────────────────────────────────────────────────
-
-class PerformanceMonitor:
-    """Monitor application performance and resource usage"""
-    
-    def __init__(self):
-        self.request_times = []
-        self.error_counts = {}
-        self.start_time = time.time()
-    
-    def record_request_time(self, endpoint: str, duration: float) -> None:
-        """Record request processing time"""
-        self.request_times.append({
-            'endpoint': endpoint,
-            'duration': duration,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        # Keep only last 1000 requests
-        if len(self.request_times) > 1000:
-            self.request_times = self.request_times[-1000:]
-    
-    def record_error(self, error_type: str, details: str) -> None:
-        """Record error occurrence"""
-        if error_type not in self.error_counts:
-            self.error_counts[error_type] = 0
-        self.error_counts[error_type] += 1
-    
-    def get_performance_stats(self) -> Dict[str, Any]:
-        """Get performance statistics"""
-        if not self.request_times:
-            return {"message": "No performance data available"}
-        
-        durations = [req['duration'] for req in self.request_times]
-        return {
-            "total_requests": len(self.request_times),
-            "average_response_time": sum(durations) / len(durations),
-            "min_response_time": min(durations),
-            "max_response_time": max(durations),
-            "uptime_seconds": time.time() - self.start_time,
-            "error_counts": self.error_counts
-        }
-
-# not needed in top: performance monitor will be replaced by OpenTelemetry
-performance_monitor = PerformanceMonitor()
+# ─── Performance Monitoring (removed; replaced by OpenTelemetry) ─────────────
+# Previously: PerformanceMonitor with in-process counters. Replaced by OTEL spans/metrics.
 
 # ─── Advanced Error Handling ───────────────────────────────────────────────
 

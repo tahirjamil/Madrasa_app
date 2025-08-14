@@ -18,7 +18,7 @@ from observability.otel_setup import init_otel
 from observability.asgi_middleware import RequestTracingMiddleware
 
 # API & Web Blueprints
-from utils.helpers import get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter, security_manager
+from utils.helpers import get_system_health, initialize_application, metrics_collector, rate_limiter, security_manager
 from routes.admin_routes import admin_routes
 from routes.api import api
 from routes.web_routes import web_routes

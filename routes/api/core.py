@@ -20,7 +20,7 @@ from utils.helpers import (
     format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, get_cache_key,
     rate_limit, cache_with_invalidation, secure_data, security_manager, set_cached_data, get_cached_data,
     encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
-    performance_monitor, metrics_collector, validate_file_upload, validate_fullname, validate_request_origin,
+    metrics_collector, validate_file_upload, validate_fullname, validate_request_origin,
 )
 from quart_babel import gettext as _
 from utils.logger import log

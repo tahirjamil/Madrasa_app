@@ -32,7 +32,7 @@ sys.modules['PIL.Image'] = MagicMock()
 
 # Test basic import first
 try:
-    from config import Config
+    from config.config import Config
     IMPORT_SUCCESS = True
 except Exception as e:
     print(f"Import failed: {e}")

@@ -21,89 +21,12 @@ from quart import Request, Response, flash, g, jsonify, redirect, request
 from quart_babel import gettext as _
 from cryptography.fernet import Fernet
 from database.database_utils import get_db_connection
+from keydb.keydb_utils import get_keydb_connection
 from config import config
 from utils.logger import log
 
 
-# ---------- improved CacheManager ----------
-class CacheManager:
-    def __init__(self, max_size: int = 1000, cleanup_interval: int = 300):
-        self._cache: Dict[str, (Any, float)] = {}
-        self._max_size = max_size
-        self._cleanup_interval = cleanup_interval
-        self._lock = threading.RLock()
-        self._last_cleanup = time.time()
-
-    def _maybe_cleanup(self) -> None:
-        now = time.time()
-        if now - self._last_cleanup < self._cleanup_interval:
-            return
-        self._last_cleanup = now
-        self._cleanup()
-
-    def get(self, key: str, default: Any = None) -> Any:
-        with self._lock:
-            self._maybe_cleanup()
-            item = self._cache.get(key)
-            if item is None:
-                return default
-            value, expiry = item
-            if expiry is None or time.time() < expiry:
-                return value
-            # expired
-            self._cache.pop(key, None)
-            return default
-
-    def set(self, key: str, value: Any, ttl: Optional[int] = 3600) -> None:
-        expiry = None if ttl is None else time.time() + ttl
-        with self._lock:
-            if len(self._cache) >= self._max_size:
-                self._cleanup()
-            self._cache[key] = (value, expiry)
-
-    def delete(self, key: str) -> None:
-        with self._lock:
-            self._cache.pop(key, None)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._cache.clear()
-
-    def keys(self):
-        with self._lock:
-            return list(self._cache.keys())
-
-    def delete_pattern(self, pattern: str) -> int:
-        """
-        Delete entries whose key matches a glob-style pattern or substring.
-        Returns number of deleted keys.
-        """
-        with self._lock:
-            deleted = []
-            # support both glob patterns (with *?) and simple substring
-            is_glob = any(ch in pattern for ch in "*?[]")
-            for key in list(self._cache.keys()):
-                match = fnmatch.fnmatch(key, pattern) if is_glob else (pattern in key)
-                if match:
-                    deleted.append(key)
-                    self._cache.pop(key, None)
-            return len(deleted)
-
-    def _cleanup(self) -> None:
-        now = time.time()
-        # remove expired
-        expired = [k for k, (_, exp) in self._cache.items() if exp is not None and now >= exp]
-        for k in expired:
-            self._cache.pop(k, None)
-        # if still too many, remove oldest by expiry (None=forever -> put last)
-        if len(self._cache) > self._max_size:
-            ordered = sorted(self._cache.items(), key=lambda kv: (kv[1][1] is None, kv[1][1] or float('inf')))
-            to_remove = len(self._cache) - (self._max_size // 2)
-            for k, _ in ordered[:to_remove]:
-                self._cache.pop(k, None)
-
-# global cache instance
-cache = CacheManager()
+# CacheManager removed; KeyDB is required for all caching operations
 
 # ---------- Cache Functions ----------
 def get_cache_key(prefix: str, **kwargs) -> str:
@@ -113,24 +36,55 @@ def get_cache_key(prefix: str, **kwargs) -> str:
         parts.append(f"{k}:{json.dumps(v, sort_keys=True, separators=(',',':'), default=str, ensure_ascii=False)}")
     return ":".join(parts)
 
-def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: Any = None) -> Any:
-    # metrics + TTL default handled here
+async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: Any = None) -> Any:
+    """Fetch cached JSON-serializable data from KeyDB. Falls back to in-memory cache if needed."""
     if ttl is None:
         ttl = getattr(config, "CACHE_TTL", 3600)
-    val = cache.get(cache_key, default=None)
-    if val is not None:
-        metrics_collector.increment("cache_hits")
-        return val
-    metrics_collector.increment("cache_misses")
-    return default
+    try:
+        pool = await get_keydb_connection()
+        raw = await pool.get(cache_key)
+        if raw is not None:
+            metrics_collector.increment("cache_hits")
+            try:
+                return json.loads(raw)
+            except Exception:
+                return raw
+        metrics_collector.increment("cache_misses")
+        return default
+    except Exception as e:
+        raise RuntimeError(f"KeyDB unavailable when getting cache key '{cache_key}': {e}")
 
-def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) -> None:
+async def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) -> None:
+    """Store JSON-serializable data in KeyDB with TTL. Falls back to in-memory cache if needed."""
     if ttl is None:
         ttl = getattr(config, "CACHE_TTL", 3600)
-    cache.set(cache_key, data, ttl)
+    try:
+        pool = await get_keydb_connection()
+        payload = canonical_json(data)
+        # aioredis 1.x supports expire argument in set
+        await pool.set(cache_key, payload, expire=int(ttl) if ttl else None)
+    except Exception as e:
+        raise RuntimeError(f"KeyDB unavailable when setting cache key '{cache_key}': {e}")
+
+async def _invalidate_cache_pattern_async(pattern: str) -> int:
+    """Asynchronously delete keys matching pattern from KeyDB. Returns number deleted."""
+    try:
+        pool = await get_keydb_connection()
+        # Use KEYS for simplicity; for large keyspaces consider SCAN.
+        keys = await pool.keys(pattern)
+        if not keys:
+            return 0
+        # aioredis delete supports varargs
+        await pool.delete(*keys)
+        return len(keys)
+    except Exception as e:
+        raise RuntimeError(f"KeyDB unavailable when invalidating pattern '{pattern}': {e}")
 
 def invalidate_cache_pattern(pattern: str) -> int:
-    return cache.delete_pattern(pattern)
+    """Fire-and-forget invalidation against KeyDB; returns 0 immediately. Fallback clears local cache."""
+    loop = asyncio.get_event_loop()
+    loop.create_task(_invalidate_cache_pattern_async(pattern))
+    return 0
 
 # operation -> patterns mapping (domain specific)
 CACHE_INVALIDATION_MAP = {
@@ -147,15 +101,16 @@ def invalidate_related_cache(operation: str, **kwargs) -> None:
         invalidate_cache_pattern(p)
 
 # ---------- decorator for endpoint-level caching ----------
-def cache_with_invalidation(ttl: int = 3600):
+def cache_with_invalidation(func: Optional[Callable] = None, *, ttl: int = 3600):
+    """Decorator for endpoint-level caching backed by KeyDB.
+
+    Supports both usages:
+      @cache_with_invalidation
+      @cache_with_invalidation(ttl=300)
     """
-    Decorator factory for caching async/sync view funcs.
-    Uses request fingerprint to build a key. Skips caching Response objects.
-    """
-    def deco(func: Callable):
-        @wraps(func)
+    def _decorate(f: Callable):
+        @wraps(f)
         async def wrapper(*args, **kwargs):
-            # Build fingerprint deterministically
             try:
                 method = request.method
                 path = request.path
@@ -170,24 +125,24 @@ def cache_with_invalidation(ttl: int = 3600):
                 fingerprint = json.dumps({"m": method, "p": path, "q": query, "b": body},
                                          sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
             except Exception:
-                # fallback to args/kwargs if no request context
                 fingerprint = json.dumps({"args": [repr(a) for a in args], "kwargs": kwargs},
                                          sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
 
-            key = f"{func.__module__}.{func.__name__}:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
-            cached = cache.get(key, default=None)
+            key = f"{f.__module__}.{f.__name__}:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
+            cached = await get_cached_data(key, ttl=ttl)
             if cached is not None:
                 return cached
 
-            result = await func(*args, **kwargs) if callable(getattr(func, "__call__", None)) else func(*args, **kwargs)
-
-            # only cache pure data (not Response) to avoid header staleness
+            result = await f(*args, **kwargs)
             if not isinstance(result, Response):
-                cache.set(key, result, ttl)
+                await set_cached_data(key, result, ttl=ttl)
             return result
 
         return wrapper
-    return deco
+
+    if callable(func):
+        return _decorate(func)
+    return _decorate
 
 # ---------- Enhanced HTTP Cache ---------- TODO: This is unknown
 class EnhancedJSONEncoder(json.JSONEncoder):
@@ -457,7 +412,7 @@ async def get_db_context():
 async def get_email(fullname: str, phone: str) -> Optional[str]:
     """Get user email with caching"""
     cache_key = f"email:{fullname}:{phone}"
-    cached_email = cache.get(cache_key)
+    cached_email = await get_cached_data(cache_key)
     if cached_email:
         return cached_email
     
@@ -475,7 +430,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
                 
                 email = result['email'] if result else None
                 if email:
-                    cache.set(cache_key, email, ttl=3600)  # Cache for 1 hour
+                    await set_cached_data(cache_key, email, ttl=3600)  # Cache for 1 hour
                 return email
         except Exception as e:
             log.critical(action="db_error with get_email", trace_info=phone, message=str(e), secure=True)
@@ -484,7 +439,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
 async def get_id(phone: str, fullname: str) -> Optional[int]:
     """Get user ID with caching"""
     cache_key = f"user_id:{phone}:{fullname}"
-    cached_id = cache.get(cache_key)
+    cached_id = await get_cached_data(cache_key)
     if cached_id:
         return cached_id
     
@@ -503,7 +458,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
                 
                 user_id = result['user_id'] if result else None
                 if user_id:
-                    cache.set(cache_key, user_id, ttl=3600)  # Cache for 1 hour
+                    await set_cached_data(cache_key, user_id, ttl=3600)  # Cache for 1 hour
                 return user_id
         except Exception as e:
             log.critical(action="get_id_error", trace_info=phone,message=str(e), secure=True)
@@ -783,15 +738,13 @@ def calculate_fees(class_name: str, gender: str, special_food: int,
 def load_results() -> List[Dict[str, Any]]:
     """Load exams results with caching and error handling."""
     cache_key = "load_results:default"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+    # File-based data; skip remote cache and always read
     try:
         with open(config.EXAM_RESULTS_INDEX_FILE, 'r') as f:
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         data = []
-    cache.set(cache_key, data, ttl=config.CACHE_TTL)
+    # Not cached remotely to avoid stale file index issues
     return data
 
 def save_results(data: List[Dict[str, Any]]) -> None:
@@ -811,9 +764,7 @@ def save_results(data: List[Dict[str, Any]]) -> None:
 def load_notices() -> List[Dict[str, Any]]:
     """Load notices with caching and auto-recovery from corrupted files."""
     cache_key = "load_notices:default"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+    # File-based data; skip remote cache and always read
     try:
         with open(config.NOTICES_INDEX_FILE, 'r') as f:
             data = json.load(f)
@@ -824,7 +775,7 @@ def load_notices() -> List[Dict[str, Any]]:
         data = []
     except FileNotFoundError:
         data = []
-    cache.set(cache_key, data, ttl=config.CACHE_TTL)
+    # Not cached remotely to avoid stale file index issues
     return data
 
 def save_notices(data: List[Dict[str, Any]]) -> None:
@@ -909,6 +860,16 @@ async def get_system_health() -> Dict[str, Any]:
     elif db_health["status"] == "unhealthy" or fs_health["status"] == "unhealthy":
         status = "unhealthy"
     
+    # Try to fetch KeyDB dbsize as cache_size; if unavailable set 0
+    try:
+        from_keydb = await get_keydb_connection()
+        try:
+            cache_size = int(await from_keydb.dbsize())
+        except Exception:
+            cache_size = int(await from_keydb.execute('DBSIZE'))
+    except Exception:
+        cache_size = 0
+
     return {
         "status": status,
         "version": config.SERVER_VERSION,
@@ -917,7 +878,7 @@ async def get_system_health() -> Dict[str, Any]:
         "file_system": fs_health,
         "maintenance_mode": config.is_maintenance(),
         "test_mode": config.is_testing(),
-        "cache_size": len(cache._cache),
+        "cache_size": cache_size,
         "rate_limiter_size": len(rate_limiter._requests)
     }
 
@@ -1043,9 +1004,6 @@ metrics_collector = MetricsCollector()
 def initialize_application() -> bool:
     """Initialize application with all necessary components"""
     try:
-        # Initialize cache
-        cache.clear()
-        
         # Initialize rate limiter
         rate_limiter._requests.clear()
         
@@ -1578,25 +1536,32 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
         )
         return False, "Error checking device limit"
 
-def check_login_attempts(identifier: str) -> Tuple[bool, int]:
-    """Check login attempts and return if allowed and remaining attempts"""
+async def check_login_attempts(identifier: str) -> Tuple[bool, int]:
+    """Check login attempts in KeyDB and return (allowed, remaining)."""
     cache_key = f"login_attempts:{identifier}"
-    attempts = cache.get(cache_key, 0)
-    
+    try:
+        pool = await get_keydb_connection()
+        raw = await pool.get(cache_key)
+        attempts = int(raw or 0)
+    except Exception as e:
+        raise RuntimeError(f"KeyDB unavailable for login attempts check: {e}")
     if attempts >= config.LOGIN_ATTEMPTS_LIMIT:
         return False, 0
-    
     return True, config.LOGIN_ATTEMPTS_LIMIT - attempts
 
-def record_login_attempt(identifier: str, success: bool) -> None:
-    """Record login attempt for rate limiting"""
+async def record_login_attempt(identifier: str, success: bool) -> None:
+    """Record login attempt in KeyDB (increment on failure, clear on success)."""
     cache_key = f"login_attempts:{identifier}"
-    
-    if success:
-        cache.delete(cache_key)
-    else:
-        attempts = cache.get(cache_key, 0) + 1
-        cache.set(cache_key, attempts, ttl=config.LOGIN_LOCKOUT_MINUTES * 60)
+    try:
+        pool = await get_keydb_connection()
+        if success:
+            await pool.delete(cache_key)
+        else:
+            raw = await pool.get(cache_key)
+            attempts = int(raw or 0) + 1
+            await pool.set(cache_key, attempts, expire=int(config.LOGIN_LOCKOUT_MINUTES * 60))
+    except Exception as e:
+        raise RuntimeError(f"KeyDB unavailable for recording login attempts: {e}")
 
 
 # ─── Utility Functions ─────────────────────────────────────────────────────

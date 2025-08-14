@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 import datetime as dt
@@ -15,7 +16,7 @@ from . import api
 from database.database_utils import get_db_connection
 from config import config
 from utils.helpers import (
-    cache, check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, 
+    check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, 
     get_client_info, record_login_attempt, secure_data, send_sms, send_email, 
     get_email, rate_limit, encrypt_sensitive_data, hash_sensitive_data,
     handle_async_errors, validate_device_info, validate_email, validate_fullname, validate_password_strength,
@@ -251,7 +252,7 @@ async def login() -> Tuple[Response, int] | None:
         
     # Check login attempts
     identifier = f"{formatted_phone}:{fullname}"
-    is_allowed, remaining_attempts = check_login_attempts(identifier)
+    is_allowed, remaining_attempts = await check_login_attempts(identifier)
         
     if not is_allowed:
         log.warning(action="login_rate_limited", trace_info=ip_address, message=f"Login rate limited for: {fullname} remaining attempts: {remaining_attempts}", secure=False)
@@ -273,13 +274,13 @@ async def login() -> Tuple[Response, int] | None:
             user = await cursor.fetchone()
             
             if not user:
-                record_login_attempt(identifier, False)
+                await record_login_attempt(identifier, False)
                 log.error(action="login_user_not_found", trace_info=formatted_phone, message=f"User not found: {fullname}", secure=True)
                 return jsonify({"message": ERROR_MESSAGES['account_not_found']}), 404
             
             # Check password
             if not check_password_hash(user["password_hash"], password):
-                record_login_attempt(identifier, False)
+                await record_login_attempt(identifier, False)
                 log.warning(action="login_incorrect_password", trace_info=formatted_phone, message="Incorrect password", secure=True)
                 return jsonify({"message": ERROR_MESSAGES['invalid_credentials']}), 401
             
@@ -300,7 +301,7 @@ async def login() -> Tuple[Response, int] | None:
                 }), 403
             
             # Record successful login
-            record_login_attempt(identifier, True)
+            await record_login_attempt(identifier, True)
             
             # Get complete user information
             await cursor.execute(
@@ -321,13 +322,14 @@ async def login() -> Tuple[Response, int] | None:
                     WHERE u.user_id = %s AND p.phone = %s AND p.name = %s""",
                 (user["user_id"], formatted_phone, fullname)
             )
-            info = await cursor.fetchone()
+            info = await cursor.fetchone() if cursor.fetchone() else None
             
             if not info or not info.get("phone") or not info.get("user_id"):
                 log.warning(action="login_incomplete_profile", trace_info=formatted_phone, message="Missing profile info", secure=True)
                 return jsonify({
-                    "error": "incomplete_profile", 
-                    "message": _("Additional info required")
+                    "error": "incomplete_profile",
+                    "message": _("Additional info required"),
+                    "info" : info
                 }), 422
             
             # Remove sensitive information
@@ -966,7 +968,7 @@ def validate_session_security(session_data: Dict[str, Any]) -> Tuple[bool, str]:
     
     return True, ""
 
-def track_user_activity(user_id: int, activity_type: str, details: Dict[str, Any]) -> None:
+async def track_user_activity(user_id: int, activity_type: str, details: Dict[str, Any]) -> None:
     """Track user activity for security monitoring"""
     try:
         activity_data = {
@@ -985,23 +987,25 @@ def track_user_activity(user_id: int, activity_type: str, details: Dict[str, Any
             **activity_data
         )
         
-        # Store in cache for rate limiting
+        # Store in cache for rate limiting using KeyDB-backed helper
+        from utils.helpers import set_cached_data
         cache_key = f"user_activity:{user_id}:{activity_type}"
-        cache.set(cache_key, activity_data, ttl=3600)  # 1 hour
+        await set_cached_data(cache_key, activity_data, ttl=3600)
         
     except Exception as e:
                 log.critical(action="activity_tracking_error", trace_info="system", message=f"Error tracking user activity: {str(e)}", secure=False)
 
-def check_account_security_status(user_id: int) -> Dict[str, Any]:
+async def check_account_security_status(user_id: int) -> Dict[str, Any]:
     """Check account security status and return security metrics"""
     try:
         # Get recent login attempts
-        login_attempts = cache.get(f"login_attempts:{user_id}", 0)
+        from utils.helpers import get_cached_data
+        login_attempts = await get_cached_data(f"login_attempts:{user_id}", default=0)
         
         # Get recent activities
         recent_activities = []
         for activity_type in ['login', 'logout', 'password_change', 'account_modification']:
-            activity_data = cache.get(f"user_activity:{user_id}:{activity_type}")
+            activity_data = await get_cached_data(f"user_activity:{user_id}:{activity_type}", default=None)
             if activity_data:
                 recent_activities.append(activity_data)
         

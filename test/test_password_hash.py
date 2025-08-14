@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import Config
+from config.config import Config
 
 dummy_password = Config.DUMMY_PASSWORD
 

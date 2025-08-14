@@ -273,7 +273,6 @@ async def get_metrics() -> Response:
         return jsonify({
             "metrics": metrics,
             "performance": performance_stats,
-            "cache_size": len(cache._cache),
             "rate_limiter_size": len(rate_limiter._requests),
             "timestamp": datetime.now(timezone.utc).isoformat()
         })

@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import Config
+from config.config import Config
 
 def test_config_loading():
     """Test if configuration is loaded correctly"""

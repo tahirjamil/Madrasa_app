@@ -20,7 +20,7 @@ from utils.helpers import (
     format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, get_cache_key,
     rate_limit, cache_with_invalidation, secure_data, security_manager, set_cached_data, get_cached_data,
     encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
-    cache, performance_monitor, metrics_collector, validate_file_upload, validate_fullname, validate_request_origin,
+    performance_monitor, metrics_collector, validate_file_upload, validate_fullname, validate_request_origin,
 )
 from quart_babel import gettext as _
 from utils.logger import log
@@ -355,7 +355,7 @@ async def get_info() -> Tuple[Response, int]:
         
         # Execute query with enhanced cache management
         cache_key = get_cache_key("members", lastfetched=lastfetched)
-        cached_members = get_cached_data(cache_key)
+        cached_members = await get_cached_data(cache_key)
         
         if cached_members is not None:
             return jsonify(cached_members), 200
@@ -370,7 +370,7 @@ async def get_info() -> Tuple[Response, int]:
             "members": members,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
+        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_members", {
@@ -443,7 +443,7 @@ async def get_routine() -> Tuple[Response, int]:
         
         # Execute query with enhanced cache management
         cache_key = get_cache_key("routines", lastfetched=lastfetched)
-        cached_routines = get_cached_data(cache_key)
+        cached_routines = await get_cached_data(cache_key)
         
         if cached_routines is not None:
             return jsonify(cached_routines), 200
@@ -458,7 +458,7 @@ async def get_routine() -> Tuple[Response, int]:
             "routines": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
+        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_routines", {
@@ -526,7 +526,7 @@ async def events() -> Tuple[Response, int]:
         
         # Execute query with enhanced cache management
         cache_key = get_cache_key("events", lastfetched=lastfetched)
-        cached_events = get_cached_data(cache_key)
+        cached_events = await get_cached_data(cache_key)
         
         if cached_events is not None:
             return jsonify(cached_events), 200
@@ -569,7 +569,7 @@ async def events() -> Tuple[Response, int]:
             "events": rows,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
+        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_events", {
@@ -639,7 +639,7 @@ async def get_exams() -> Tuple[Response, int]:
         
         # Execute query with enhanced cache management
         cache_key = get_cache_key("exams", lastfetched=lastfetched)
-        cached_exams = get_cached_data(cache_key)
+        cached_exams = await get_cached_data(cache_key)
         
         if cached_exams is not None:
             return jsonify(cached_exams), 200
@@ -654,7 +654,7 @@ async def get_exams() -> Tuple[Response, int]:
             "exams": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
+        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
         log_operation_success("get_exams", {

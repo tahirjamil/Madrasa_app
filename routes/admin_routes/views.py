@@ -6,7 +6,8 @@ from utils.helpers import (
     load_results, load_notices, save_notices, save_results, 
     cache_with_invalidation, 
     handle_async_errors, rate_limit, hash_sensitive_data, 
-    encrypt_sensitive_data, format_phone_number, get_db_context
+    encrypt_sensitive_data, format_phone_number, get_db_context,
+    get_cache_key, get_cached_data, set_cached_data
 )
 from utils.logger import log
 from config import config
@@ -63,7 +64,9 @@ async def admin_dashboard():
     student_class = request.args.get('student_class', 'all')
 
     try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             # Load database list
             await cursor.execute("SHOW DATABASES")
             databases = [row["Database"] for row in await cursor.fetchall()]
@@ -181,15 +184,24 @@ async def view_logs():
     except Exception as e:
         await flash(f"Database connection error: {str(e)}", "danger")
         return await render_template("admin/logs.html", logs=[])
-    
+
+    # Try cache first
+    cache_key = get_cache_key("admin:logs")
+    cached_logs = await get_cached_data(cache_key)
+    if cached_logs is not None:
+        return await render_template("admin/logs.html", logs=cached_logs)
+
     try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
                 "SELECT log_id, action, phone, message, created_at "
                 "FROM logs "
                 "ORDER BY created_at DESC"
             )
             logs = await cursor.fetchall()
+            await set_cached_data(cache_key, logs, ttl=config.SHORT_CACHE_TTL)
     except Exception as e:
         await flash(f"Database error: {str(e)}", "danger")
         logs = []
@@ -309,21 +321,31 @@ async def members():
         return await render_template("admin/members.html", types=[], selected_type=None, members=[], pending=[])
     madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
     
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-        # Fetch all peoples with account types
-        await cursor.execute(f"""
-            SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
-            FROM {madrasa_name}.peoples p
-            LEFT JOIN global.acc_types a ON a.user_id = p.user_id
-        """)
-        peoples = list(await cursor.fetchall())
-        
-        # Note: verify_peoples table might not exist in new schema
-        try:
-            await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
-            pending = await cursor.fetchall()
-        except:
-            pending = []
+    # Cache the base peoples/pending payload
+    base_key = get_cache_key("admin:peoples", madrasa=madrasa_name)
+    base_cached = await get_cached_data(base_key)
+    if base_cached is not None:
+        peoples = base_cached.get('peoples', [])
+        pending = base_cached.get('pending', [])
+    else:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
+            # Fetch all peoples with account types
+            await cursor.execute(f"""
+                SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
+                FROM {madrasa_name}.peoples p
+                LEFT JOIN global.acc_types a ON a.user_id = p.user_id
+            """)
+            peoples = list(await cursor.fetchall())
+            
+            # Note: verify_peoples table might not exist in new schema
+            try:
+                await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
+                pending = await cursor.fetchall()
+            except:
+                pending = []
+        await set_cached_data(base_key, {"peoples": peoples, "pending": pending}, ttl=config.SHORT_CACHE_TTL)
 
     # Build list of distinct account types
     types = sorted({m['acc_type'] for m in peoples if m.get('acc_type')})
@@ -451,16 +473,25 @@ async def routines():
     if conn is None:
         await flash("Database connection failed", "danger")
         return await render_template("admin/routines.html", routines_by_class={}, sort=sort)
-    try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-                SELECT *
-                  FROM routines
-                 ORDER BY class_group ASC, serial ASC
-            """)
-            rows = await cursor.fetchall()
-    except Exception as e:
-        rows = []
+    # cache routines list per madrasa
+    cache_key = get_cache_key("admin:routines", madrasa=os.getenv("MADRASA_NAME", "annur"))
+    cached = await get_cached_data(cache_key)
+    if cached is not None:
+        rows = cached
+    else:
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from observability.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute("""
+                    SELECT *
+                      FROM routines
+                     ORDER BY class_group ASC, serial ASC
+                """)
+                rows = await cursor.fetchall()
+                await set_cached_data(cache_key, rows, ttl=config.SHORT_CACHE_TTL)
+        except Exception as e:
+            rows = []
 
     # group by class_group
     routines_by_class = {}
@@ -506,35 +537,43 @@ async def events():
         return await render_template("admin/events.html", events=[])
     madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
     
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-            # TODO: Disabled for view-only mode
-            # ─── handle form submission ────────────────────────────
-            # if request.method == 'POST':
-            #     username     = request.form.get('username', '').strip()
-            #     password     = request.form.get('password', '').strip()
-            #     ADMIN_USER   = os.getenv("ADMIN_USERNAME")
-            #     ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
+    cache_key = get_cache_key("admin:events", madrasa=madrasa_name)
+    cached = await get_cached_data(cache_key)
+    if cached is not None:
+        events = cached if not config.is_testing() else []
+        return await render_template("admin/events.html", events=events)
 
-            #     if username != ADMIN_USER or password != ADMIN_PASS:
-            #         flash("❌ Invalid admin credentials.", "danger")
-            #     else:
-            #         title        = request.form.get('title', '').strip()
-            #         evt_type     = request.form.get('type')
-            #         date_str     = request.form.get('date')       # YYYY-MM-DD
-            #         time_str     = request.form.get('time')       # HH:MM
-            #         function_url = request.form.get('function_url') or None
-
-            #         # Combine into a full timestamp string
-            #         # MySQL will parse "YYYY-MM-DD HH:MM"
-            #         datetime_str = f"{date_str} {time_str}"
-
-            #         cursor.execute("""
-            #             INSERT INTO events
-            #               (type, title, time, date, function_url)
-            #             VALUES (%s, %s, %s, %s, %s)
-            #         """, (evt_type, title, datetime_str, date_str, function_url))
-            #         conn.commit()
-            #         flash("✅ Event added successfully.", "success")
+    async with conn.cursor(aiomysql.DictCursor) as _cursor:
+        from observability.db_tracing import TracedCursorWrapper
+        cursor = TracedCursorWrapper(_cursor)
+        # TODO: Disabled for view-only mode
+        # ─── handle form submission ────────────────────────────
+        # if request.method == 'POST':
+        #     username     = request.form.get('username', '').strip()
+        #     password     = request.form.get('password', '').strip()
+        #     ADMIN_USER   = os.getenv("ADMIN_USERNAME")
+        #     ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
+        
+        #     if username != ADMIN_USER or password != ADMIN_PASS:
+        #         flash("❌ Invalid admin credentials.", "danger")
+        #     else:
+        #         title        = request.form.get('title', '').strip()
+        #         evt_type     = request.form.get('type')
+        #         date_str     = request.form.get('date')       # YYYY-MM-DD
+        #         time_str     = request.form.get('time')       # HH:MM
+        #         function_url = request.form.get('function_url') or None
+        
+        #         # Combine into a full timestamp string
+        #         # MySQL will parse "YYYY-MM-DD HH:MM"
+        #         datetime_str = f"{date_str} {time_str}"
+        
+        #         cursor.execute("""
+        #             INSERT INTO events
+        #               (type, title, time, date, function_url)
+        #             VALUES (%s, %s, %s, %s, %s)
+        #         """, (evt_type, title, datetime_str, date_str, function_url))
+        #         conn.commit()
+        #         flash("✅ Event added successfully.", "success")
 
         # ─── fetch all events ────────────────────────────────────
         await cursor.execute(f"""
@@ -545,6 +584,7 @@ async def events():
         """)
         if not config.is_testing():
             events = await cursor.fetchall()
+            await set_cached_data(cache_key, events, ttl=config.SHORT_CACHE_TTL)
         else:
             events = []
 
@@ -636,7 +676,9 @@ async def exams():
         return await render_template('admin/exams.html', exams=[])
 
     # Fetch all exams from the database
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
+    async with conn.cursor(aiomysql.DictCursor) as _cursor:
+        from observability.db_tracing import TracedCursorWrapper
+        cursor = TracedCursorWrapper(_cursor)
 
         # Fetch all exams
         await cursor.execute("SELECT * FROM exams ORDER BY date DESC, start_time ASC")
@@ -795,9 +837,17 @@ async def interactions():
         await flash("Database connection failed", "danger")
         return await render_template('admin/interactions.html', interactions=[], sort=sort)
     
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
-        await cursor.execute("SELECT * FROM global.interactions")
-        rows = list(await cursor.fetchall())
+    cache_key = get_cache_key("admin:interactions")
+    cached = await get_cached_data(cache_key)
+    if cached is not None:
+        rows = cached
+    else:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
+            await cursor.execute("SELECT * FROM global.interactions")
+            rows = list(await cursor.fetchall())
+        await set_cached_data(cache_key, rows, ttl=config.SHORT_CACHE_TTL)
 
     # Sorting logic
     if sort == 'device_brand':

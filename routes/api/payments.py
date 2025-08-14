@@ -29,7 +29,9 @@ async def payments():
         return jsonify({"error": msg}), 400
 
 
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
+    async with conn.cursor(aiomysql.DictCursor) as _cursor:
+        from observability.db_tracing import TracedCursorWrapper
+        cursor = TracedCursorWrapper(_cursor)
         await cursor.execute(f"""
         SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
             pay.food, pay.due_months AS month, u.phone, u.fullname
@@ -117,7 +119,9 @@ async def get_transactions():
     # Execute
     conn = await get_db_connection()
     try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             transactions = await cursor.fetchall()
     except Exception as e:

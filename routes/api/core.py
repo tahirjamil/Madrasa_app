@@ -271,7 +271,9 @@ async def add_person() -> Tuple[Response, int]:
         
         # Get image path for response
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
                 f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
                 (fullname.lower(), formatted_phone)
@@ -361,7 +363,9 @@ async def get_info() -> Tuple[Response, int]:
             return jsonify(cached_members), 200
         
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             members = await cursor.fetchall()
         
@@ -449,7 +453,9 @@ async def get_routine() -> Tuple[Response, int]:
             return jsonify(cached_routines), 200
         
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
         
@@ -532,7 +538,9 @@ async def events() -> Tuple[Response, int]:
             return jsonify(cached_events), 200
         
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             rows = await cursor.fetchall()
         
@@ -645,7 +653,9 @@ async def get_exams() -> Tuple[Response, int]:
             return jsonify(cached_exams), 200
         
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
         

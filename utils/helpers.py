@@ -44,12 +44,12 @@ async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: An
         pool = await get_keydb_connection()
         raw = await pool.get(cache_key)
         if raw is not None:
-            metrics_collector.increment("cache_hits")
+            # metrics removed
             try:
                 return json.loads(raw)
             except Exception:
                 return raw
-        metrics_collector.increment("cache_misses")
+        # metrics removed
         return default
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable when getting cache key '{cache_key}': {e}")
@@ -421,7 +421,9 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
     
     async with get_db_context() as conn:
         try:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from observability.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
                     "SELECT email FROM global.users WHERE fullname = %s AND phone = %s",
                     (fullname, phone)
@@ -449,7 +451,9 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
     
     async with get_db_context() as conn:
         try:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from observability.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
                     "SELECT user_id FROM global.users WHERE phone = %s AND fullname = %s",
                     (phone, fullname)
@@ -474,7 +478,9 @@ async def upsert_translation(conn, translation_text: str, madrasa_name: str, bn_
         
     translation_text = translation_text.strip()
     
-    async with conn.cursor(aiomysql.DictCursor) as cursor:
+    async with conn.cursor(aiomysql.DictCursor) as _cursor:
+        from observability.db_tracing import TracedCursorWrapper
+        cursor = TracedCursorWrapper(_cursor)
         # Upsert translation entry
         sql = f"""
             INSERT INTO {madrasa_name}.translations (translation_text, bn_text, ar_text, context)
@@ -573,7 +579,9 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                 else:
                     peoples_fields[key] = value
             
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from observability.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
                 # Insert into acc_types table FIRST if user_id exists
                 if 'user_id' in peoples_fields and peoples_fields['user_id']:
                     user_id = peoples_fields['user_id']
@@ -635,7 +643,9 @@ async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid
     for madrasa in madrasa_name if isinstance(madrasa_name, list) else [madrasa_name]:
         async with get_db_context() as conn:
             try:
-                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                    from observability.db_tracing import TracedCursorWrapper
+                    cursor = TracedCursorWrapper(_cursor)
                     if not uid and not acc_type:
                         await cursor.execute(f"""
                             SELECT u.user_id, p.acc_type 
@@ -826,7 +836,9 @@ async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and health"""
     try:
         async with get_db_context() as conn:
-            async with conn.cursor() as cursor:
+            async with conn.cursor() as _cursor:
+                from observability.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute("SELECT 1")
                 return {"status": "healthy", "message": "Database connection successful"}
     except Exception as e:
@@ -926,7 +938,7 @@ class PerformanceMonitor:
             "error_counts": self.error_counts
         }
 
-# Global performance monitor
+# not needed in top: performance monitor will be replaced by OpenTelemetry
 performance_monitor = PerformanceMonitor()
 
 # ─── Advanced Error Handling ───────────────────────────────────────────────
@@ -955,7 +967,7 @@ def handle_async_errors(func: Callable) -> Callable:
             }), 400
         except Exception as e:
             log.critical(action="unexpected_error", trace_info="error_handler", message=str(e), secure=False)
-            performance_monitor.record_error("unexpected", str(e))
+            # metrics removed
             return jsonify({
                 "error": "An unexpected error occurred",
                 "error_code": "INTERNAL_ERROR"
@@ -965,35 +977,20 @@ def handle_async_errors(func: Callable) -> Callable:
 
 # ─── Metrics and Analytics ─────────────────────────────────────────────────
 
-class MetricsCollector: # TODO: Implement this
-    """Collect and analyze application metrics"""
+class MetricsCollector:
+    """Deprecated custom metrics collector. Kept as a no-op for compatibility."""
     
     def __init__(self):
-        self.metrics = {
-            'requests': 0,
-            'errors': 0,
-            'cache_hits': 0,
-            'cache_misses': 0,
-            'database_queries': 0,
-            'slow_queries': 0
-        }
+        self.metrics = {}
         self.start_time = time.time()
     
     def increment(self, metric: str, value: int = 1) -> None:
         """Increment a metric counter"""
-        if metric in self.metrics:
-            self.metrics[metric] += value
+        return None
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get current metrics"""
-        uptime = time.time() - self.start_time
-        return {
-            **self.metrics,
-            'uptime_seconds': uptime,
-            'requests_per_second': self.metrics['requests'] / uptime if uptime > 0 else 0,
-            'error_rate': self.metrics['errors'] / self.metrics['requests'] if self.metrics['requests'] > 0 else 0,
-            'cache_hit_rate': self.metrics['cache_hits'] / (self.metrics['cache_hits'] + self.metrics['cache_misses']) if (self.metrics['cache_hits'] + self.metrics['cache_misses']) > 0 else 0
-        }
+        return {}
 
 # Global metrics collector
 metrics_collector = MetricsCollector()
@@ -1193,7 +1190,9 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
         return None
     
     try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("""
                 SELECT code, created_at FROM global.verifications
                 WHERE phone = %s
@@ -1229,7 +1228,9 @@ async def delete_code() -> None:
     """Delete expired verification codes"""
     conn = await get_db_connection()
     try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("""
                 DELETE FROM global.verifications
                 WHERE created_at < NOW() - INTERVAL 1 DAY
@@ -1399,21 +1400,10 @@ security_manager = SecurityManager()
 
 # ─── Performance Monitoring and Metrics ───────────────────────────────────────
 def record_request_metrics(endpoint: str, duration: float, status_code: int) -> None:
-    """Record request metrics for monitoring"""
-    performance_monitor.record_request_time(endpoint, duration)
-    metrics_collector.increment('requests')
-    
-    if status_code >= 400:
-        metrics_collector.increment('errors')
-        performance_monitor.record_error('http_error', f"Status {status_code}")
+    return None
 
 def monitor_database_performance(query: str, duration: float) -> None:
-    """Monitor database query performance"""
-    metrics_collector.increment('database_queries')
-    
-    if duration > 1.0:  # Log slow queries
-        metrics_collector.increment('slow_queries')
-        log.warning(action="slow_database_query", trace_info=get_client_info()["ip_address"], message=f"Slow query detected: {duration:.2f}s", secure=False)
+    return None
 
 
 # ─── Advanced Validation Functions ──────────────────────────────────────────
@@ -1504,7 +1494,9 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
     """Check if user has reached device limit"""
     try:
         conn = await get_db_connection()
-        async with conn.cursor() as cursor:
+        async with conn.cursor() as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             # Check if this device is already registered for this user
             await cursor.execute(
                 "SELECT device_id FROM global.interactions WHERE user_id = %s AND device_id = %s LIMIT 1",

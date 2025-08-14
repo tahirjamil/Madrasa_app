@@ -129,7 +129,9 @@ async def register() -> Tuple[Response, int]:
         conn = await get_db_connection()
         
         try:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from observability.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
                 # Check if user already exists
                 await cursor.execute(
                     "SELECT user_id FROM global.users WHERE phone = %s OR LOWER(fullname) = LOWER(%s)",
@@ -265,7 +267,9 @@ async def login() -> Tuple[Response, int] | None:
     conn = await get_db_connection()
     
     try: 
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             # Get user information
             await cursor.execute(
                 "SELECT user_id, deactivated_at, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
@@ -406,7 +410,9 @@ async def send_verification_code() -> Tuple[Response, int]:
         
         # Check rate limiting
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             # Check existing user if password provided
             if password and fullname:
                 await cursor.execute(
@@ -535,7 +541,9 @@ async def reset_password() -> Tuple[Response, int]:
         
         # Authenticate user and update password
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             # Get user information
             await cursor.execute(
                 "SELECT user_id, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
@@ -622,7 +630,9 @@ async def manage_account(page_type: str): # -> Tuple[Response, int] TODO: remove
         
         # Authenticate user
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
                 "SELECT user_id, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                 (formatted_phone, fullname)
@@ -724,7 +734,9 @@ async def undo_remove() -> Tuple[Response, int]:
         
         # Reactivate account
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
                 "SELECT user_id, deactivated_at, scheduled_deletion_at FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                 (formatted_phone, fullname)
@@ -832,7 +844,9 @@ async def get_account_status() -> Tuple[Response, int]:
         
         # Validate account in database
         conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(f"""
                 SELECT u.deactivated_at, u.email, p.*, 
                     tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,

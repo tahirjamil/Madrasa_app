@@ -18,3 +18,8 @@ Pillow
 markdown
 cryptography
 psutil
+
+# Observability
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+opentelemetry-instrumentation-asgi

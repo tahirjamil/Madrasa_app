@@ -15,9 +15,11 @@ from config import config, MadrasaConfig
 from database import create_tables
 from database.database_utils import connect_to_db
 from keydb.keydb_utils import connect_to_keydb, close_keydb
+from observability.otel_setup import init_otel
+from observability.asgi_middleware import RequestTracingMiddleware
 
 # API & Web Blueprints
-from utils.helpers import cache, get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter, security_manager
+from utils.helpers import get_system_health, initialize_application, metrics_collector, performance_monitor, rate_limiter, security_manager
 from routes.admin_routes import admin_routes
 from routes.api import api
 from routes.web_routes import web_routes
@@ -65,6 +67,9 @@ babel.localeselector = get_locale
 # Import CSRF protection from dedicated module
 from utils.csrf_protection import csrf
 
+# Wrap ASGI app with basic tracing middleware
+app.asgi_app = RequestTracingMiddleware(app.asgi_app)
+
 # Security headers
 @app.after_request
 async def add_security_headers(response):
@@ -94,6 +99,9 @@ async def create_tables_async():
 async def startup():
     # Set app start time for health checks
     app.start_time = time.time()
+
+    # Initialize observability (traces/metrics)
+    init_otel(service_name="madrasa-app", environment="development", service_version=getattr(config, 'SERVER_VERSION', '0.0.0'))
 
     initialize_application()
     await create_tables_async()
@@ -265,21 +273,12 @@ async def health_check():
 
 @app.route('/metrics')
 async def get_metrics() -> Response:
-    """Get application metrics for monitoring"""
-    try:
-        metrics = metrics_collector.get_metrics()
-        performance_stats = performance_monitor.get_performance_stats()
-        
-        return jsonify({
-            "metrics": metrics,
-            "performance": performance_stats,
-            "rate_limiter_size": len(rate_limiter._requests),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting metrics: {str(e)}")
-        return jsonify({"message": "Failed to get metrics"})
+    """Metrics endpoint placeholder (metrics moved to OpenTelemetry)."""
+    return jsonify({
+        "message": "Metrics are exported via OpenTelemetry (OTLP).",
+        "rate_limiter_size": len(rate_limiter._requests),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
         
 # ─── Register Blueprints ────────────────────────────────────
 app.register_blueprint(admin_routes, url_prefix='/admin')

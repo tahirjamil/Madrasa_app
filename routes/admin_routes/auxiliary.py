@@ -17,7 +17,9 @@ async def logs_data():
         return jsonify([])
     
     try:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from observability.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
             logs = await cursor.fetchall()
         # Convert datetime to string

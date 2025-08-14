@@ -6,6 +6,7 @@ from quart import current_app
 
 from myapp import MyApp
 from config import config
+from observability.db_tracing import TracedRedisPool
 
 try:
     import aioredis  # type: ignore
@@ -101,7 +102,7 @@ async def connect_to_keydb():
                 ssl=cfg.get("ssl"),
             )
 
-        return pool
+        return TracedRedisPool(pool)
 
     except Exception as e:
         print(f"KeyDB connection failed: {e}")

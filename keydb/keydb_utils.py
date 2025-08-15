@@ -25,12 +25,13 @@ class RedisConnectConfig(TypedDict, total=False):
     timeout: float
 
 
-def get_keydb_config() -> RedisConnectConfig:
+def get_keydb_config() -> RedisConnectConfig | None:
     """Build KeyDB/Redis connection config from config/env with sane defaults."""
     # Check if Redis cache is enabled
     use_redis_cache = os.getenv('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes', 'on')
     if not use_redis_cache:
-        raise RuntimeError("USE_REDIS_CACHE environment variable is not set to 'true'. KeyDB/Redis cache is disabled.")
+        print("USE_REDIS_CACHE environment variable is not set to 'true'. KeyDB/Redis cache is disabled.")
+        return None
     
     # URL first (supports redis://, rediss://)
     url = config.get_keydb_url()
@@ -82,8 +83,7 @@ async def connect_to_keydb():
         return None
 
     try:
-        # Prefer URL if provided, otherwise explicit host/port
-        if "url" in cfg:
+        if cfg and "url" in cfg:
             client = redis.from_url(
                 cfg["url"],
                 db=cfg.get("db", 0),
@@ -91,7 +91,7 @@ async def connect_to_keydb():
                 decode_responses=True,
                 socket_connect_timeout=cfg.get("timeout", 10.0),
             )
-        else:
+        elif cfg and "address" in cfg:
             address: Tuple[str, int] = cfg.get("address", ("localhost", 6379))  # type: ignore[assignment]
             client = redis.Redis(
                 host=address[0],
@@ -103,6 +103,8 @@ async def connect_to_keydb():
                 ssl=cfg.get("ssl", False),
                 socket_connect_timeout=cfg.get("timeout", 10.0),
             )
+        else:
+            raise RuntimeError("KeyDB connection failed: No configuration provided")
 
         return TracedRedisPool(client)
 
@@ -125,8 +127,8 @@ async def get_keydb_connection(max_retries: int = 3) -> Any:
         try:
             return await get_keydb()
         except RuntimeError as e:
-            # Redis cache is disabled
-            raise RuntimeError(f"KeyDB/Redis cache is disabled: {e}")
+            print(f"KeyDB/Redis cache is disabled: {e}")
+            return None
         except Exception:
             if attempt == max_retries - 1:
                 raise
@@ -177,7 +179,7 @@ async def ping_keydb(timeout: float = 1.0) -> bool:
     try:
         pool = await get_keydb_connection()
         # In aioredis 1.x, pool executes commands directly
-        pong = await pool.ping()  # type: ignore[attr-defined]
+        pong = await pool.ping()
         return bool(pong)
     except Exception:
         try:

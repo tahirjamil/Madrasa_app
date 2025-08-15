@@ -9,6 +9,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+import requests
+
+from utils.helpers import get_system_health
+
 # ─── Configuration ──────────────────────────────────────────────────────────────
 
 class ServerConfig:
@@ -224,10 +228,6 @@ class ProcessManager:
                         self.logger.error("Auto-restart disabled. Server stopped.")
                         break
                 
-                # Check resource usage
-                if self.process:
-                    self._check_resource_usage()
-                
                 time.sleep(self.config.config["monitoring"]["health_check_interval"])
                 
             except Exception as e:
@@ -257,47 +257,6 @@ class ProcessManager:
         
         if not self.shutdown_event.is_set():
             self.start_server()
-    
-    def _check_resource_usage(self):
-        """Check CPU and memory usage"""
-        if not self.process:
-            self.logger.warning("No process to monitor.")
-            return
-    
-        try:
-            process = psutil.Process(self.process.pid)
-            
-            # Memory usage
-            memory_percent = process.memory_percent()
-            memory_limit = self._parse_memory_limit(self.config.config["monitoring"]["max_memory_usage"])
-            
-            if memory_percent > memory_limit:
-                self.logger.warning(f"High memory usage: {memory_percent:.1f}%")
-            
-            # CPU usage
-            cpu_percent = process.cpu_percent()
-            cpu_limit = self.config.config["monitoring"]["max_cpu_usage"]
-            
-            if cpu_percent > cpu_limit:
-                self.logger.warning(f"High CPU usage: {cpu_percent:.1f}%")
-                
-        except Exception as e:
-            self.logger.debug(f"Could not check resource usage: {e}")
-    
-    def _parse_memory_limit(self, limit_str: str) -> float:
-        """Parse memory limit string to percentage"""
-        try:
-            if "MB" in limit_str:
-                mb = float(limit_str.replace("MB", ""))
-                # Assume 1GB total memory for percentage calculation
-                return (mb / 1024) * 100
-            elif "GB" in limit_str:
-                gb = float(limit_str.replace("GB", ""))
-                return gb * 100
-            else:
-                return float(limit_str)
-        except:
-            return 50.0  # Default 50%
     
     def stop_server(self, graceful: bool = True, *, for_restart: bool = False):
         """Stop the server process.
@@ -357,16 +316,22 @@ class HealthChecker:
         # Use localhost for health checks since server binds to 0.0.0.0 but is accessible via localhost
         self.server_url = f"http://127.0.0.1:{config.config['server']['port']}"
     
-    def check_health(self) -> bool:
+    async def check_health(self) -> bool:
         """Perform health check on server"""
         try:
-            import requests
             response = requests.get(f"{self.server_url}/health", timeout=5)
-            if response.status_code == 200:
+            local_health = await get_system_health()
+            if response.status_code >= 200 and response.status_code < 300:
                 self.logger.info(f"Health check successful: {response.status_code}")
+                self.logger.info(f"Health check response: {response.json()}")
+                return True
+            elif local_health["status"] == "healthy":
+                self.logger.info(f"Health check response: {local_health}")
+                self.logger.info("Server did not respond though /health endpoint")
                 return True
             else:
                 self.logger.warning(f"Health check failed with status: {response.status_code}")
+                self.logger.warning(f"Health check response: {local_health or response.json()}")
                 return False
         except Exception as e:
             self.logger.warning(f"Health check failed: {e}")
@@ -379,7 +344,7 @@ class HealthChecker:
         
         # Add initial delay to allow server to start up
         self.logger.info("Waiting for server to initialize...")
-        time.sleep(10)  # Wait 10 seconds before first health check
+        time.sleep(5)  # Wait 5 seconds before first health check
         
         start_time = time.time()
         attempts = 0

@@ -861,10 +861,35 @@ async def check_file_system_health() -> Dict[str, Any]:
     except Exception as e:
         return {"status": "unhealthy", "message": f"File system error: {str(e)}"}
 
+async def check_keydb_health() -> Dict[str, Any]:
+    """Check KeyDB health"""
+    try:
+        from keydb.keydb_utils import ping_keydb
+        if await ping_keydb():
+            return {"status": "healthy", "message": "KeyDB connection successful"}
+        else:
+            return {"status": "unhealthy", "message": "KeyDB connection failed"}
+    except Exception as e:
+        return {"status": "unhealthy", "message": f"KeyDB error: {str(e)}"}
+
+async def check_opentelemetry_health() -> Dict[str, Any]:
+    """Check OpenTelemetry health"""
+    try:
+        from opentelemetry.trace import get_tracer_provider
+        tracer_provider = get_tracer_provider()
+        if tracer_provider:
+            return {"status": "healthy", "message": "OpenTelemetry connection successful"}
+        else:
+            return {"status": "unhealthy", "message": "OpenTelemetry connection failed"}
+    except Exception as e:
+        return {"status": "unhealthy", "message": f"OpenTelemetry error: {str(e)}"}
+
 async def get_system_health() -> Dict[str, Any]:
     """Get comprehensive system health status"""
     db_health = await check_database_health()
     fs_health = await check_file_system_health()
+    keydb_health = await check_keydb_health()
+    opentelemetry_health = await check_opentelemetry_health()
 
     status = "healthy"
     if db_health["status"] == "unhealthy" and fs_health["status"] == "unhealthy":
@@ -887,6 +912,8 @@ async def get_system_health() -> Dict[str, Any]:
         "version": config.SERVER_VERSION,
         "timestamp": datetime.now().isoformat(),
         "database": db_health,
+        "keydb": keydb_health,
+        "opentelemetry": opentelemetry_health,
         "file_system": fs_health,
         "maintenance_mode": config.is_maintenance(),
         "test_mode": config.is_testing(),
@@ -895,11 +922,7 @@ async def get_system_health() -> Dict[str, Any]:
     }
 
 
-# ─── Performance Monitoring (removed; replaced by OpenTelemetry) ─────────────
-# Previously: PerformanceMonitor with in-process counters. Replaced by OTEL spans/metrics.
-
 # ─── Advanced Error Handling ───────────────────────────────────────────────
-
 class AppError(Exception): # TODO: Implement this
     """Base application error class"""
     def __init__(self, message: str, error_code = None, details = None):

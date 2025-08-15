@@ -306,52 +306,6 @@ class ProcessManager:
             self.logger.error("Restart failed")
         return ok
 
-# ─── Health Checker ────────────────────────────────────────────────────────────
-
-class HealthChecker:
-    """Server health monitoring"""
-    
-    def __init__(self, config: ServerConfig, logger: AdvancedLogger):
-        self.config = config
-        self.logger = logger
-        # Use localhost for health checks since server binds to 0.0.0.0 but is accessible via localhost
-        self.server_url = f"http://127.0.0.1:{config.config['server']['port']}"
-    
-    async def check_health(self) -> bool:
-        """Perform health check on server"""
-        try:
-            local_health = await get_system_health()
-            if local_health["status"] == "healthy":
-                self.logger.info(f"Health check response: {local_health}")
-                self.logger.info("Server is healthy and responding")
-                return True
-            else:
-                self.logger.warning(f"Health check failed with status: {local_health['status']}")
-                self.logger.warning(f"Health check response: {local_health}")
-                return False
-        except Exception as e:
-            self.logger.warning(f"Health check failed: {e}")
-            return False
-    
-    async def wait_for_server(self, timeout = None) -> bool:
-        """Wait for server to become available"""
-        if timeout is None:
-            timeout = self.config.config["monitoring"]["health_check_interval"]
-        
-        self.logger.info("Waiting for server to initialize...")
-        time.sleep(5)
-        
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            if await self.check_health():
-                self.logger.info("Server is healthy and responding")
-                return True
-            time.sleep(5)
-        
-        self.logger.error("Server did not become healthy within timeout")
-        return False
-
 # ─── Signal Handlers ───────────────────────────────────────────────────────────
 
 def setup_signal_handlers(process_manager: ProcessManager, logger: AdvancedLogger):
@@ -395,7 +349,6 @@ class AdvancedServerRunner:
         self.config = ServerConfig()
         self.logger = AdvancedLogger(self.config)
         self.process_manager = ProcessManager(self.config, self.logger)
-        self.health_checker = HealthChecker(self.config, self.logger)
         
     async def run(self, dev_mode: bool = False, daemon: bool = False):
         """Run the server with advanced features"""
@@ -415,11 +368,6 @@ class AdvancedServerRunner:
             
             # Start server
             if not self.process_manager.start_server(dev_mode):
-                return False
-            
-            # Wait for server to be healthy
-            if not await self.health_checker.wait_for_server():
-                self.logger.error("Server failed to start properly")
                 return False
             
             self.logger.info("Server is running successfully")

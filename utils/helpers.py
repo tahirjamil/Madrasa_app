@@ -834,13 +834,16 @@ def require_api_key(func):
 
 async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and health"""
+    conn = await get_db_connection()
+    
     try:
-        async with get_db_context() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT 1")
-                return {"status": "healthy", "message": "Database connection successful"}
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT 1")
+            return {"status": "healthy", "message": "Database connection successful"}
     except Exception as e:
         return {"status": "unhealthy", "message": f"Database error: {str(e)}"}
+    finally:
+        await conn.close()
 
 async def check_file_system_health() -> Dict[str, Any]:
     """Check file system health and permissions"""

@@ -47,6 +47,9 @@ async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: An
                 return raw
         # metrics removed
         return default
+    except RuntimeError as e:
+        # Redis cache is disabled, return default
+        return default
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable when getting cache key '{cache_key}': {e}")
 
@@ -59,6 +62,9 @@ async def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) 
         payload = canonical_json(data)
         # aioredis 1.x supports expire argument in set
         await pool.set(cache_key, payload, expire=int(ttl) if ttl else None)
+    except RuntimeError as e:
+        # Redis cache is disabled, silently skip
+        pass
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable when setting cache key '{cache_key}': {e}")
 
@@ -73,6 +79,9 @@ async def _invalidate_cache_pattern_async(pattern: str) -> int:
         # aioredis delete supports varargs
         await pool.delete(*keys)
         return len(keys)
+    except RuntimeError as e:
+        # Redis cache is disabled, return 0
+        return 0
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable when invalidating pattern '{pattern}': {e}")
 

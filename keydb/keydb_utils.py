@@ -27,6 +27,11 @@ class RedisConnectConfig(TypedDict, total=False):
 
 def get_keydb_config() -> RedisConnectConfig:
     """Build KeyDB/Redis connection config from config/env with sane defaults."""
+    # Check if Redis cache is enabled
+    use_redis_cache = os.getenv('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes', 'on')
+    if not use_redis_cache:
+        raise RuntimeError("USE_REDIS_CACHE environment variable is not set to 'true'. KeyDB/Redis cache is disabled.")
+    
     # URL first (supports redis://, rediss://)
     url = config.get_keydb_url()
     password = config.REDIS_PASSWORD if config.REDIS_PASSWORD else None
@@ -69,7 +74,12 @@ def get_keydb_config() -> RedisConnectConfig:
 
 async def connect_to_keydb():
     """Create a global KeyDB/Redis client using redis.asyncio (redis-py)."""
-    cfg = get_keydb_config()
+    try:
+        cfg = get_keydb_config()
+    except RuntimeError as e:
+        # Redis cache is disabled
+        print(f"KeyDB connection skipped: {e}")
+        return None
 
     try:
         # Prefer URL if provided, otherwise explicit host/port
@@ -114,6 +124,9 @@ async def get_keydb_connection(max_retries: int = 3) -> Any:
     for attempt in range(max_retries):
         try:
             return await get_keydb()
+        except RuntimeError as e:
+            # Redis cache is disabled
+            raise RuntimeError(f"KeyDB/Redis cache is disabled: {e}")
         except Exception:
             if attempt == max_retries - 1:
                 raise
@@ -131,7 +144,9 @@ async def close_keydb(pool: Any) -> None:
         aclose_attr = getattr(target, "aclose", None)
         if callable(aclose_attr):
             try:
-                aclose_attr()
+                maybe_coro = aclose_attr()
+                if asyncio.iscoroutine(maybe_coro):
+                    await maybe_coro
             except Exception:
                 pass
         else:

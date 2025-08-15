@@ -13,9 +13,11 @@ import os
 from dotenv import load_dotenv
 from functools import lru_cache
 from quart import Quart
-from typing import Optional
+from typing import Optional, Union
 from aiomysql import Connection
 from redis.asyncio import Redis
+
+from observability.db_tracing import TracedRedisPool
 
 # Load environment variables
 load_dotenv()
@@ -24,7 +26,7 @@ load_dotenv()
 class MadrasaApp(Quart):
     start_time: float
     db: Optional[Connection]
-    keydb: Optional[Redis]
+    keydb: Optional[Union[Redis, TracedRedisPool]]
 
 class MadrasaConfig:
     """ Configuration class for the Madrasha application. """
@@ -137,8 +139,8 @@ class MadrasaConfig:
     # ============================================================================
 
     # MySQL Connection Settings
-    MYSQL_HOST = "localhost"
-    MYSQL_USER = "tahir"
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+    MYSQL_USER = os.getenv("MYSQL_USER", "tahir")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
     MYSQL_DB = os.getenv("MYSQL_DB", "default")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
@@ -162,7 +164,7 @@ class MadrasaConfig:
     REDIS_TIMEOUT = 10.0
     REDIS_ENCODING = "utf-8"
     REDIS_PREFIX = "madrasa"
-    USE_REDIS_CACHE = True
+    USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() in ("1", "true", "yes", "on")
 
     # ============================================================================
     # FILE UPLOAD AND STORAGE

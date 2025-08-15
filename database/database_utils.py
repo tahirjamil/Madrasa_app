@@ -46,7 +46,7 @@ def get_db_config() -> AiomysqlConnectConfig:
 
     # Timeout (int)
     try:
-        timeout: int = int(config.DB_TIMEOUT) if hasattr(config, "DB_TIMEOUT") and config.DB_TIMEOUT is not None else 60
+        timeout: int = int(config.MYSQL_TIMEOUT) if hasattr(config, "MYSQL_TIMEOUT") and config.MYSQL_TIMEOUT is not None else 60
     except Exception:
         timeout = 60
 

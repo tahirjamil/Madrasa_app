@@ -1,4 +1,4 @@
-import os, time, logging
+import os, time, logging, asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from quart import (
@@ -14,11 +14,14 @@ from config import config, MadrasaConfig, MadrasaApp
 from database import create_tables
 from database.database_utils import connect_to_db
 from keydb.keydb_utils import connect_to_keydb, close_keydb
-from observability.otel_setup import init_otel
+from observability.otel_utils import init_otel
 from observability.asgi_middleware import RequestTracingMiddleware
 
 # API & Web Blueprints
-from utils.helpers import get_system_health, initialize_application, metrics_collector, rate_limiter, security_manager
+from utils.helpers import (
+    get_system_health, initialize_application, metrics_collector, rate_limiter, security_manager,
+    check_database_health, check_file_system_health, get_keydb_connection
+)
 from routes.admin_routes import admin_routes
 from routes.api import api
 from routes.web_routes import web_routes
@@ -68,7 +71,7 @@ async def get_locale():
         or (json_data or {}).get('lang')
     )
 
-babel.localeselector = get_locale
+babel.localeselector = get_locale # type: ignore attribute-defined-outside-init
 
 # Import CSRF protection from dedicated module
 from utils.csrf_protection import csrf
@@ -263,24 +266,186 @@ async def favicon():
 
 @app.route('/health')
 async def health_check():
-    """Health check endpoint for monitoring"""
+    """Health check endpoint for monitoring with enhanced debugging"""
+    start_time = time.time()
+    debug_info = {
+        "check_start": datetime.now().isoformat(),
+        "steps": []
+    }
+    
     try:
-        # Advanced health check
-        health_status = await get_system_health()
-
-        # Extra health check
-        health_status.update({
-            "uptime": time.time() - app.start_time if hasattr(app, 'start_time') else 0
+        # Step 1: Basic app status
+        step1_start = time.time()
+        debug_info["steps"].append({
+            "step": "app_status",
+            "start": step1_start,
+            "status": "checking"
         })
+        
+        app_status = {
+            "uptime": time.time() - app.start_time if hasattr(app, 'start_time') else 0,
+            "has_db": hasattr(app, 'db') and app.db is not None,
+            "has_keydb": hasattr(app, 'keydb') and app.keydb is not None,
+            "start_time": app.start_time if hasattr(app, 'start_time') else None
+        }
+        
+        step1_duration = time.time() - step1_start
+        debug_info["steps"][-1].update({
+            "duration": step1_duration,
+            "status": "completed",
+            "result": app_status
+        })
+        
+        # Step 2: Database health check
+        step2_start = time.time()
+        debug_info["steps"].append({
+            "step": "database_health",
+            "start": step2_start,
+            "status": "checking"
+        })
+        
+        try:
+            db_health = await check_database_health()
+            step2_duration = time.time() - step2_start
+            debug_info["steps"][-1].update({
+                "duration": step2_duration,
+                "status": "completed",
+                "result": db_health
+            })
+        except Exception as db_error:
+            step2_duration = time.time() - step2_start
+            debug_info["steps"][-1].update({
+                "duration": step2_duration,
+                "status": "failed",
+                "error": str(db_error)
+            })
+            db_health = {"status": "unhealthy", "message": f"Database error: {str(db_error)}"}
+        
+        # Step 3: File system health check
+        step3_start = time.time()
+        debug_info["steps"].append({
+            "step": "filesystem_health",
+            "start": step3_start,
+            "status": "checking"
+        })
+        
+        try:
+            fs_health = await check_file_system_health()
+            step3_duration = time.time() - step3_start
+            debug_info["steps"][-1].update({
+                "duration": step3_duration,
+                "status": "completed",
+                "result": fs_health
+            })
+        except Exception as fs_error:
+            step3_duration = time.time() - step3_start
+            debug_info["steps"][-1].update({
+                "duration": step3_duration,
+                "status": "failed",
+                "error": str(fs_error)
+            })
+            fs_health = {"status": "unhealthy", "message": f"File system error: {str(fs_error)}"}
+        
+        # Step 4: KeyDB health check (with timeout)
+        step4_start = time.time()
+        debug_info["steps"].append({
+            "step": "keydb_health",
+            "start": step4_start,
+            "status": "checking"
+        })
+        
+        cache_size = 0
+        try:
+            from_keydb = await asyncio.wait_for(get_keydb_connection(), timeout=2.0)
+            try:
+                cache_size = int(await asyncio.wait_for(from_keydb.dbsize(), timeout=1.0))
+                step4_duration = time.time() - step4_start
+                debug_info["steps"][-1].update({
+                    "duration": step4_duration,
+                    "status": "completed",
+                    "result": {"cache_size": cache_size}
+                })
+            except Exception as dbsize_error:
+                cache_size = int(await asyncio.wait_for(from_keydb.execute('DBSIZE'), timeout=1.0))
+                step4_duration = time.time() - step4_start
+                debug_info["steps"][-1].update({
+                    "duration": step4_duration,
+                    "status": "completed",
+                    "result": {"cache_size": cache_size, "method": "execute"}
+                })
+        except RuntimeError as redis_disabled_error:
+            step4_duration = time.time() - step4_start
+            debug_info["steps"][-1].update({
+                "duration": step4_duration,
+                "status": "skipped",
+                "result": {"cache_size": 0, "reason": "Redis cache disabled"}
+            })
+            cache_size = 0
+        except (asyncio.TimeoutError, Exception) as keydb_error:
+            step4_duration = time.time() - step4_start
+            debug_info["steps"][-1].update({
+                "duration": step4_duration,
+                "status": "failed",
+                "error": str(keydb_error)
+            })
+            cache_size = 0
+        
+        # Step 5: Overall status calculation
+        step5_start = time.time()
+        debug_info["steps"].append({
+            "step": "status_calculation",
+            "start": step5_start,
+            "status": "checking"
+        })
+        
+        status = "healthy"
+        if db_health["status"] == "unhealthy" and fs_health["status"] == "unhealthy":
+            status = "critical"
+        elif db_health["status"] == "unhealthy" or fs_health["status"] == "unhealthy":
+            status = "unhealthy"
+        
+        step5_duration = time.time() - step5_start
+        debug_info["steps"][-1].update({
+            "duration": step5_duration,
+            "status": "completed",
+            "result": {"overall_status": status}
+        })
+        
+        # Compile final health status
+        health_status = {
+            "status": status,
+            "version": config.SERVER_VERSION,
+            "timestamp": datetime.now().isoformat(),
+            "database": db_health,
+            "file_system": fs_health,
+            "maintenance_mode": config.is_maintenance(),
+            "test_mode": config.is_testing(),
+            "cache_size": cache_size,
+            "rate_limiter_size": len(rate_limiter._requests),
+            "uptime": app_status["uptime"],
+            "total_duration": time.time() - start_time,
+            "debug": debug_info
+        }
 
+        logger.info(f"Health check completed in {time.time() - start_time:.3f}s with status: {status}")
         return jsonify(health_status), 200
         
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        total_duration = time.time() - start_time
+        logger.error(f"Health check failed after {total_duration:.3f}s: {e}")
+        debug_info["steps"].append({
+            "step": "error_handling",
+            "duration": total_duration,
+            "status": "failed",
+            "error": str(e)
+        })
+        
         return jsonify({
             "status": "unknown",
             "error": str(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "total_duration": total_duration,
+            "debug": debug_info
         }), 500
 
 @app.route('/metrics')

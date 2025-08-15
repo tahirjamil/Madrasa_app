@@ -10,16 +10,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 # OTLP gRPC exporters (defaults to http://localhost:4317)
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-# Metrics are optional; if exporter not available, we skip
-try:  # pragma: no cover - optional metrics setup
-    from opentelemetry import metrics
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-    _METRICS_AVAILABLE = True
-except Exception:  # pragma: no cover
-    _METRICS_AVAILABLE = False
-
 
 def init_otel(service_name: str, environment: Optional[str] = None, service_version: Optional[str] = None) -> None:
     """Initialize OpenTelemetry tracing (and metrics if available) with OTLP exporters.
@@ -45,15 +35,20 @@ def init_otel(service_name: str, environment: Optional[str] = None, service_vers
     trace.set_tracer_provider(tracer_provider)
 
     # Metrics (optional)
-    if _METRICS_AVAILABLE:
-        try:
-            metric_exporter = OTLPMetricExporter()
-            reader = PeriodicExportingMetricReader(metric_exporter)
-            meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
-            metrics.set_meter_provider(meter_provider)
-        except Exception:
-            # Metrics are optional; tracing remains active
-            pass
+    try:
+        # Import here to ensure they're available when used
+        from opentelemetry import metrics
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+        
+        metric_exporter = OTLPMetricExporter()
+        reader = PeriodicExportingMetricReader(metric_exporter)
+        meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
+        metrics.set_meter_provider(meter_provider)
+    except Exception:
+        print("Metrics exporter not available")
+        pass
 
     # If strict mode is requested, verify exporter connectivity up-front to fail fast
     otel_strict = os.getenv("OTEL_STRICT", "true").lower() in ("1", "true", "yes", "on")
@@ -69,7 +64,9 @@ def init_otel(service_name: str, environment: Optional[str] = None, service_vers
             # Try a very short sleep to allow background batch to kick in
             time.sleep(0.05)
             # Explicit provider shutdown ensures exporter connectivity gets exercised now
-            trace.get_tracer_provider().shutdown()
+            provider = trace.get_tracer_provider()
+            if isinstance(provider, TracerProvider):
+                provider.shutdown()
         except Exception as exc:  # pragma: no cover
             # Re-raise so the app can fail fast when strict mode is on
             raise RuntimeError(f"OpenTelemetry strict startup check failed: {exc}")

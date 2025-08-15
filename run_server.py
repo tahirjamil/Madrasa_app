@@ -16,7 +16,7 @@ class ServerConfig:
     
     def __init__(self):
         self.base_dir = Path(__file__).resolve().parent
-        self.config_file = self.base_dir / "server_config.json"
+        self.config_file = self.base_dir / "config/server_config.json"
         self.pid_file = self.base_dir / "server.pid"
         self.log_dir = self.base_dir / "logs"
         self.temp_dir = self.base_dir / "temp"

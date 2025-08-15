@@ -277,11 +277,17 @@ async def health_check():
         })
 
         return jsonify(health_status), 200
-        
+    except RuntimeError as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "runtime_error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({
-            "status": "unknown",
+            "status": "internal_error",
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }), 500

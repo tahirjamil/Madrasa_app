@@ -171,7 +171,6 @@ async def create_tables():
                 if statement.strip():  # Skip empty statements
                     try:
                         await cursor.execute(statement)
-                        print(f"Executed SQL statement: {statement[:50]}...")
                     except Exception as e:
                         print(f"Error executing SQL statement: {e}")
                         print(f"Statement: {statement}")

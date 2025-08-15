@@ -4,11 +4,7 @@ from opentelemetry import trace
 
 
 class RequestTracingMiddleware:
-    """Basic ASGI middleware to create a request span per incoming request.
-
-    Quart runs on ASGI; we wrap the asgi_app to ensure a span exists even if
-    framework auto-instrumentation is not used.
-    """
+    """Basic ASGI middleware to create a request span per incoming request."""
 
     def __init__(self, app: Callable) -> None:
         self._app = app

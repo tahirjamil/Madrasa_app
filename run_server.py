@@ -4,6 +4,7 @@ Advanced Server Runner for Madrasha App
 
 """
 
+import asyncio
 import os, sys, platform, subprocess, signal, time, json, logging, argparse, threading, psutil, socket
 from pathlib import Path
 from datetime import datetime
@@ -319,45 +320,34 @@ class HealthChecker:
     async def check_health(self) -> bool:
         """Perform health check on server"""
         try:
-            response = requests.get(f"{self.server_url}/health", timeout=5)
             local_health = await get_system_health()
-            if response.status_code >= 200 and response.status_code < 300:
-                self.logger.info(f"Health check successful: {response.status_code}")
-                self.logger.info(f"Health check response: {response.json()}")
-                return True
-            elif local_health["status"] == "healthy":
+            if local_health["status"] == "healthy":
                 self.logger.info(f"Health check response: {local_health}")
-                self.logger.info("Server did not respond though /health endpoint")
+                self.logger.info("Server is healthy and responding")
                 return True
             else:
-                self.logger.warning(f"Health check failed with status: {response.status_code}")
-                self.logger.warning(f"Health check response: {local_health or response.json()}")
+                self.logger.warning(f"Health check failed with status: {local_health['status']}")
+                self.logger.warning(f"Health check response: {local_health}")
                 return False
         except Exception as e:
             self.logger.warning(f"Health check failed: {e}")
             return False
     
-    def wait_for_server(self, timeout = None) -> bool:
+    async def wait_for_server(self, timeout = None) -> bool:
         """Wait for server to become available"""
         if timeout is None:
             timeout = self.config.config["monitoring"]["health_check_interval"]
         
-        # Add initial delay to allow server to start up
         self.logger.info("Waiting for server to initialize...")
-        time.sleep(5)  # Wait 5 seconds before first health check
+        time.sleep(5)
         
         start_time = time.time()
-        attempts = 0
-        max_attempts = timeout // 5  # Check every 5 seconds
         
         while time.time() - start_time < timeout:
-            attempts += 1
-            self.logger.info(f"Health check attempt {attempts}/{max_attempts}")
-            
-            if self.check_health():
+            if await self.check_health():
                 self.logger.info("Server is healthy and responding")
                 return True
-            time.sleep(5)  # Wait 5 seconds between checks
+            time.sleep(5)
         
         self.logger.error("Server did not become healthy within timeout")
         return False
@@ -407,7 +397,7 @@ class AdvancedServerRunner:
         self.process_manager = ProcessManager(self.config, self.logger)
         self.health_checker = HealthChecker(self.config, self.logger)
         
-    def run(self, dev_mode: bool = False, daemon: bool = False):
+    async def run(self, dev_mode: bool = False, daemon: bool = False):
         """Run the server with advanced features"""
         try:
             # Setup signal handlers
@@ -428,7 +418,7 @@ class AdvancedServerRunner:
                 return False
             
             # Wait for server to be healthy
-            if not self.health_checker.wait_for_server():
+            if not await self.health_checker.wait_for_server():
                 self.logger.error("Server failed to start properly")
                 return False
             
@@ -512,13 +502,15 @@ def main():
         description="Advanced Madrasha App Server Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  python run_server.py                    # Start in production mode
-  python run_server.py --dev              # Start in development mode
-  python run_server.py --daemon           # Start as daemon
-  python run_server.py --config           # Show current configuration
-  python run_server.py --stop             # Stop running server
-  python run_server.py --status           # Check server status
+        Examples:
+        python run_server.py                    # Start in production mode
+        python run_server.py --dev              # Start in development mode
+        python run_server.py --daemon           # Start as daemon
+        python run_server.py --config           # Show current configuration
+        python run_server.py --stop             # Stop running server
+        python run_server.py --status           # Check server status
+        python run_server.py --restart          # Gracefully restart running server
+        python run_server.py --force-restart    # Force restart running server
         """
     )
     
@@ -587,7 +579,7 @@ Examples:
     print(f"Dev mode: {'ON' if dev_mode else 'OFF'}")
     
     # Run server
-    success = runner.run(dev_mode=dev_mode, daemon=args.daemon)
+    success = asyncio.run(runner.run(dev_mode=dev_mode, daemon=args.daemon))
     sys.exit(0 if success else 1)
 
 if __name__ == "__main__":

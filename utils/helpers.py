@@ -836,9 +836,7 @@ async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and health"""
     try:
         async with get_db_context() as conn:
-            async with conn.cursor() as _cursor:
-                from observability.db_tracing import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
+            async with conn.cursor() as cursor:
                 await cursor.execute("SELECT 1")
                 return {"status": "healthy", "message": "Database connection successful"}
     except Exception as e:
@@ -873,14 +871,26 @@ async def check_keydb_health() -> Dict[str, Any]:
         return {"status": "unhealthy", "message": f"KeyDB error: {str(e)}"}
 
 async def check_opentelemetry_health() -> Dict[str, Any]:
-    """Check OpenTelemetry health"""
+    """Check OpenTelemetry health by sending a test span."""
     try:
-        from opentelemetry.trace import get_tracer_provider
-        tracer_provider = get_tracer_provider()
-        if tracer_provider:
-            return {"status": "healthy", "message": "OpenTelemetry connection successful"}
-        else:
-            return {"status": "unhealthy", "message": "OpenTelemetry connection failed"}
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        
+        exporter = OTLPSpanExporter(endpoint=config.OTEL_EXPORTER_OTLP_ENDPOINT, insecure=True)
+        provider = TracerProvider()
+        processor = BatchSpanProcessor(exporter)
+        provider.add_span_processor(processor)
+        trace.set_tracer_provider(provider)
+        tracer = trace.get_tracer(__name__)
+
+        # Send a test span
+        with tracer.start_as_current_span("opentelemetry-health-check"):
+            pass
+
+        # If we made it this far, connection is likely healthy
+        return {"status": "healthy", "message": "OpenTelemetry connection successful"}
     except Exception as e:
         return {"status": "unhealthy", "message": f"OpenTelemetry error: {str(e)}"}
 

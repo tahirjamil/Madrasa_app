@@ -53,17 +53,13 @@ def init_otel(service_name: str, environment: Optional[str] = None, service_vers
     # If strict mode is requested, verify exporter connectivity up-front to fail fast
     otel_strict = os.getenv("OTEL_STRICT", "true").lower() in ("1", "true", "yes", "on")
     if otel_strict:
-        # Create a quick test span and force a flush; if exporter is unavailable, the SDK exporter
-        # will raise or log errors synchronously in flush path shortly thereafter.
+
         tracer = trace.get_tracer(__name__)
         with tracer.start_as_current_span("otel.startup.healthcheck"):
             pass
-        # Give the BatchSpanProcessor a brief moment to export, then shutdown to surface errors
-        # (shutdown flushes processors synchronously)
+
         try:
-            # Try a very short sleep to allow background batch to kick in
             time.sleep(0.05)
-            # Explicit provider shutdown ensures exporter connectivity gets exercised now
             provider = trace.get_tracer_provider()
             if isinstance(provider, TracerProvider):
                 provider.shutdown()

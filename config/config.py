@@ -47,7 +47,7 @@ class MadrasaConfig:
     OTEL_ENABLED = os.getenv("OTEL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
     # Strict mode: if enabled and exporter is unreachable, the app raises (fails fast) instead of logging warnings.
     OTEL_STRICT = os.getenv("OTEL_STRICT", "true").lower() in ("1", "true", "yes", "on")
-
+    OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
     
     # ============================================================================
     # SECURITY CONFIGURATION

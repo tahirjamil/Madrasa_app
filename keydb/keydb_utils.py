@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Any, Optional, Tuple, TypedDict, Union, cast
+from typing import Any, Optional, Tuple, TypedDict, cast
 
 from quart import current_app
 
@@ -131,7 +131,7 @@ async def close_keydb(pool: Any) -> None:
         aclose_attr = getattr(target, "aclose", None)
         if callable(aclose_attr):
             try:
-                await aclose_attr()
+                aclose_attr()
             except Exception:
                 pass
         else:

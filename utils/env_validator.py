@@ -13,7 +13,7 @@ This version is adapted to commonly-used names in your .env:
 import os
 import sys
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -153,7 +153,7 @@ class EnvValidator:
 
         # REDIS boolean flags (typo-proof)
         if os.getenv('REDIS_SLL'):
-            val = os.getenv('REDIS_SLL').lower()
+            val = os.getenv('REDIS_SLL', 'true').lower()
             if val not in ('true', 'false', '0', '1', 'yes', 'no'):
                 errors.append("REDIS_SLL must be a boolean-like value (true/false)")
 
@@ -221,9 +221,9 @@ class EnvValidator:
             print("✅ Environment validation passed")
 
     @classmethod
-    def get_safe_config(cls) -> Dict[str, Optional[str]]:
+    def get_safe_config(cls) -> Dict[str, Any]:
         """Return a config dict with defaults for optional values"""
-        cfg: Dict[str, Optional[str]] = {}
+        cfg: Dict[str, Any] = {}
         # include core keys
         for k in cls.CORE_REQUIRED:
             cfg[k] = os.getenv(k)

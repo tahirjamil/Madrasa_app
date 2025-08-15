@@ -2,7 +2,6 @@ from database.database_utils import get_db_connection
 import aiomysql, asyncio, json
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 # Enhanced logger with better error handling and performance
 def get_crypto_funcs(data: str, which: str) -> str | None:
@@ -22,8 +21,12 @@ def get_crypto_funcs(data: str, which: str) -> str | None:
         print("Failed to import crypto helpers from utils.helpers.py")
         return None
 
+log_count = 0
+
 async def log_event(action: str, trace_info: str, message: str, secure: bool, level: str= "info", metadata=None) -> None:
     """Enhanced logging function with better error handling and metadata support"""
+    global log_count
+    
     try:
         conn = await get_db_connection()
         if not conn:
@@ -42,8 +45,8 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
                 "message": message
             })
 
-            sql = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s)"
-            params = [action, trace_info, message, level, json.dumps(log_metadata)]
+            sql: str = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            params: list[str | None] = [action, trace_info, message, level, json.dumps(log_metadata)]
 
             if secure:
                 trace_info_hash = get_crypto_funcs(data=trace_info, which="hash")
@@ -59,26 +62,30 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
             await cursor.execute(sql, params)
             await conn.commit()
             
-            # Enhanced auto-prune with better performance
-            await cursor.execute("SELECT COUNT(*) AS total FROM logs")
-            result = await cursor.fetchone()
-            total = result['total'] if result else 0
+            if log_count > 500:
+                # Enhanced auto-prune with better performance
+                await cursor.execute("SELECT COUNT(*) AS total FROM logs")
+                result = await cursor.fetchone()
+                total = result['total'] if result else 0
 
-            # If more than 1000, delete oldest (increased from 500)
-            if total > 1000:
+                
+                # If more than 1000, delete oldest (increased from 500)
+                if total > 1000:
+                    await conn.commit()
+                    await cursor.execute("""
+                        DELETE FROM logs 
+                        WHERE log_id IN (
+                            SELECT log_id FROM (
+                                SELECT log_id FROM logs 
+                                ORDER BY created_at ASC 
+                                LIMIT %s
+                            ) AS old_logs
+                        )
+                    """, (total - 1000,))
+                    log_count = 0
                 await conn.commit()
-                await cursor.execute("""
-                    DELETE FROM logs 
-                    WHERE log_id IN (
-                        SELECT log_id FROM (
-                            SELECT log_id FROM logs 
-                            ORDER BY created_at ASC 
-                            LIMIT %s
-                        ) AS old_logs
-                    )
-                """, (total - 1000,))
-
-            await conn.commit()
+            else:
+                log_count += 1
             
             
     except Exception as e:

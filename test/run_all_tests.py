@@ -209,7 +209,7 @@ def check_environment():
         if "✅" in result.stdout:
             print_success("Environment validation completed")
         else:
-            print_warning("Environment validation has issues (this is expected without .env)")
+            print_error("Environment validation has issues (this is expected without .env)")
     else:
         print_error("Environment validator not found")
         return False

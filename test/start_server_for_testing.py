@@ -9,7 +9,6 @@ This script starts the server for integration testing.
 import os
 import sys
 import subprocess
-import time
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

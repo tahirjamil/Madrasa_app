@@ -15,6 +15,7 @@ import sys
 import os
 import asyncio
 from typing import Any
+import redis.asyncio as redis
 
 
 # Add project root to path to import modules
@@ -208,8 +209,8 @@ def test_aioredis_missing() -> bool:
     print("-" * 50)
     try:
         import keydb.keydb_utils as kdu
-        original = kdu.aioredis
-        kdu.aioredis = None
+        original = kdu.redis
+        kdu.redis = None
         async def _run() -> None:
             try:
                 await kdu.connect_to_keydb()
@@ -222,7 +223,7 @@ def test_aioredis_missing() -> bool:
         except SystemExit:
             return True
         finally:
-            kdu.aioredis = original
+            kdu.redis = original
         return False
     except Exception as e:
         print(f"❌ aioredis-missing test failed: {e}")

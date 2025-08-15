@@ -8,7 +8,6 @@ This script helps diagnose external access issues by testing various connection 
 import requests
 import socket
 import subprocess
-import sys
 import time
 
 def get_local_ip():

@@ -45,7 +45,7 @@ def test_mysql_connection_sync():
         connection = pymysql.connect(
             host=config.MYSQL_HOST,
             user=config.MYSQL_USER,
-            password=config.MYSQL_PASSWORD,
+            password=config.MYSQL_PASSWORD or "",
             database=config.MYSQL_DB,
             charset='utf8mb4',
             connect_timeout=10
@@ -56,7 +56,7 @@ def test_mysql_connection_sync():
         # Test basic operations
         with connection.cursor() as cursor:
             cursor.execute("SELECT VERSION()")
-            version = cursor.fetchone()
+            version = cursor.fetchone() or ("Unknown",)
             print(f"   MySQL Version: {version[0]}")
             
             cursor.execute("SHOW DATABASES")
@@ -84,7 +84,7 @@ async def test_mysql_connection_async():
         connection = await aiomysql.connect(
             host=config.MYSQL_HOST,
             user=config.MYSQL_USER,
-            password=config.MYSQL_PASSWORD,
+            password=config.MYSQL_PASSWORD or "",
             db=config.MYSQL_DB,
             charset='utf8mb4',
             connect_timeout=10
@@ -95,7 +95,7 @@ async def test_mysql_connection_async():
         # Test basic operations
         async with connection.cursor() as cursor:
             await cursor.execute("SELECT VERSION()")
-            version = await cursor.fetchone()
+            version = await cursor.fetchone() or ("Unknown",)
             print(f"   MySQL Version: {version[0]}")
             
             await cursor.execute("SHOW DATABASES")
@@ -125,7 +125,7 @@ def test_database_creation():
         connection = pymysql.connect(
             host=config.MYSQL_HOST,
             user=config.MYSQL_USER,
-            password=config.MYSQL_PASSWORD,
+            password=config.MYSQL_PASSWORD or "",
             charset='utf8mb4',
             connect_timeout=10
         )

@@ -9,15 +9,13 @@ Tests various scenarios including success cases, error cases, and edge cases.
 
 import os
 import sys
-import json
 import time
 import random
 import string
 import asyncio
+from token import OP
 import aiohttp
-from datetime import datetime
-from typing import Dict, Any, List, Tuple
-from pathlib import Path
+from typing import Dict, Any, List, Optional
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -70,8 +68,8 @@ class APITester:
             "ip_address": f"192.168.1.{random.randint(1, 255)}"
         }
     
-    async def test_endpoint(self, method: str, path: str, data: Dict = None, 
-                          headers: Dict = None, expected_status: List[int] = None) -> Dict:
+    async def test_endpoint(self, method: str, path: str, data: Optional[Dict[str, Any]] = None, 
+                          headers: Optional[Dict[str, Any]] = None, expected_status: Optional[List[int]] = None) -> Dict[str, Any]:
         """Test a single endpoint"""
         url = f"{self.base_url}{path}"
         
@@ -80,6 +78,9 @@ class APITester:
         
         try:
             start_time = time.time()
+
+            if not self.session:
+                raise RuntimeError("Session not initialized")
             
             # Make request
             async with self.session.request(

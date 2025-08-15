@@ -1,10 +1,7 @@
 """Helper Functions for Madrasha Application"""
-import collections
 import dataclasses
 import decimal
-import fnmatch
 import base64, hashlib, random, re, aiomysql, phonenumbers, requests
-import threading
 import uuid
 import datetime as dt
 from hmac import compare_digest
@@ -26,8 +23,6 @@ from config import config
 from utils.logger import log
 
 load_dotenv()
-
-# CacheManager removed; KeyDB is required for all caching operations
 
 # ---------- Cache Functions ----------
 def get_cache_key(prefix: str, **kwargs) -> str:
@@ -103,12 +98,7 @@ def invalidate_related_cache(operation: str, **kwargs) -> None:
 
 # ---------- decorator for endpoint-level caching ----------
 def cache_with_invalidation(func: Optional[Callable] = None, *, ttl: int = 3600):
-    """Decorator for endpoint-level caching backed by KeyDB.
-
-    Supports both usages:
-      @cache_with_invalidation
-      @cache_with_invalidation(ttl=300)
-    """
+    """Decorator for endpoint-level caching backed by KeyDB."""
     def _decorate(f: Callable):
         @wraps(f)
         async def wrapper(*args, **kwargs):
@@ -148,7 +138,7 @@ def cache_with_invalidation(func: Optional[Callable] = None, *, ttl: int = 3600)
 # ---------- Enhanced HTTP Cache ---------- TODO: This is unknown
 class EnhancedJSONEncoder(json.JSONEncoder):
     """Extend JSONEncoder with common non-JSON types handling."""
-    def default(self, obj):
+    def _default(self, obj: Any) -> Any | None:
         # datetimes -> ISO8601 string
         if isinstance(obj, (dt.datetime, dt.date, dt.time)):
             # Use ISO format; datetimes preserve timezone if present
@@ -161,7 +151,7 @@ class EnhancedJSONEncoder(json.JSONEncoder):
         if isinstance(obj, uuid.UUID):
             return str(obj)
         # dataclass -> dict
-        if dataclasses.is_dataclass(obj):
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
             return dataclasses.asdict(obj)
         # bytes -> base64 string
         if isinstance(obj, (bytes, bytearray)):
@@ -1064,7 +1054,7 @@ def is_valid_api_key(api_key: str) -> bool:
     return any(compare_digest(api_key, key) for key in config.API_KEYS if isinstance(key, str))
 
 
-async def check_rate_limit(identifier: str, max_requests = None, window = None) -> bool:
+async def check_rate_limit(identifier: str, max_requests: int | None = None, window: int | None = None) -> bool:
     """Enhanced rate limiting with additional checks"""
     if max_requests is None:
         max_requests = config.DEFAULT_RATE_LIMIT
@@ -1072,7 +1062,7 @@ async def check_rate_limit(identifier: str, max_requests = None, window = None) 
         window = config.RATE_LIMIT_WINDOW
     
     # Additional security checks
-    client_info = get_client_info()
+    client_info = await get_client_info() or {}
     
     # Check for suspicious patterns
     if security_manager.detect_sql_injection(identifier):
@@ -1277,7 +1267,7 @@ async def validate_device_info(device_id: str, ip_address: str, device_brand: st
     
     for pattern in suspicious_patterns:
         if re.search(pattern, device_id, re.IGNORECASE) or re.search(pattern, device_brand, re.IGNORECASE) or re.search(pattern, device_model, re.IGNORECASE) or re.search(pattern, device_os, re.IGNORECASE):
-            security_manager.track_suspicious_activity(ip_address, "Suspicious device identifier detected")
+            await security_manager.track_suspicious_activity(ip_address, "Suspicious device identifier detected")
             return False, "Suspicious device identifier detected"
     
     return True, ""
@@ -1412,7 +1402,7 @@ def validate_password_strength(password: str) -> Tuple[bool, str]:
     return True, ""
 
 
-def validate_file_upload(file, allowed_extensions: List[str], max_size: Optional[int] = config.MAX_CONTENT_LENGTH) -> Tuple[bool, str]:
+async def validate_file_upload(file, allowed_extensions: List[str], max_size: Optional[int] = config.MAX_CONTENT_LENGTH) -> Tuple[bool, str]:
     """Enhanced file upload validation with security checks"""
     if not file or not file.filename:
         return False, "No file provided"
@@ -1439,7 +1429,7 @@ def validate_file_upload(file, allowed_extensions: List[str], max_size: Optional
         if re.search(pattern, file.filename, re.IGNORECASE):
             log.warning(
                 action="suspicious_filename",
-                trace_info=get_client_info()["ip_address"],
+                trace_info=(await get_client_info() or {})["ip_address"],
                 message=f"Suspicious filename detected: {file.filename}",
                 secure=False
             )
@@ -1568,7 +1558,7 @@ async def get_client_info() -> Dict[str, Any] | None:
         "app_version": request.headers.get('X-App-Version'),
         "os_version": request.headers.get('X-OS-Version'),
     }
-    if not await validate_request_headers():
+    if not await validate_request_headers(request):
         return None
     if not await validate_device_fingerprint(info):
         g._client_info_cached = None
@@ -1606,7 +1596,7 @@ async def validate_device_fingerprint(device_data: Dict[str, Any]) -> bool:
     
     for pattern in suspicious_patterns:
         if re.search(pattern, device_id, re.IGNORECASE):
-            security_manager.track_suspicious_activity(device_data['ip_address'], "Suspicious device identifier detected")
+            await security_manager.track_suspicious_activity(device_data['ip_address'], "Suspicious device identifier detected")
             return False
     
     if not await validate_request_origin(request):
@@ -1614,7 +1604,7 @@ async def validate_device_fingerprint(device_data: Dict[str, Any]) -> bool:
     
     return True
 
-def validate_request_origin(request: Request) -> bool:
+async def validate_request_origin(request: Request) -> bool:
     """Validate request origin for security"""
     # Check referer header
     referer = request.headers.get('Referer')
@@ -1626,7 +1616,7 @@ def validate_request_origin(request: Request) -> bool:
             parsed_host = urlparse(request.url_root)
             
             if parsed_referer.netloc != parsed_host.netloc:
-                log.warning(action="suspicious_referer", trace_info=get_client_info()["ip_address"], message=f"Suspicious referer: {referer}", secure=False)
+                log.warning(action="suspicious_referer", trace_info=(await get_client_info() or {})["ip_address"], message=f"Suspicious referer: {referer}", secure=False)
                 return False
         except Exception:
             return False
@@ -1635,8 +1625,8 @@ def validate_request_origin(request: Request) -> bool:
 
 from quart import g
 
-async def secure_data(required_fields: list[str] = None) -> tuple[dict | None, str]:
-    cache_key = tuple(sorted(required_fields))
+async def secure_data(required_fields: list[str] | None= None) -> tuple[dict[str, Any] | None, str]:
+    cache_key = tuple(sorted(required_fields)) if required_fields else None
     if hasattr(g, "_secure_data_cache") and cache_key in g._secure_data_cache:
         return g._secure_data_cache[cache_key]
 
@@ -1645,8 +1635,9 @@ async def secure_data(required_fields: list[str] = None) -> tuple[dict | None, s
     else:
         required_fields = config.GLOBAL_REQUIRED_FIELDS
 
+    data: dict[str, Any] = {}
     if request.method == 'POST':
-        data = request.get_json()
+        data = await request.get_json()
     elif request.method == 'GET':
         data = request.args.to_dict()
 
@@ -1660,9 +1651,12 @@ async def secure_data(required_fields: list[str] = None) -> tuple[dict | None, s
         return None, "Invalid device information"
 
     # Validate device information
-    device_id = data.get("device_id")
-    ip_address = data.get("ip_address")
-    is_valid_device, device_error = await validate_device_info(device_id, ip_address)
+    device_id = data.get("device_id") or "unknown"
+    ip_address = data.get("ip_address") or "unknown"
+    device_model = data.get("device_model") or "unknown"
+    device_os = data.get("device_os") or "unknown"
+    device_brand = data.get("device_brand") or "unknown"
+    is_valid_device, device_error = await validate_device_info(device_id=device_id, ip_address=ip_address, device_model=device_model, device_os=device_os, device_brand=device_brand)
     if not is_valid_device:
         log.warning(action="login_invalid_device", trace_info=ip_address, message=f"Invalid device: {device_error}", secure=False)
         return None, device_error
@@ -1680,11 +1674,8 @@ async def secure_data(required_fields: list[str] = None) -> tuple[dict | None, s
         if isinstance(value, str):
             data[key] = security_manager.sanitize_inputs(value)
         if api_key != admin_key and isinstance(value, str) and security_manager.detect_sql_injection(value):
-            client_info = await get_client_info()
-            ip = (client_info or {}).get("ip_address")
-            device_id = (client_info or {}).get("device_id")
-            security_manager.track_suspicious_activity(ip, "SQL injection detected")
-            log.critical(action="sql_injection_detected", trace_info=ip or "unknown", message=f"SQL injection detected: {value}", secure=False)
+            await security_manager.track_suspicious_activity(ip_address, "SQL injection detected")
+            log.critical(action="sql_injection_detected", trace_info=ip_address, message=f"SQL injection detected: {value}", secure=False)
             return None, "SQL injection detected"
 
     if not hasattr(g, "_secure_data_cache"):
@@ -1700,7 +1691,7 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
         if not request.headers.get(header):
             return False, f"Missing required header: {header}"
     
-    ip_address = get_ip_address()
+    ip_address = get_ip_address() or "unknown"
     device_id = request.headers.get("X-Device-ID")
     
     # Check for suspicious headers
@@ -1708,6 +1699,6 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
     for header in suspicious_headers:
         if request.headers.get(header):
             log.critical(action="suspicious_header", trace_info=ip_address, message=f"Suspicious header detected: {header}", secure=False)
-            security_manager.track_suspicious_activity(ip_address, "Suspicious header detected")
+            await security_manager.track_suspicious_activity(ip_address, "Suspicious header detected")
     
     return True, ""

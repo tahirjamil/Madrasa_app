@@ -37,29 +37,29 @@ class TestEnvValidator(unittest.TestCase):
         
         success, errors = EnvValidator.validate()
         self.assertFalse(success)
-        self.assertTrue(len(errors) >= len(EnvValidator.REQUIRED_VARS))
+        self.assertTrue(len(errors) >= len(EnvValidator.CORE_REQUIRED))
         
         # Check that each required var is reported as missing
-        for var in EnvValidator.REQUIRED_VARS:
+        for var in EnvValidator.CORE_REQUIRED:
             self.assertTrue(any(var in error for error in errors))
     
     def test_empty_sensitive_variables(self):
         """Test detection of empty sensitive variables"""
         # Set all required vars but make sensitive ones empty
-        for var in EnvValidator.REQUIRED_VARS:
-            os.environ[var] = " " if var in EnvValidator.NON_EMPTY_VARS else "test_value"
+        for var in EnvValidator.CORE_REQUIRED:
+            os.environ[var] = " " if var in EnvValidator.NON_EMPTY else "test_value"
         
         success, errors = EnvValidator.validate()
         self.assertFalse(success)
         
         # Check that empty sensitive vars are reported
-        for var in EnvValidator.NON_EMPTY_VARS:
+        for var in EnvValidator.NON_EMPTY:
             self.assertTrue(any(var in error and "Empty" in error for error in errors))
     
     def test_invalid_formats(self):
         """Test validation of specific formats"""
         # Set all required vars with some invalid formats
-        for var in EnvValidator.REQUIRED_VARS:
+        for var in EnvValidator.CORE_REQUIRED:
             os.environ[var] = "test_value"
         
         # Test invalid port
@@ -81,7 +81,7 @@ class TestEnvValidator(unittest.TestCase):
     
     def test_invalid_sql_identifier(self):
         """Test validation of SQL identifier for MADRASA_NAME"""
-        for var in EnvValidator.REQUIRED_VARS:
+        for var in EnvValidator.CORE_REQUIRED:
             os.environ[var] = "test_value"
         
         # Test invalid SQL identifiers
@@ -126,7 +126,7 @@ class TestEnvValidator(unittest.TestCase):
     def test_directory_permissions(self):
         """Test directory permission checks"""
         # Set all required vars
-        for var in EnvValidator.REQUIRED_VARS:
+        for var in EnvValidator.CORE_REQUIRED:
             os.environ[var] = "test_value"
         
         # Mock directory doesn't exist
@@ -144,13 +144,13 @@ class TestEnvValidator(unittest.TestCase):
     def test_get_safe_config(self):
         """Test getting configuration with safe defaults"""
         # Set minimal required vars
-        for var in EnvValidator.REQUIRED_VARS:
+        for var in EnvValidator.CORE_REQUIRED:
             os.environ[var] = f"value_for_{var}"
         
         config = EnvValidator.get_safe_config()
         
         # Check required vars are included
-        for var in EnvValidator.REQUIRED_VARS:
+        for var in EnvValidator.CORE_REQUIRED:
             self.assertEqual(config[var], f"value_for_{var}")
         
         # Check defaults are applied

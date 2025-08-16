@@ -2,14 +2,18 @@ import os
 from pathlib import Path
 from typing import Tuple, Any, Dict
 
-def get_env_var(var_name: str, default: Any | None = None) -> Any:
+def get_env_var(var_name: str, default: Any | None = None, required: bool = True) -> Any:
     """Get an environment variable with a default value."""
     value = os.getenv(var_name)
+    if value and value.lower() in ("none", "null", ""):
+        value = None
     if not value:
-        print(f"Critical: Environment variable {var_name} is not set")
-        if not default:
-            raise ValueError(f"Environment variable {var_name} is not set")
-        return default
+        if required:
+            print(f"Critical: Environment variable {var_name} is not set")
+            if not default:
+                raise ValueError(f"Environment variable {var_name} is not set")
+            return default
+        return None
     return value
 
 def get_project_root(marker_files= ("pyproject.toml", "app.py")) -> Path:

@@ -15,14 +15,13 @@ import sys
 import os
 import asyncio
 from typing import Any
-import redis.asyncio as redis
 
-from utils.helpers.improved_funtions import get_env_var
 
 
 # Add project root to path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from utils.helpers.improved_funtions import get_env_var
 from config import config  # noqa: E402
 from utils.keydb.keydb_utils import (  # noqa: E402
     connect_to_keydb,

@@ -99,7 +99,7 @@ class MadrasaConfig:
     SERVICE_PHONE_API_KEY = get_env_var("SMS_API_KEY")
     SERVICE_EMAIL_PORT = 587
     SERVICE_EMAIL_PASSWORD = get_env_var("EMAIL_PASSWORD")
-    SERVICE_EMAIL_API_KEY = get_env_var("EMAIL_API_KEY")
+    SERVICE_EMAIL_API_KEY = get_env_var("EMAIL_API_KEY", required=False) # TODO: Remove this
     
     # Password Security
     PASSWORD_MIN_LENGTH = 8
@@ -145,7 +145,7 @@ class MadrasaConfig:
     MYSQL_PASSWORD = get_env_var("MYSQL_PASSWORD")
     MYSQL_DB = get_env_var("MYSQL_DB", "default")
     MYSQL_PORT = int(get_env_var("MYSQL_PORT", 3306))
-    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None)
+    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None, required=False) # TODO: Remove this
     MYSQL_POOL_SIZE = 10
     MYSQL_MAX_OVERFLOW = 5
     MYSQL_TIMEOUT = 60.0
@@ -157,7 +157,7 @@ class MadrasaConfig:
     # Redis Connection Settings
     REDIS_HOST = get_env_var("REDIS_HOST", "localhost")
     REDIS_PORT = int(get_env_var("REDIS_PORT", 6379))
-    REDIS_PASSWORD = get_env_var("REDIS_PASSWORD", None)
+    REDIS_PASSWORD = get_env_var("REDIS_PASSWORD", None, required=False) # TODO: Remove this
     REDIS_DB = int(get_env_var("REDIS_DB", 0))
     REDIS_SSL = get_env_var("REDIS_SSL", "false")
     REDIS_MINSIZE = 1

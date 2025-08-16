@@ -1,6 +1,7 @@
-from quart import request, jsonify
+from typing import Tuple
+from quart import Response, request, jsonify
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_funtions import get_env_var, send_json_response
 from . import api
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
@@ -11,10 +12,10 @@ from utils.helpers.logger import log
 from quart_babel import gettext as _
 
 # ====== Payment Fee Info ======
-@api.route('/due_payments', methods=['POST'])
+@api.route('/due_payments', methods=['POST']) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
-async def payments():
+async def payments() -> Tuple[Response, int]:
     conn = await get_db_connection()
 
     data = await request.get_json()
@@ -28,7 +29,8 @@ async def payments():
 
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"error": msg}), 400
+        response, status = send_json_response(msg, 400)
+        return jsonify(response), status
 
 
     async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -46,7 +48,8 @@ async def payments():
 
         if not result:
             log.error(action="payments_user_not_found", trace_info=formatted_phone, message=f"User {fullname} not found", secure=True)
-            return jsonify({"message": _("User not found for payments")}), 404
+            response, status = send_json_response(_("User not found for payments"), 404)
+            return jsonify(response), status
 
 
     # Extract data
@@ -64,7 +67,7 @@ async def payments():
 
 
 # ====== Get Transaction History ======
-@api.route('/get_transactions', methods=['POST'])
+@api.route('/get_transactions', methods=['POST']) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def get_transactions():
@@ -80,13 +83,15 @@ async def get_transactions():
 
     if not phone or not fullname or not transaction_type:
         log.error(action="payment_missing_fields", trace_info=phone or "", message="Phone, fullname or transaction type missing", secure=True)
-        return jsonify({"error": _("Phone, fullname and payment type required")}), 400
+        response, status = send_json_response(_("Phone, fullname and payment type required"), 400)
+        return jsonify(response), status
 
     fullname = fullname.strip().lower()
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
         log.error(action="payment_invalid_phone", trace_info=phone, message="Invalid phone format", secure=True)
-        return jsonify({"error": _("Invalid phone number")}), 400
+        response, status = send_json_response(_("Invalid phone number"), 400)
+        return jsonify(response), status
 
     # Build base query and params
     sql = """
@@ -113,7 +118,8 @@ async def get_transactions():
             params.append(cutoff)
         except ValueError:
             log.error(action="payment_invalid_timestamp", trace_info=formatted_phone, message=lastfetched, secure=True)
-            return jsonify({"error": _("Invalid updatedSince format")}), 400
+            response, status = send_json_response(_("Invalid updatedSince format"), 400)
+            return jsonify(response), status
 
     # Final ordering
     sql += " ORDER BY t.date DESC"
@@ -129,11 +135,13 @@ async def get_transactions():
     except Exception as e:
         await conn.rollback()
         log.critical(action="payment_transaction_error", trace_info=formatted_phone, message=str(e), secure=True)
-        return jsonify({"error": _("Internal server error during payments processing")}), 500
+        response, status = send_json_response(_("Internal server error during payments processing"), 500)
+        return jsonify(response), status
 
     # Handle no‐results
     if not transactions:
-        return jsonify({"message": _("No transactions found")}), 404
+        response, status = send_json_response(_("No transactions found"), 404)
+        return jsonify(response), status
 
     # Normalize dates to ISO-8601 Z format
     for tx in transactions:
@@ -166,14 +174,16 @@ async def pay_sslcommerz():
 
     if not transaction_type or amount is None:
         log.error(action="payment_missing_fields", trace_info=phone, message="Missing payment info", secure=True)
-        return jsonify({"error": _("Amount and payment type are required")}), 400
+        response, status = send_json_response(_("Amount and payment type are required"), 400)
+        return jsonify(response), status
 
     tran_id    = f"ssl_{int(time.time())}"
     store_id   = get_env_var("SSLCOMMERZ_STORE_ID")
     store_pass = get_env_var("SSLCOMMERZ_STORE_PASS")
     if not store_id or not store_pass:
         log.warning(action="sslcommerz_config_missing", trace_info=phone, message="SSLCommerz credentials not set", secure=True)
-        return jsonify({"error": _("Payment gateway is not properly configured")}), 500
+        response, status = send_json_response(_("Payment gateway is not properly configured"), 500)
+        return jsonify(response), status
 
     payload = {
         # merchant + txn
@@ -228,16 +238,17 @@ async def pay_sslcommerz():
         res = r.json()
     except Exception as e:
         log.critical(action="sslcommerz_request_error", trace_info=phone, message=str(e), secure=True)
-        return jsonify({"error": _("Payment gateway is currently unreachable")}), 502
+        response, status = send_json_response(_("Payment gateway is currently unreachable"), 502)
+        return jsonify(response), status
 
     if res.get('status') == 'SUCCESS':
-        return jsonify({"GatewayPageURL": res.get('GatewayPageURL')}), 200
+        response, status = send_json_response(res.get('GatewayPageURL'), 200)
+        return jsonify(response), status
     else:
         log.critical(action="sslcommerz_initiation_failed", trace_info=phone, message=f"{res.get('status')} – {res.get('failedreason')}", secure=True)
-        return jsonify({
-            "error":  _("Payment initiation failed"),
-            "reason": res.get('failedreason')
-        }), 400
+        response, status = send_json_response(_("Payment initiation failed"), 400)
+        response.update({"reason": res.get('failedreason')})
+        return jsonify(response), status
 
 
 @api.route('/payments/<return_type>', methods=['POST'])
@@ -245,11 +256,14 @@ async def pay_sslcommerz():
 async def payments_success_ssl(return_type):
     valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']
     if return_type not in valid_types:
-        return jsonify({"error": _("Invalid return type")}), 400
+        response, status = send_json_response(_("Invalid return type"), 400)
+        return jsonify(response), status
     if return_type == 'payment_fail_ssl':
-        return jsonify({"error": _("Payment failed")}), 400
+        response, status = send_json_response(_("Payment failed"), 400)
+        return jsonify(response), status
     elif return_type == 'payment_cancel_ssl':
-        return jsonify({"error": _("Payment cancelled")}), 400
+        response, status = send_json_response(_("Payment cancelled"), 400)
+        return jsonify(response), status
     
     data            = (await request.form).to_dict() or {}
     phone           = str(data.get('value_a'))
@@ -262,11 +276,13 @@ async def payments_success_ssl(return_type):
     # Ensure we received our transaction identifier back
     if not tran_id:
         log.error(action="sslcommerz_callback_no_tranid", trace_info=phone, message="Missing value_e", secure=True)
-        return jsonify({"error": _("Missing transaction identifier")}), 400
+        response, status = send_json_response(_("Missing transaction identifier"), 400)
+        return jsonify(response), status
         
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
-        return jsonify({"error": msg}), 400
+        response, status = send_json_response(msg, 400)
+        return jsonify(response), status
 
     # 1️⃣ Validate callback with SSLCommerz
     store_id   = get_env_var("SSLCOMMERZ_STORE_ID")
@@ -283,10 +299,12 @@ async def payments_success_ssl(return_type):
         ).json()
         if validation.get('status') != 'VALID':
             log.warning(action="sslcommerz_validation_failed", trace_info=formatted_phone, message=validation.get('status'), secure=True)
-            return jsonify({"error": _("Payment validation failed")}), 400
+            response, status = send_json_response(_("Payment validation failed"), 400)
+            return jsonify(response), status
     except Exception as e:
         log.critical(action="sslcommerz_validation_error", trace_info=formatted_phone, message=str(e), secure=True)
-        return jsonify({"error": _("Error during payments validation")}), 502
+        response, status = send_json_response(_("Error during payments validation"), 502)
+        return jsonify(response), status
 
         
     # 2️⃣ Record transaction directly in the database
@@ -305,7 +323,8 @@ async def payments_success_ssl(return_type):
             user = await cursor.fetchone()
             if not user:
                 log.error(action="transaction_user_not_found", trace_info=formatted_phone, message=fullname, secure=True)
-                return jsonify({"error": _("User not found for payments")}), 404
+                response, status = send_json_response(_("User not found for payments"), 404)
+                return jsonify(response), status
                 
             # Insert the new transaction
             await cursor.execute(
@@ -319,6 +338,8 @@ async def payments_success_ssl(return_type):
         if db:
             await db.rollback()
         log.critical(action="payment_insert_fail", trace_info=formatted_phone, message=str(e), secure=True)
-        return jsonify({"error": _("Transaction failed")}), 500
+        response, status = send_json_response(_("Transaction failed"), 500)
+        return jsonify(response), status
             
-    return jsonify({"message": _("Payment recorded successfully")}), 200
+    response, status = send_json_response(_("Payment recorded successfully"), 200)
+    return jsonify(response), status

@@ -12,6 +12,7 @@ import socket
 
 from config import config, MadrasaConfig, MadrasaApp
 from utils import create_tables
+from utils.helpers.improved_funtions import send_json_response
 from utils.mysql.database_utils import connect_to_db
 from utils.keydb.keydb_utils import connect_to_keydb, close_keydb
 from utils.otel.otel_utils import init_otel
@@ -147,7 +148,8 @@ async def block_xss_inputs():
         for value in request.args.values():
             if isinstance(value, str) and security_manager.detect_xss(value):
                 logger.warning(f"Blocked potential XSS via query params: {request.path}")
-                return jsonify({"error": "Invalid input"}), 400
+                response, status = send_json_response("Invalid input", 400, "XSS detected")
+                return jsonify(response), status
 
         # Check form data (if present)
         try:
@@ -158,7 +160,8 @@ async def block_xss_inputs():
             for value in form.values():
                 if isinstance(value, str) and security_manager.detect_xss(value):
                     logger.warning(f"Blocked potential XSS via form data: {request.path}")
-                    return jsonify({"error": "Invalid input"}), 400
+                    response, status = send_json_response("Invalid input", 400, "XSS detected")
+                    return jsonify(response), status
 
         # Check JSON payload (if present)
         json_data = await request.get_json(silent=True)
@@ -174,7 +177,8 @@ async def block_xss_inputs():
 
         if json_data and _contains_xss(json_data):
             logger.warning(f"Blocked potential XSS via JSON body: {request.path}")
-            return jsonify({"error": "Invalid input"}), 400
+            response, status = send_json_response("Invalid input", 400, "XSS detected")
+            return jsonify(response), status
     except Exception as e:
         # Fail-safe: never break requests due to guard errors
         logger.error(f"XSS guard error: {str(e)}")
@@ -229,10 +233,8 @@ async def attach_response_data(response):
 @app.errorhandler(Exception)
 async def handle_exception(e):
     logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
-    return jsonify({
-        "error": "Internal server error",
-        "message": str(e)
-    }), 500
+    response, status = send_json_response("Internal server error", 500, str(e))
+    return jsonify(response), status
 
 # ─── Error & Favicon ────────────────────────────────────────
 # CSRF error handler
@@ -246,7 +248,8 @@ async def csrf_error(e):
     if "CSRF" in str(e):
         logger.warning(f"CSRF error: {request.path}")
         return await render_template('admin/csrf_error.html', reason=str(e)), 400
-    return jsonify({"error": "Bad request"}), 400
+    response, status = send_json_response("Bad request", 400)
+    return jsonify(response), status
 
 @app.route('/favicon.ico')
 async def favicon():

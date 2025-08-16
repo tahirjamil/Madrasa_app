@@ -4,12 +4,25 @@ from typing import Tuple
 import os
 import re
 from werkzeug.utils import secure_filename
+
+from utils.helpers.improved_funtions import send_json_response
 from . import api
 from utils.helpers.helpers import (
-    get_safe_file_path, get_client_info, ERROR_MESSAGES, handle_async_errors, validate_folder_access
+    get_client_info, handle_async_errors
 )
 from utils.helpers.logger import log
 from config import config
+from quart_babel import gettext as _
+
+ERROR_MESSAGES = {
+        'file_not_found': _("File not found"),
+        'invalid_folder': _("Invalid folder name"),
+        'invalid_gender': _("Invalid gender parameter"),
+        'file_too_large': _("File size exceeds maximum allowed size"),
+        'invalid_file_type': _("Invalid file type"),
+        'unauthorized': _("Unauthorized access"),
+        'internal_error': _("An internal error occurred"),
+    }
 
 # ─── Security and Validation Functions ───────────────────────────────────────
 
@@ -29,6 +42,18 @@ def sanitize_filename(filename: str) -> str:
         return "default"
     
     return secure_filename(filename)
+
+def validate_folder_access(folder: str, allowed_folders: list) -> bool:
+    """Validate folder access against allowed folders list"""
+    # Sanitize folder name
+    sanitized_folder = folder.strip()
+    
+    # Check for path traversal attempts
+    if '..' in sanitized_folder or '/' in sanitized_folder or '\\' in sanitized_folder:
+        return False
+    
+    # Check if folder is in allowed list
+    return sanitized_folder in allowed_folders
 
 def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str] | Tuple[None, None]:
     """Get safe file path and validate existence"""
@@ -56,24 +81,27 @@ def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str] | Tuple
 async def uploaded_file(filename: str) -> Tuple[Response, int]:
     """Serve user profile images with enhanced security"""
     # Get client info for logging
-    client_info = await get_client_info()
+    client_info = await get_client_info() or {}
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(config.PROFILE_IMG_UPLOAD_FOLDER, filename)
     
     if not file_path or not safe_filename:
         log.warning(action="invalid_profile_image_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     # Check if file exists and is accessible
     if not os.path.isfile(file_path):
         log.warning(action="profile_image_not_found", trace_info=client_info["ip_address"], message=f"Profile image not found: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     # Validate file type
     if not safe_filename or not any(safe_filename.lower().endswith(ext) for ext in config.ALLOWED_IMAGE_EXTENSIONS):
         log.warning(action="invalid_image_type", trace_info=client_info["ip_address"], message=f"Invalid image type: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['invalid_file_type']}), 400
+        response, status = send_json_response(ERROR_MESSAGES['invalid_file_type'], 400)
+        return jsonify(response), status
     
     try:
         # Serve file with security headers
@@ -94,14 +122,15 @@ async def uploaded_file(filename: str) -> Tuple[Response, int]:
         
     except Exception as e:
         log.critical(action="file_serving_error", trace_info=client_info["ip_address"], message=f"Error serving file {filename}: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
+        return jsonify(response), status
 
 @api.route('/uploads/notices/<path:filename>')
 @handle_async_errors
 async def notices_file(filename: str) -> Tuple[Response, int]:
     """Serve notice files with enhanced security"""
     # Get client info for logging
-    client_info = await get_client_info()
+    client_info = await get_client_info() or {}
     
     # Get upload folder from config
     upload_folder = config.NOTICES_UPLOAD_FOLDER
@@ -111,12 +140,14 @@ async def notices_file(filename: str) -> Tuple[Response, int]:
     
     if not file_path or not safe_filename:
         log.warning(action="invalid_notice_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     # Check if file exists
     if not os.path.isfile(file_path):
         log.warning(action="notice_file_not_found", trace_info=client_info["ip_address"], message=f"Notice file not found: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     try:
         # Serve file with security headers
@@ -134,14 +165,15 @@ async def notices_file(filename: str) -> Tuple[Response, int]:
         
     except Exception as e:
         log.critical(action="notice_serving_error", trace_info=client_info["ip_address"], message=f"Error serving notice file {filename}: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
+        return jsonify(response), status
 
 @api.route('/uploads/exam_results/<path:filename>')
 @handle_async_errors
 async def exam_results_file(filename: str) -> Tuple[Response, int]:
     """Serve exam result files with enhanced security"""
     # Get client info for logging
-    client_info = await get_client_info()
+    client_info = await get_client_info() or {}
     
     # Get upload folder from config
     upload_folder = config.EXAM_RESULTS_UPLOAD_FOLDER
@@ -151,12 +183,14 @@ async def exam_results_file(filename: str) -> Tuple[Response, int]:
     
     if not file_path or not safe_filename:
         log.warning(action="invalid_exam_result_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     # Check if file exists
     if not os.path.isfile(file_path):
         log.warning(action="exam_result_file_not_found", trace_info=client_info["ip_address"], message=f"Exam result file not found: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     try:
         # Serve file with security headers
@@ -174,24 +208,27 @@ async def exam_results_file(filename: str) -> Tuple[Response, int]:
         
     except Exception as e:
         log.critical(action="exam_result_serving_error", trace_info=client_info["ip_address"], message=f"Error serving exam result file {filename}: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
+        return jsonify(response), status
 
 @api.route('/uploads/gallery/<gender>/<folder>/<path:filename>')
 @handle_async_errors
 async def gallery_file(gender: str, folder: str, filename: str) -> Tuple[Response, int]:
     """Serve gallery files with enhanced security and validation"""
     # Get client info for logging
-    client_info = await get_client_info()
+    client_info = await get_client_info() or {}
     
     # Validate gender parameter
     if gender not in config.ALLOWED_GALLERY_GENDERS:
         log.warning(action="invalid_gallery_gender", trace_info=client_info["ip_address"], message=f"Invalid gender parameter: {gender}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['invalid_gender']}), 400
+        response, status = send_json_response(ERROR_MESSAGES['invalid_gender'], 400)
+        return jsonify(response), status
     
     # Validate folder parameter
     if not validate_folder_access(folder, config.ALLOWED_GALLERY_FOLDERS):
         log.warning(action="invalid_gallery_folder", trace_info=client_info["ip_address"], message=f"Invalid folder parameter: {folder}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['invalid_folder']}), 400
+        response, status = send_json_response(ERROR_MESSAGES['invalid_folder'], 400)
+        return jsonify(response), status
     
     # Get upload folder path
     upload_folder = os.path.join(
@@ -204,12 +241,14 @@ async def gallery_file(gender: str, folder: str, filename: str) -> Tuple[Respons
     
     if not file_path or not safe_filename:
         log.warning(action="invalid_gallery_file_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     # Check if file exists
     if not os.path.isfile(file_path):
         log.warning(action="gallery_file_not_found", trace_info=client_info["ip_address"], message=f"Gallery file not found: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     try:
         # Serve file with security headers
@@ -227,19 +266,21 @@ async def gallery_file(gender: str, folder: str, filename: str) -> Tuple[Respons
         
     except Exception as e:
         log.critical(action="gallery_serving_error", trace_info=client_info["ip_address"], message=f"Error serving gallery file {filename}: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
+        return jsonify(response), status
 
 @api.route('/uploads/gallery/classes/<folder>/<path:filename>')
 @handle_async_errors
 async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, int]:
     """Serve gallery class files with enhanced security and validation"""
     # Get client info for logging
-    client_info = await get_client_info()
+    client_info = await get_client_info() or {}
     
     # Validate folder parameter
     if not validate_folder_access(folder, config.ALLOWED_CLASS_FOLDERS):
         log.warning(action="invalid_class_folder", trace_info=client_info["ip_address"], message=f"Invalid class folder parameter: {folder}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['invalid_folder']}), 400
+        response, status = send_json_response(ERROR_MESSAGES['invalid_folder'], 400)
+        return jsonify(response), status
     
     # Get upload folder path
     upload_folder = os.path.join(
@@ -252,12 +293,14 @@ async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, in
     
     if not file_path or not safe_filename:
         log.warning(action="invalid_class_file_request", trace_info=client_info["ip_address"], message=f"Invalid filename: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     # Check if file exists
     if not os.path.isfile(file_path):
         log.warning(action="class_file_not_found", trace_info=client_info["ip_address"], message=f"Class file not found: {filename}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['file_not_found']}), 404
+        response, status = send_json_response(ERROR_MESSAGES['file_not_found'], 404)
+        return jsonify(response), status
     
     try:
         # Serve file with security headers
@@ -275,4 +318,5 @@ async def gallery_classes_file(folder: str, filename: str) -> Tuple[Response, in
         
     except Exception as e:
         log.critical(action="class_file_serving_error", trace_info=client_info["ip_address"], message=f"Error serving class file {filename}: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
+        return jsonify(response), status

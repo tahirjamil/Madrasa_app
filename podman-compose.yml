@@ -7,8 +7,8 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - keydb_data:/data
-      - ./config/keydb/keydb.conf:/etc/keydb/keydb.conf:ro
+      - keydb_data:/data:Z
+      - ./config/keydb/keydb.conf:/etc/keydb/keydb.conf:ro,Z
     command: ["keydb-server", "/etc/keydb/keydb.conf"]
     networks:
       - observability_network
@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
     command: ["--config", "/etc/otel-collector-config.yaml"]
     volumes:
-      - ./utils/otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
+      - ./utils/otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro,Z
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
@@ -75,8 +75,8 @@ services:
     ports:
       - "9090:9090"  # Prometheus UI
     volumes:
-      - prometheus_data:/prometheus
-      - ./utils/otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus:Z
+      - ./utils/otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z
     networks:
       - observability_network
     healthcheck:

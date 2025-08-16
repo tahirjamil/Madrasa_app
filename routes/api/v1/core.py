@@ -12,7 +12,7 @@ from quart import (
 )
 from werkzeug.utils import secure_filename
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_funtions import get_env_var, send_json_response
 
 # Local imports
 from . import api
@@ -30,12 +30,6 @@ from utils.helpers.logger import log
 # ─── Configuration and Constants ───────────────────────────────────────────────
 
 ERROR_MESSAGES = {
-        'file_not_found': _("File not found"),
-        'invalid_folder': _("Invalid folder name"),
-        'invalid_gender': _("Invalid gender parameter"),
-        'file_too_large': _("File size exceeds maximum allowed size"),
-        'invalid_file_type': _("Invalid file type"),
-        'missing_required_fields': _("Missing required fields"),
         'invalid_phone': _("Invalid phone number format"),
         'invalid_name': _("Invalid name format"),
         'rate_limit_exceeded': _("Rate limit exceeded. Please try again later."),
@@ -55,12 +49,9 @@ async def add_person() -> Tuple[Response, int]:
     """Add a new person to the system with comprehensive validation and security """
     # Test mode handling
     if config.is_testing():
-        return jsonify({
-            "success": True, 
-            "message": "App in test mode", 
-            "user_id": None, 
-            "info": None
-        }), 201
+        response, status = send_json_response(_("Ignored because in test mode"), 201)
+        response.update({"info": None, "user_id": None})
+        return jsonify(response), status
     
     try:
         # Get form data
@@ -74,27 +65,28 @@ async def add_person() -> Tuple[Response, int]:
         missing_fields = [f for f in required_fields if not data.get(f)]
         if missing_fields:
             log.warning(action="add_people_missing_fields", trace_info=data.get("ip_address", ""), message=f"Missing required fields: {missing_fields}", secure=False)
-            return jsonify({
-                "message": _("Missing required fields: %(fields)s") % {"fields": ", ".join(missing_fields)}
-            }), 400
+            response, status = send_json_response(_("Missing required fields: %(fields)s") % {"fields": ", ".join(missing_fields)}, 400)
+            return jsonify(response), status
         
         # Extract and validate basic fields with sanitization
-        fullname = data.get('name_en')
-        phone = data.get('phone')
-        acc_type = data.get('acc_type')
+        fullname = data.get('name_en') or ""
+        phone = data.get('phone') or ""
+        acc_type = data.get('acc_type') or ""
         
         # Validate fullname
         is_valid_name, name_error = validate_fullname(fullname)
         if not is_valid_name:
-            return jsonify({"message": name_error}), 400
+            response, status = send_json_response(name_error, 400)
+            return jsonify(response), status
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone)
         if not formatted_phone:
-            return jsonify({"message": phone_error}), 400
+            response, status = send_json_response(phone_error, 400)
+            return jsonify(response), status
         
         # Normalize account type
-        if not acc_type.endswith('s'):
+        if not acc_type or not acc_type.endswith('s'):
             acc_type = f"{acc_type}s"
         
         VALID_ACCOUNT_TYPES = [
@@ -108,7 +100,8 @@ async def add_person() -> Tuple[Response, int]:
         person_id = await get_id(formatted_phone, fullname.lower())
         if not person_id:
             log.error(action="add_people_id_not_found", trace_info=formatted_phone, message="User ID not found", secure=True)
-            return jsonify({"message": _("ID not found")}), 404
+            response, status = send_json_response(_("ID not found"), 404)
+            return jsonify(response), status
         
         # Initialize fields dictionary
         fields: Dict[str, Any] = {"user_id": person_id}
@@ -126,13 +119,14 @@ async def add_person() -> Tuple[Response, int]:
         # Handle image upload with enhanced security
         if image and image.filename:
             # Validate file upload
-            is_valid_file, file_error = validate_file_upload(
+            is_valid_file, file_error = await validate_file_upload(
                 file=image,
                 allowed_extensions=list(config.ALLOWED_PROFILE_IMG_EXTENSIONS),
             )
             
             if not is_valid_file:
-                return jsonify({"message": file_error}), 400
+                response, status = send_json_response(file_error, 400)
+                return jsonify(response), status
             
             # Generate secure filename
             filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
@@ -160,9 +154,11 @@ async def add_person() -> Tuple[Response, int]:
                 
             except Exception as e:
                 log.critical(action="image_processing_error", trace_info=data.get("ip_address", ""), message=f"Failed to process image: {str(e)}", secure=False)
-                return jsonify({"message": "Failed to process image"}), 500
+                response, status = send_json_response("Failed to process image", 500)
+                return jsonify(response), status
         else:
-            return jsonify({"message": "Image file is required"}), 400
+            response, status = send_json_response("Image file is required", 400)
+            return jsonify(response), status
         
         # Helper function to get form data
         def get_field(key: str, default: str = '') -> str:
@@ -182,9 +178,8 @@ async def add_person() -> Tuple[Response, int]:
             
             missing_required = [field for field in required_fields if not get_field(field)]
             if missing_required:
-                return jsonify({
-                    "message": _("All required fields must be provided for Student")
-                }), 400
+                response, status = send_json_response(_("All required fields must be provided for Student"), 400)
+                return jsonify(response), status
             
             fields.update({field: get_field(field) for field in required_fields})
             
@@ -201,9 +196,8 @@ async def add_person() -> Tuple[Response, int]:
             
             missing_required = [field for field in required_fields if not get_field(field)]
             if missing_required:
-                return jsonify({
-                    "message": _("All required fields must be provided for %(type)s") % {"type": acc_type}
-                }), 400
+                response, status = send_json_response(_("All required fields must be provided for %(type)s") % {"type": acc_type}, 400)
+                return jsonify(response), status
             
             fields.update({field: get_field(field) for field in required_fields})
             
@@ -224,9 +218,8 @@ async def add_person() -> Tuple[Response, int]:
             
             missing_required = [field for field in required_fields if not get_field(field)]
             if missing_required:
-                return jsonify({
-                    "message": _("All required fields must be provided for %(type)s") % {"type": acc_type}
-                }), 400
+                response, status = send_json_response(_("All required fields must be provided for %(type)s") % {"type": acc_type}, 400)
+                return jsonify(response), status
             
             fields.update({field: get_field(field) for field in required_fields})
             
@@ -235,9 +228,8 @@ async def add_person() -> Tuple[Response, int]:
             missing_basic = [field for field in basic_required if not get_field(field)]
             
             if missing_basic:
-                return jsonify({
-                    "message": _("Name, Phone, and Father/Spouse are required for Guest")
-                }), 400
+                response, status = send_json_response(_("Name, Phone, and Father/Spouse are required for Guest"), 400)
+                return jsonify(response), status
             
             fields.update({
                 "name_en": get_field("name_en"),
@@ -268,9 +260,6 @@ async def add_person() -> Tuple[Response, int]:
         # Insert into database
         await insert_person(madrasa_name, fields, acc_type, formatted_phone)
         
-        # Invalidate related cache
-        invalidate_related_cache('add_person', user_id=person_id)
-        
         # Get image path for response
         conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -284,24 +273,18 @@ async def add_person() -> Tuple[Response, int]:
             img_path = row["image_path"] if row else None
         
         # Log successful addition
-        log_operation_success("add_person", {
-            "fullname": fullname,
-            "acc_type": acc_type,
-            "user_id": person_id
-        })
+        log.info(action="add_person", trace_info=formatted_phone, message=f"User {fullname} added successfully", secure=True)
         
-        return jsonify({
-            "success": True,
-            "message": _("%(type)s profile added successfully") % {"type": acc_type},
-            "user_id": person_id,
-            "info": img_path
-        }), 201
+        response, status = send_json_response(_("%(type)s profile added successfully") % {"type": acc_type}, 201)
+        response.update({"user_id": person_id, "info": img_path})
+        return jsonify(response), status
         
     except Exception as e:
         log.critical(action="add_person_error", trace_info="system", message=f"Error adding person: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['internal_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
+        return jsonify(response), status
 
-@api.route('/members', methods=['POST'])
+@api.route('/members', methods=['POST']) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def get_info() -> Tuple[Response, int]:
@@ -310,7 +293,8 @@ async def get_info() -> Tuple[Response, int]:
         # Get request data
         data = await request.get_json() # TODO: Validate request data
         if not data:
-            return jsonify({"error": "Invalid request data"}), 400
+            response, status = send_json_response("Invalid request data", 400)
+            return jsonify(response), status
         
         madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get('updatedSince')
@@ -322,7 +306,8 @@ async def get_info() -> Tuple[Response, int]:
                 corrected_time = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
                 log.warning(action="timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-                return jsonify({"error": "Invalid timestamp format"}), 400
+                response, status = send_json_response("Invalid timestamp format", 400)
+                return jsonify(response), status
         
         # Build SQL query with proper joins
         sql = f"""
@@ -379,27 +364,24 @@ async def get_info() -> Tuple[Response, int]:
         await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
-        log_operation_success("get_members", {
-            "count": len(members),
-            "lastfetched": lastfetched
-        })
+        log.info(action="get_members", trace_info=data.get("ip_address", ""), message=f"Members retrieved successfully", secure=False)
         
         return jsonify(result_data), 200
         
     except Exception as e:
         log.critical(action="get_members_error", trace_info="system", message=f"Error retrieving members: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
+        return jsonify(response), status
 
-@api.route("/routines", methods=["POST"])
+@api.route("/routines", methods=["POST"]) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def get_routine() -> Tuple[Response, int]:
     """Get routine information with caching and incremental updates"""
     # Check maintenance mode
     if config.is_maintenance:
-        return jsonify({
-            "error": ERROR_MESSAGES['maintenance_mode']
-        }), 503
+        response, status = send_json_response(ERROR_MESSAGES['maintenance_mode'], 503)
+        return jsonify(response), status
     
     # Get client info for logging
     # client_info = get_client_info()
@@ -408,7 +390,8 @@ async def get_routine() -> Tuple[Response, int]:
         # Get request data
         data = await request.get_json()
         if not data:
-            return jsonify({"error": "Invalid request data"}), 400
+            response, status = send_json_response("Invalid request data", 400)
+            return jsonify(response), status
         
         madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get("updatedSince")
@@ -418,12 +401,14 @@ async def get_routine() -> Tuple[Response, int]:
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
                 log.warning(action="invalid_routine_timestamp", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp format: {lastfetched}", secure=False)
-                return jsonify({"error": "Invalid timestamp format"}), 400
+                response, status = send_json_response("Invalid timestamp format", 400)
+                return jsonify(response), status
             try:
                 corrected_time = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
                 log.warning(action="routine_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-                return jsonify({"error": "Invalid timestamp format"}), 400
+                response, status = send_json_response("Invalid timestamp format", 400)
+                return jsonify(response), status
         
         # Build SQL query
         sql = f"""
@@ -469,18 +454,16 @@ async def get_routine() -> Tuple[Response, int]:
         await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
-        log_operation_success("get_routines", {
-            "count": len(result),
-            "lastfetched": lastfetched
-        })
+        log.info(action="get_routines", trace_info=data.get("ip_address", ""), message=f"Routines retrieved successfully", secure=False)
         
         return jsonify(result_data), 200
         
     except Exception as e:
         log.critical(action="get_routines_error", trace_info="system", message=f"Error retrieving routines: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
+        return jsonify(response), status
 
-@api.route('/events', methods=['POST'])
+@api.route('/events', methods=['POST']) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def events() -> Tuple[Response, int]:
@@ -492,9 +475,8 @@ async def events() -> Tuple[Response, int]:
     """
     # Check maintenance mode
     if config.is_maintenance:
-        return jsonify({
-            "error": ERROR_MESSAGES['maintenance_mode']
-        }), 503
+        response, status = send_json_response(ERROR_MESSAGES['maintenance_mode'], 503)
+        return jsonify(response), status
     
     # Get client info for logging
     # client_info = get_client_info()
@@ -521,14 +503,16 @@ async def events() -> Tuple[Response, int]:
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
                 log.error(action="get_events_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
-                return jsonify({"error": "Invalid updatedSince format"}), 400
+                response, status = send_json_response("Invalid updatedSince format", 400)
+                return jsonify(response), status
             try:
                 cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
                 sql += " WHERE e.created_at > %s"
                 params.append(cutoff)
             except ValueError as e:
                 log.error(action="events_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-                return jsonify({"error": "Invalid updatedSince format"}), 400
+                response, status = send_json_response("Invalid updatedSince format", 400)
+                return jsonify(response), status
         
         sql += " ORDER BY e.event_id DESC"
         
@@ -582,27 +566,24 @@ async def events() -> Tuple[Response, int]:
         await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
-        log_operation_success("get_events", {
-            "count": len(rows),
-            "lastfetched": lastfetched
-        })
+        log.info(action="get_events", trace_info=data.get("ip_address", ""), message=f"Events retrieved successfully", secure=False)
         
         return jsonify(result_data), 200
         
     except Exception as e:
         log.critical(action="get_events_error", trace_info="system", message=f"Error retrieving events: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
+        return jsonify(response), status
 
-@api.route('/exams', methods=['POST'])
+@api.route('/exams', methods=['POST']) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def get_exams() -> Tuple[Response, int]:
     """Get exam information with enhanced validation and error handling"""
     # Check maintenance mode
     if config.is_maintenance:
-        return jsonify({
-            "error": ERROR_MESSAGES['maintenance_mode']
-        }), 503
+        response, status = send_json_response(ERROR_MESSAGES['maintenance_mode'], 503)
+        return jsonify(response), status
     
     # Get client info for logging
     # client_info = get_client_info()
@@ -611,7 +592,8 @@ async def get_exams() -> Tuple[Response, int]:
         # Get request data
         data, error = await secure_data()
         if not data:
-            return jsonify({"error": error}), 400
+            response, status = send_json_response(error, 400)
+            return jsonify(response), status
         
         madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get("updatedSince")
@@ -621,12 +603,14 @@ async def get_exams() -> Tuple[Response, int]:
         if lastfetched:
             if not validate_timestamp_format(lastfetched):
                 log.error(action="get_exams_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
-                return jsonify({"error": "Invalid updatedSince format"}), 400
+                response, status = send_json_response("Invalid updatedSince format", 400)
+                return jsonify(response), status
             try:
                 cutoff = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
                 log.error(action="exams_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-                return jsonify({"error": "Invalid updatedSince format"}), 400
+                response, status = send_json_response("Invalid updatedSince format", 400)
+                return jsonify(response), status
         
         # Build SQL query
         sql = f"""
@@ -669,16 +653,14 @@ async def get_exams() -> Tuple[Response, int]:
         await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
-        log_operation_success("get_exams", {
-            "count": len(result),
-            "lastfetched": lastfetched
-        })
+        log.info(action="get_exams", trace_info=data.get("ip_address", ""), message=f"Exams retrieved successfully", secure=False)
         
         return jsonify(result_data), 200
         
     except Exception as e:
         log.critical(action="get_exams_error", trace_info="system", message=f"Error retrieving exams: {str(e)}", secure=False)
-        return jsonify({"message": ERROR_MESSAGES['database_error']}), 500
+        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
+        return jsonify(response), status
 
 
 
@@ -688,16 +670,12 @@ async def get_exams() -> Tuple[Response, int]:
 
 async def process_request_middleware(request: Request) -> Tuple[bool, str]:
     """Process request with security and validation checks"""
-    # Check maintenance mode
-    if config.is_maintenance:
-        return False, ERROR_MESSAGES['maintenance_mode']
-    
     # Validate request origin
     if not validate_request_origin(request):
         return False, "Invalid request origin"
     
     # Check for suspicious activity
-    client_info = get_client_info()
+    client_info = await get_client_info() or {}
     if security_manager.detect_sql_injection(str(request.url)):
         await security_manager.track_suspicious_activity(
             client_info["ip_address"], 
@@ -729,19 +707,6 @@ def validate_timestamp_format(timestamp: str) -> bool:
         return True
     except ValueError:
         return False
-
-
-
-def log_operation_success(operation: str, details: Dict[str, Any]) -> None:
-    """Log successful operation with details"""
-    log.info(action=f"{operation}_success", trace_info=get_client_info()["ip_address"], message=f"Operation {operation} completed successfully", secure=False, **details)
-
-def log_operation_failure(operation: str, error: Exception, details: Dict[str, Any] | None = None) -> None:
-    """Log failed operation with error details"""
-    if details is None:
-        details = {}
-    
-    log.critical(action=f"{operation}_failure", trace_info=get_client_info()["ip_address"], message=f"Operation {operation} failed: {str(error)}", secure=False, **details)
 
 def validate_folder_access(folder: str, allowed_folders: List[str]) -> bool:
     """Validate folder access permissions"""

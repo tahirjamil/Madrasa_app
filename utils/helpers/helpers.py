@@ -21,7 +21,7 @@ from cryptography.fernet import Fernet
 # from utils.mysql.database_utils import get_db_connection
 # from utils.keydb.keydb_utils import get_keydb_connection
 from config import config
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_funtions import get_env_var, send_json_response
 from utils.helpers.logger import log
 
 load_dotenv()
@@ -820,7 +820,8 @@ def rate_limit(max_requests: int, window: int):
             identifier = f"{client_ip}:{func.__name__}"
             
             if not await check_rate_limit(identifier, max_requests, window):
-                return jsonify({"error": "Rate limit exceeded"}), 429
+                response, status = send_json_response("Rate limit exceeded", 429)
+                return jsonify(response), status
             
             return await func(*args, **kwargs)
         return wrapper
@@ -832,7 +833,8 @@ def require_api_key(func):
     async def wrapper(*args, **kwargs):
         api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
         if not api_key or not is_valid_api_key(api_key):
-            return jsonify({"error": "Invalid or missing API key"}), 401
+            response, status = send_json_response("Invalid or missing API key", 401)
+            return jsonify(response), status
         return await func(*args, **kwargs)
     return wrapper
 
@@ -961,18 +963,15 @@ def handle_async_errors(func: Callable) -> Callable:
             return await func(*args, **kwargs)
         except AppError as e:
             log.critical(action="app_error", trace_info="error_handler", message=f"{e.error_code}: {e.message}", secure=False)
-            return jsonify({
-                "error": e.message,
-                "error_code": e.error_code,
-                "details": e.details
-            }), 400
+            response, status = send_json_response(e.message, 400)
+            response.update({"error_code": e.error_code, "details": e.details})
+            return jsonify(response), status
         except Exception as e:
             log.critical(action="unexpected_error", trace_info="error_handler", message=str(e), secure=False)
             # metrics removed
-            return jsonify({
-                "error": "An unexpected error occurred",
-                "error_code": "INTERNAL_ERROR"
-            }), 500
+            response, status = send_json_response("An unexpected error occurred", 500)
+            response.update({"error_code": "INTERNAL_ERROR"})
+            return jsonify(response), status
     
     return wrapper
 
@@ -1204,7 +1203,8 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
             result = await cursor.fetchone()
             
             if not result:
-                return jsonify({"message": "No verification code found"}), 404
+                response, status = send_json_response("No verification code found", 404)
+                return jsonify(response), status
             
             db_code = result["code"]
             created_at = result["created_at"]
@@ -1212,7 +1212,8 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
             
             # Check expiration
             if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
-                return jsonify({"message": "Verification code expired"}), 410
+                response, status = send_json_response("Verification code expired", 410)
+                return jsonify(response), status
             
             # Constant-time comparison
             if int(user_code) == db_code:
@@ -1220,11 +1221,13 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
                 return None
             else:
                 log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
-                return jsonify({"message": "Verification code mismatch"}), 400
+                response, status = send_json_response("Verification code mismatch", 400)
+                return jsonify(response), status
     
     except Exception as e:
         log.critical(action="verification_error", trace_info=phone, message=str(e), secure=True)
-        return jsonify({"message": f"Error: {str(e)}"}), 500
+        response, status = send_json_response(f"Error: {str(e)}", 500)
+        return jsonify(response), status
 
 async def delete_code() -> None:
     """Delete expired verification codes"""

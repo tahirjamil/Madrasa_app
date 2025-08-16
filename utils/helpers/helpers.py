@@ -152,7 +152,7 @@ def cache_with_invalidation(func: Optional[Callable] = None, *, ttl: int = 3600)
 # ---------- Enhanced HTTP Cache ---------- TODO: This is unknown
 class EnhancedJSONEncoder(json.JSONEncoder):
     """Extend JSONEncoder with common non-JSON types handling."""
-    def _default(self, obj: Any) -> Any | None:
+    def default(self, obj: Any) -> Any | None:
         # datetimes -> ISO8601 string
         if isinstance(obj, (dt.datetime, dt.date, dt.time)):
             # Use ISO format; datetimes preserve timezone if present
@@ -756,6 +756,11 @@ def load_results() -> List[Dict[str, Any]]:
     cache_key = "load_results:default"
     # File-based data; skip remote cache and always read
     try:
+        # Ensure we have the config attribute
+        if not hasattr(config, 'EXAM_RESULTS_INDEX_FILE'):
+            log.critical(action="config_error", trace_info="load_results", 
+                        message="EXAM_RESULTS_INDEX_FILE not found in config", secure=False)
+            return []
         with open(config.EXAM_RESULTS_INDEX_FILE, 'r') as f:
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
@@ -765,6 +770,11 @@ def load_results() -> List[Dict[str, Any]]:
 
 def save_results(data: List[Dict[str, Any]]) -> None:
     """Save exam results with atomic write and cache invalidation."""
+    # Ensure we have the config attribute
+    if not hasattr(config, 'EXAM_RESULTS_INDEX_FILE'):
+        log.critical(action="config_error", trace_info="save_results", 
+                    message="EXAM_RESULTS_INDEX_FILE not found in config", secure=False)
+        return
     temp_file = config.EXAM_RESULTS_INDEX_FILE + '.tmp'
     try:
         with open(temp_file, 'w') as f:
@@ -782,6 +792,11 @@ def load_notices() -> List[Dict[str, Any]]:
     cache_key = "load_notices:default"
     # File-based data; skip remote cache and always read
     try:
+        # Ensure we have the config attribute
+        if not hasattr(config, 'NOTICES_INDEX_FILE'):
+            log.critical(action="config_error", trace_info="load_notices", 
+                        message="NOTICES_INDEX_FILE not found in config", secure=False)
+            return []
         with open(config.NOTICES_INDEX_FILE, 'r') as f:
             data = json.load(f)
     except json.JSONDecodeError:
@@ -796,6 +811,11 @@ def load_notices() -> List[Dict[str, Any]]:
 
 def save_notices(data: List[Dict[str, Any]]) -> None:
     """Save notices with atomic write and cache invalidation."""
+    # Ensure we have the config attribute
+    if not hasattr(config, 'NOTICES_INDEX_FILE'):
+        log.critical(action="config_error", trace_info="save_notices", 
+                    message="NOTICES_INDEX_FILE not found in config", secure=False)
+        return
     temp_file = config.NOTICES_INDEX_FILE + '.tmp'
     try:
         with open(temp_file, 'w') as f:

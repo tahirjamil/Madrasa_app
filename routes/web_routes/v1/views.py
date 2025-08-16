@@ -18,8 +18,8 @@ async def donate():
 @web_routes.route('/contact', methods=['GET', 'POST'])
 async def contact():
     # Read raw comma‑separated strings from env
-    raw_phones = get_env_var('MADRASA_PHONE', "")
-    raw_emails = get_env_var('EMAIL_ADDRESS', "")
+    raw_phones = get_env_var('BUSINESS_PHONE')
+    raw_emails = get_env_var('BUSINESS_EMAIL')
 
     # Turn into clean lists
     phones = [p.strip() for p in raw_phones.split(',') if p.strip()]

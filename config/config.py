@@ -345,8 +345,8 @@ class ServerConfig:
     """Configuration for the server."""
 
     # Server Configuration
-    SERVER_HOST = get_env_var("SERVER_HOST", "0.0.0.0")
-    SERVER_PORT = int(get_env_var("SERVER_PORT", 8000))
+    SERVER_HOST = get_env_var("SERVER_HOST")
+    SERVER_PORT = int(get_env_var("SERVER_PORT"))
     SERVER_WORKERS = 1
     SERVER_TIMEOUT = 15
     SERVER_MAX_REQUESTS = 1000
@@ -367,7 +367,7 @@ class ServerConfig:
     RESTART_THRESHOLD = 3
 
     # Security Configuration
-    BIND_HOST = get_env_var("BIND_HOST", "0.0.0.0")
+    BIND_HOST = get_env_var("BIND_HOST")
     ALLOWED_HOSTS = list(get_env_var("ALLOWED_HOSTS", "*").split(","))
     RATE_LIMIT = 100
     TIMEOUT = 30

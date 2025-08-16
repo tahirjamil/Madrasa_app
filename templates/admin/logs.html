@@ -27,7 +27,7 @@
         <tr>
           <th>Log ID</th>
           <th>Action</th>
-          <th>Phone</th>
+          <th>Trace Info</th>
           <th>Message</th>
           <th>Created At</th>
         </tr>
@@ -37,7 +37,7 @@
         <tr>
           <td>{{ log.log_id }}</td>
           <td>{{ log.action }}</td>
-          <td>{{ log.phone or '' }}</td>
+                      <td>{{ log.trace_info or '' }}</td>
           <td>{{ log.message }}</td>
           <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
         </tr>
@@ -120,7 +120,7 @@ function renderLogs(logs) {
     row.innerHTML = `
       <td>${log.log_id}</td>
       <td>${log.action}</td>
-      <td>${log.phone || ''}</td>
+              <td>${log.trace_info || ''}</td>
       <td>${log.message}</td>
       <td>${log.created_at}</td>
     `;

@@ -18,7 +18,7 @@ async def payments():
     data = await request.get_json()
     phone = data.get('phone') or ""
     fullname = (data.get('fullname') or 'guest').strip()
-    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
+    madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
 
     if config.is_testing():
         fullname = config.DUMMY_FULLNAME
@@ -167,8 +167,8 @@ async def pay_sslcommerz():
         return jsonify({"error": _("Amount and payment type are required")}), 400
 
     tran_id    = f"ssl_{int(time.time())}"
-    store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
-    store_pass = os.getenv("SSLCOMMERZ_STORE_PASS")
+    store_id   = get_env_var("SSLCOMMERZ_STORE_ID")
+    store_pass = get_env_var("SSLCOMMERZ_STORE_PASS")
     if not store_id or not store_pass:
         log.warning(action="sslcommerz_config_missing", trace_info=phone, message="SSLCommerz credentials not set", secure=True)
         return jsonify({"error": _("Payment gateway is not properly configured")}), 500
@@ -267,8 +267,8 @@ async def payments_success_ssl(return_type):
         return jsonify({"error": msg}), 400
 
     # 1️⃣ Validate callback with SSLCommerz
-    store_id   = os.getenv("SSLCOMMERZ_STORE_ID")
-    store_pass = os.getenv("SSLCOMMERZ_STORE_PASS")
+    store_id   = get_env_var("SSLCOMMERZ_STORE_ID")
+    store_pass = get_env_var("SSLCOMMERZ_STORE_PASS")
     try:
         validation = requests.get(
             'https://sandbox.sslcommerz.com/validator/api/validationserverAPI',

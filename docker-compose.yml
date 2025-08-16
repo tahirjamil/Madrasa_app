@@ -1,0 +1,74 @@
+services:
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: madrasa_otel_collector
+    restart: unless-stopped
+    command: ["--config", "/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./utils/otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "9464:9464"   # Prometheus metrics
+    networks:
+      - observability_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133"]
+      timeout: 20s
+      retries: 10
+    depends_on:
+      - jaeger
+
+  # Jaeger for trace visualization
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: madrasa_jaeger
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_OTLP_HTTP_ENABLED=true
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP collector endpoint
+      - "14250:14250"  # gRPC collector endpoint
+    networks:
+      - observability_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686"]
+      timeout: 20s
+      retries: 10
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: madrasa_prometheus
+    restart: unless-stopped
+    command: >
+      --config.file=/etc/prometheus/prometheus.yml
+      --storage.tsdb.path=/prometheus
+      --web.console.libraries=/etc/prometheus/console_libraries
+      --web.console.templates=/etc/prometheus/consoles
+      --storage.tsdb.retention.time=200h
+      --web.enable-lifecycle
+    ports:
+      - "9090:9090"  # Prometheus UI
+    volumes:
+      - prometheus_data:/prometheus
+      - ./utils/otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - observability_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      timeout: 20s
+      retries: 10
+    depends_on:
+      - otel-collector
+
+volumes:
+  prometheus_data:
+    driver: local
+
+networks:
+  observability_network:
+    driver: bridge

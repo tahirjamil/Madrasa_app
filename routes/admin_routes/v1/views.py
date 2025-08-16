@@ -43,7 +43,7 @@ async def admin_dashboard():
     if conn is None:
         await flash("Database connection failed", "danger")
         return await render_template("admin/dashboard.html", databases=[], tables={}, query_result=None, query_error=None)
-    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
+    madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     databases = []
     tables = {}
@@ -91,8 +91,8 @@ async def admin_dashboard():
                 username = form.get('username', '')
                 password = form.get('password', '')
 
-                ADMIN_USER = os.getenv("ADMIN_USERNAME")
-                ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
+                ADMIN_USER = get_env_var("ADMIN_USERNAME")
+                ADMIN_PASS = get_env_var("ADMIN_PASSWORD")
 
                 # Say test mode if in test
                 if config.is_testing():
@@ -196,7 +196,7 @@ async def view_logs():
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
-                "SELECT log_id, action, phone, message, created_at "
+                "SELECT log_id, action, trace_info, message, created_at "
                 "FROM logs "
                 "ORDER BY created_at DESC"
             )
@@ -244,8 +244,8 @@ async def exam_results():
     #     exam_class  = request.form.get('exam_class')
     #     file        = request.files.get('file')
 
-    #     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-    #     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+    #     ADMIN_USER = get_env_var("ADMIN_USERNAME", "admin")
+    #     ADMIN_PASS = get_env_var("ADMIN_PASSWORD", "admin123")
 
     #     if username != ADMIN_USER or password != ADMIN_PASS:
     #         flash("Unauthorized", "danger")
@@ -286,8 +286,8 @@ async def exam_results():
 
 #     username = request.form.get('username')
 #     password = request.form.get('password')
-#     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-#     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin123")
+#     ADMIN_USER = get_env_var("ADMIN_USERNAME", "admin")
+#     ADMIN_PASS = get_env_var("ADMIN_PASSWORD", "admin123")
 #     if username != ADMIN_USER or password != ADMIN_PASS:
 #         flash("Unauthorized", "danger")
 #         return redirect(url_for('admin_routes.exam_results'))
@@ -319,7 +319,7 @@ async def members():
     if conn is None:
         await flash("Database connection failed", "danger")
         return await render_template("admin/members.html", types=[], selected_type=None, members=[], pending=[])
-    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
+    madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     # Cache the base peoples/pending payload
     base_key = get_cache_key("admin:peoples", madrasa=madrasa_name)
@@ -407,8 +407,8 @@ async def notice_page():
     #     target_date = request.form.get('target_date')
     #     file = request.files.get('file')
 
-    #     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-    #     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
+    #     ADMIN_USER = get_env_var("ADMIN_USERNAME", "admin")
+    #     ADMIN_PASS = get_env_var("ADMIN_PASSWORD", "admin")
 
     #     if username != ADMIN_USER or password != ADMIN_PASS:
     #         flash("Unauthorized", "danger")
@@ -474,7 +474,7 @@ async def routines():
         await flash("Database connection failed", "danger")
         return await render_template("admin/routines.html", routines_by_class={}, sort=sort)
     # cache routines list per madrasa
-    cache_key = get_cache_key("admin:routines", madrasa=os.getenv("MADRASA_NAME", "annur"))
+    cache_key = get_cache_key("admin:routines", madrasa=get_env_var("MADRASA_NAME", "annur"))
     cached = await get_cached_data(cache_key)
     if cached is not None:
         rows = cached
@@ -535,7 +535,7 @@ async def events():
     if conn is None:
         await flash("Database connection failed", "danger")
         return await render_template("admin/events.html", events=[])
-    madrasa_name = os.getenv("MADRASA_NAME", "annur")  # Default to annur if not set
+    madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     cache_key = get_cache_key("admin:events", madrasa=madrasa_name)
     cached = await get_cached_data(cache_key)
@@ -551,8 +551,8 @@ async def events():
         # if request.method == 'POST':
         #     username     = request.form.get('username', '').strip()
         #     password     = request.form.get('password', '').strip()
-        #     ADMIN_USER   = os.getenv("ADMIN_USERNAME")
-        #     ADMIN_PASS   = os.getenv("ADMIN_PASSWORD")
+        #     ADMIN_USER   = get_env_var("ADMIN_USERNAME")
+        #     ADMIN_PASS   = get_env_var("ADMIN_PASSWORD")
         
         #     if username != ADMIN_USER or password != ADMIN_PASS:
         #         flash("❌ Invalid admin credentials.", "danger")
@@ -613,8 +613,8 @@ async def madrasa_pictures():
     #     serial       = request.form.get('serial', '').strip()
     #     file         = request.files.get('file')
 
-    #     ADMIN_USER = os.getenv('ADMIN_USERNAME')
-    #     ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
+    #     ADMIN_USER = get_env_var('ADMIN_USERNAME')
+    #     ADMIN_PASS = get_env_var('ADMIN_PASSWORD')
 
     #     if username != ADMIN_USER or password != ADMIN_PASS:
     #         flash('Invalid admin credentials', 'danger')
@@ -874,7 +874,7 @@ async def power_management():
         return redirect(url_for('admin_routes.login'))
     
     # Get power key from environment
-    POWER_KEY = os.getenv("POWER_KEY")
+    POWER_KEY = get_env_var("POWER_KEY")
     if not POWER_KEY:
         return await render_template('admin/power.html', error="Power management is not configured")
     

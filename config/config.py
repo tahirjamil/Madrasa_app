@@ -10,14 +10,13 @@ Version: 1.0.0
 """
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from functools import lru_cache
 from quart import Quart
 from typing import Optional, Union
 from aiomysql import Connection
 from redis.asyncio import Redis
-
-from utils.otel.db_tracing import TracedRedisPool
 
 # Load environment variables
 load_dotenv()
@@ -26,7 +25,7 @@ load_dotenv()
 class MadrasaApp(Quart):
     start_time: float
     db: Optional[Connection]
-    keydb: Optional[Union[Redis, TracedRedisPool]]
+    keydb: Optional[Union[Redis, 'TracedRedisPool']]  # type: ignore [Use string annotation to avoid import]
 
 class MadrasaConfig:
     """ Configuration class for the Madrasha application. """
@@ -44,32 +43,32 @@ class MadrasaConfig:
     # OBSERVABILITY / OPENTELEMETRY CONFIGURATION
     # ============================================================================
     # Enable/disable OpenTelemetry completely. If disabled, no tracing/metrics are initialized.
-    OTEL_ENABLED = os.getenv("OTEL_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+    OTEL_ENABLED = get_env_var("OTEL_ENABLED", "false").lower() in ("1", "true", "yes", "on")
     # Strict mode: if enabled and exporter is unreachable, the app raises (fails fast) instead of logging warnings.
-    OTEL_STRICT = os.getenv("OTEL_STRICT", "false").lower() in ("1", "true", "yes", "on")
-    OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    OTEL_STRICT = get_env_var("OTEL_STRICT", "false").lower() in ("1", "true", "yes", "on")
+    OTEL_EXPORTER_OTLP_ENDPOINT = get_env_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
     
     # ============================================================================
     # SECURITY CONFIGURATION
     # ============================================================================
     
     # Secret Keys and Encryption
-    SECRET_KEY = os.getenv("SECRET_KEY") # secrets.token_urlsafe(32)
-    WTF_CSRF_SECRET_KEY = os.getenv("WTF_CSRF_SECRET_KEY")
-    ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+    SECRET_KEY = get_env_var("SECRET_KEY") # secrets.token_urlsafe(32)
+    WTF_CSRF_SECRET_KEY = get_env_var("WTF_CSRF_SECRET_KEY")
+    ENCRYPTION_KEY = get_env_var("ENCRYPTION_KEY")
     
     # API Keys for Different Client Types
-    MOBILE_CLIENT_KEY = os.getenv("MOBILE_CLIENT_KEY")
-    WEB_CLIENT_KEY = os.getenv("WEB_CLIENT_KEY")
-    ADMIN_KEY = os.getenv("ADMIN_KEY")
+    MOBILE_CLIENT_KEY = get_env_var("MOBILE_CLIENT_KEY")
+    WEB_CLIENT_KEY = get_env_var("WEB_CLIENT_KEY")
+    ADMIN_KEY = get_env_var("ADMIN_KEY")
     API_KEYS = [MOBILE_CLIENT_KEY, WEB_CLIENT_KEY, ADMIN_KEY]
     
     # Power Management
-    POWER_KEY = os.getenv("POWER_KEY")
+    POWER_KEY = get_env_var("POWER_KEY")
     
     # Admin Credentials (with warnings)
-    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+    ADMIN_USERNAME = get_env_var("ADMIN_USERNAME")
+    ADMIN_PASSWORD = get_env_var("ADMIN_PASSWORD")
     
     # ============================================================================
     # SESSION AND COOKIE SECURITY
@@ -86,8 +85,8 @@ class MadrasaConfig:
     WTF_CSRF_TIME_LIMIT = 1 * 3600  # CSRF token expires in 1 hour
     
     # reCAPTCHA Configuration
-    RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
-    RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
+    RECAPTCHA_SITE_KEY = get_env_var("RECAPTCHA_SITE_KEY")
+    RECAPTCHA_SECRET_KEY = get_env_var("RECAPTCHA_SECRET_KEY")
     
     # ============================================================================
     # AUTHENTICATION AND USER MANAGEMENT
@@ -95,10 +94,10 @@ class MadrasaConfig:
 
     # Email and SMS Verification
     SERVICE_PHONE_URL = "https://textbelt.com/text"
-    SERVICE_PHONE_API_KEY = os.getenv("SMS_API_KEY")
+    SERVICE_PHONE_API_KEY = get_env_var("SMS_API_KEY")
     SERVICE_EMAIL_PORT = 587
-    SERVICE_EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-    SERVICE_EMAIL_API_KEY = os.getenv("EMAIL_API_KEY")
+    SERVICE_EMAIL_PASSWORD = get_env_var("EMAIL_PASSWORD")
+    SERVICE_EMAIL_API_KEY = get_env_var("EMAIL_API_KEY")
     
     # Password Security
     PASSWORD_MIN_LENGTH = 8
@@ -125,11 +124,11 @@ class MadrasaConfig:
     # ============================================================================
 
     # Business Information
-    BUSINESS_EMAIL = os.getenv("BUSINESS_EMAIL")
-    BUSINESS_PHONE = os.getenv("BUSINESS_PHONE")
+    BUSINESS_EMAIL = get_env_var("BUSINESS_EMAIL")
+    BUSINESS_PHONE = get_env_var("BUSINESS_PHONE")
 
-    DEV_EMAIL = os.getenv("DEV_EMAIL")
-    DEV_PHONE = os.getenv("DEV_PHONE")
+    DEV_EMAIL = get_env_var("DEV_EMAIL")
+    DEV_PHONE = get_env_var("DEV_PHONE")
 
     MADRASA_NAMES_LIST = ['annur']
     
@@ -139,12 +138,12 @@ class MadrasaConfig:
     # ============================================================================
 
     # MySQL Connection Settings
-    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-    MYSQL_USER = os.getenv("MYSQL_USER", "tahir")
-    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
-    MYSQL_DB = os.getenv("MYSQL_DB", "default")
-    MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
-    MYSQL_UNIX_SOCKET = os.getenv("MYSQL_UNIX_SOCKET", None)
+    MYSQL_HOST = get_env_var("MYSQL_HOST", "localhost")
+    MYSQL_USER = get_env_var("MYSQL_USER", "tahir")
+    MYSQL_PASSWORD = get_env_var("MYSQL_PASSWORD")
+    MYSQL_DB = get_env_var("MYSQL_DB", "default")
+    MYSQL_PORT = int(get_env_var("MYSQL_PORT", 3306))
+    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None)
     MYSQL_POOL_SIZE = 10
     MYSQL_MAX_OVERFLOW = 5
     MYSQL_TIMEOUT = 60.0
@@ -154,22 +153,22 @@ class MadrasaConfig:
     # ============================================================================
 
     # Redis Connection Settings
-    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-    REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
-    REDIS_DB = int(os.getenv("REDIS_DB", 0))
-    REDIS_SSL = os.getenv("REDIS_SSL", "false")
+    REDIS_HOST = get_env_var("REDIS_HOST", "localhost")
+    REDIS_PORT = int(get_env_var("REDIS_PORT", 6379))
+    REDIS_PASSWORD = get_env_var("REDIS_PASSWORD", None)
+    REDIS_DB = int(get_env_var("REDIS_DB", 0))
+    REDIS_SSL = get_env_var("REDIS_SSL", "false")
     REDIS_MINSIZE = 1
     REDIS_MAXSIZE = 10
     REDIS_TIMEOUT = 10.0
     REDIS_ENCODING = "utf-8"
     REDIS_PREFIX = "madrasa"
-    USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() in ("1", "true", "yes", "on")
+    USE_REDIS_CACHE = get_env_var("USE_REDIS_CACHE", "false").lower() in ("1", "true", "yes", "on")
 
     # ============================================================================
     # FILE UPLOAD AND STORAGE
     # ============================================================================
-    
+
     # Upload Limits
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max
     
@@ -289,6 +288,14 @@ class MadrasaConfig:
         # Print warnings
         for warning in warnings:
             print(f"WARNING: {warning}")
+    @lru_cache(maxsize=1)
+    def get_project_root(self, marker_files: tuple[str, ...] = ("pyproject.toml", "setup.py", ".git")) -> Path:
+        """Return project root directory by searching upwards for a marker file."""
+        current = Path(__file__).resolve()
+        for parent in [current] + list(current.parents):
+            if any((parent / marker).exists() for marker in marker_files):
+                return parent
+        raise FileNotFoundError("Project root not found")
     
     @lru_cache(maxsize=1)
     def get_database_url(self) -> str | None:
@@ -315,18 +322,18 @@ class MadrasaConfig:
     @lru_cache(maxsize=1)
     def is_maintenance(self) -> bool:
         """Check if running in production environment."""
-        verify = os.getenv("MAINTENANCE_MODE", "")
+        verify = get_env_var("MAINTENANCE_MODE", "")
         return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
     
     @lru_cache(maxsize=1)
     def is_development(self) -> bool:
         """Check if running in development environment."""
-        return os.getenv("FLASK_ENV", "development") == "development"
+        return get_env_var("FLASK_ENV", "development") == "development"
     
     @lru_cache(maxsize=1)
     def is_testing(self) -> bool:
         """Check if running in testing environment."""
-        verify = os.getenv("TEST_MODE", "")
+        verify = get_env_var("TEST_MODE", "")
         return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
 
 # Create global configuration instance
@@ -336,8 +343,8 @@ class ServerConfig:
     """Configuration for the server."""
 
     # Server Configuration
-    SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
-    SERVER_PORT = int(os.getenv("SERVER_PORT", 8000))
+    SERVER_HOST = get_env_var("SERVER_HOST", "0.0.0.0")
+    SERVER_PORT = int(get_env_var("SERVER_PORT", 8000))
     SERVER_WORKERS = 1
     SERVER_TIMEOUT = 15
     SERVER_MAX_REQUESTS = 1000
@@ -358,8 +365,8 @@ class ServerConfig:
     RESTART_THRESHOLD = 3
 
     # Security Configuration
-    BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")
-    ALLOWED_HOSTS = list(os.getenv("ALLOWED_HOSTS", "*").split(","))
+    BIND_HOST = get_env_var("BIND_HOST", "0.0.0.0")
+    ALLOWED_HOSTS = list(get_env_var("ALLOWED_HOSTS", "*").split(","))
     RATE_LIMIT = 100
     TIMEOUT = 30
 

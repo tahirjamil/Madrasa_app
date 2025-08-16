@@ -65,7 +65,7 @@ async def add_person() -> Tuple[Response, int]:
         data = await request.form
         files = await request.files
         image = files.get('image')
-        madrasa_name = data.get("madrasa_name") or os.getenv("MADRASA_NAME")
+        madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
         
         # Validate required fields using enhanced validation
         required_fields = ['name_en', 'phone', 'acc_type']
@@ -310,7 +310,7 @@ async def get_info() -> Tuple[Response, int]:
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
         
-        madrasa_name = os.getenv("MADRASA_NAME")
+        madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get('updatedSince')
         
         # Process timestamp using enhanced validation
@@ -408,7 +408,7 @@ async def get_routine() -> Tuple[Response, int]:
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
         
-        madrasa_name = os.getenv("MADRASA_NAME")
+        madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get("updatedSince")
         
         # Process timestamp using enhanced validation
@@ -500,7 +500,7 @@ async def events() -> Tuple[Response, int]:
     try:
         # Get request data
         data = await request.get_json() or {}
-        madrasa_name = os.getenv("MADRASA_NAME")
+        madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get('updatedSince')
         DHAKA = ZoneInfo("Asia/Dhaka")
         
@@ -611,7 +611,7 @@ async def get_exams() -> Tuple[Response, int]:
         if not data:
             return jsonify({"error": error}), 400
         
-        madrasa_name = os.getenv("MADRASA_NAME")
+        madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get("updatedSince")
         
         # Process timestamp using enhanced validation

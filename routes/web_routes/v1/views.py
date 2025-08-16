@@ -17,8 +17,8 @@ async def donate():
 @web_routes.route('/contact', methods=['GET', 'POST'])
 async def contact():
     # Read raw comma‑separated strings from env
-    raw_phones = os.getenv('MADRASA_PHONE', "")
-    raw_emails = os.getenv('EMAIL_ADDRESS', "")
+    raw_phones = get_env_var('MADRASA_PHONE', "")
+    raw_emails = get_env_var('EMAIL_ADDRESS', "")
 
     # Turn into clean lists
     phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
@@ -53,9 +53,9 @@ async def contact():
 @web_routes.route('/privacy')
 async def privacy():
     # Load contact info from environment variables
-    contact_email = os.getenv('BUSINESS_EMAIL')
-    contact_phone = os.getenv('BUSINESS_PHONE')
-    effective_date = os.getenv('PRIVACY_POLICY_EFFECTIVE_DATE')
+    contact_email = get_env_var('BUSINESS_EMAIL')
+    contact_phone = get_env_var('BUSINESS_PHONE')
+    effective_date = get_env_var('PRIVACY_POLICY_EFFECTIVE_DATE')
 
     if not contact_email or not contact_phone or not effective_date:
         raise ValueError("Missing required environment variables")
@@ -100,9 +100,9 @@ async def privacy():
 @web_routes.route('/terms')
 async def terms():
     # Load contact info from environment variables
-    contact_email = os.getenv('BUSINESS_EMAIL')
-    contact_phone = os.getenv('BUSINESS_PHONE')
-    effective_date = os.getenv('TERMS_EFFECTIVE_DATE')
+    contact_email = get_env_var('BUSINESS_EMAIL')
+    contact_phone = get_env_var('BUSINESS_PHONE')
+    effective_date = get_env_var('TERMS_EFFECTIVE_DATE')
 
     if not contact_email or not contact_phone or not effective_date:
         raise ValueError("Missing required environment variables")

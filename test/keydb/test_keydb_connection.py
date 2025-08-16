@@ -19,7 +19,7 @@ import redis.asyncio as redis
 
 
 # Add project root to path to import modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from config import config  # noqa: E402
 from utils.keydb.keydb_utils import (  # noqa: E402
@@ -60,7 +60,7 @@ def test_environment_variables() -> bool:
     ]
     missing = []
     for var in required:
-        value = os.getenv(var)
+        value = get_env_var(var)
         if value is None:
             print(f"❌ {var}: Not set (using defaults: {getattr(config, var, None)})")
             missing.append(var)

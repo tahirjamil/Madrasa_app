@@ -4,8 +4,8 @@ from typing import Any, Optional, Tuple, TypedDict, cast
 
 from quart import current_app
 
-from config import config, MadrasaApp
-from utils.otel.db_tracing import TracedRedisPool
+from config import config
+# from utils.otel.db_tracing import TracedRedisPool  # Import when needed to avoid circular imports
 
 # Redis asyncio client (redis-py >= 4.2 / 5.x)
 import redis.asyncio as redis
@@ -28,7 +28,7 @@ class RedisConnectConfig(TypedDict, total=False):
 def get_keydb_config() -> RedisConnectConfig | None:
     """Build KeyDB/Redis connection config from config/env with sane defaults."""
     # Check if Redis cache is enabled
-    use_redis_cache = os.getenv('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes', 'on')
+    use_redis_cache = get_env_var('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes', 'on')
     if not use_redis_cache:
         print("USE_REDIS_CACHE environment variable is not set to 'true'. KeyDB/Redis cache is disabled.")
         return None
@@ -106,6 +106,8 @@ async def connect_to_keydb():
         else:
             raise RuntimeError("KeyDB connection failed: No configuration provided")
 
+        # Import TracedRedisPool here to avoid circular imports
+        from utils.otel.db_tracing import TracedRedisPool
         return TracedRedisPool(client)
 
     except Exception as e:
@@ -115,7 +117,7 @@ async def connect_to_keydb():
 
 async def get_keydb():
     """Get the KeyDB pool from the app context."""
-    app = cast(MadrasaApp, current_app)
+    app = cast('MadrasaApp', current_app)  # type: ignore [Use string annotation to avoid import]
     if not hasattr(app, "keydb") or app.keydb is None:
         raise RuntimeError("KeyDB connection not available")
     return app.keydb

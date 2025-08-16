@@ -1,6 +1,7 @@
 """Helper Functions for Madrasha Application"""
 import dataclasses
 import decimal
+from pathlib import Path
 import base64, hashlib, random, re, aiomysql, phonenumbers, requests
 import uuid
 import datetime as dt
@@ -17,8 +18,9 @@ from dotenv import load_dotenv
 from quart import Request, Response, flash, g, jsonify, redirect, request
 from quart_babel import gettext as _
 from cryptography.fernet import Fernet
-from utils.mysql.database_utils import get_db_connection
-from utils.keydb.keydb_utils import get_keydb_connection
+# Import these functions when needed to avoid circular imports
+# from utils.mysql.database_utils import get_db_connection
+# from utils.keydb.keydb_utils import get_keydb_connection
 from config import config
 from utils.helpers.logger import log
 
@@ -37,6 +39,7 @@ async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: An
     if ttl is None:
         ttl = getattr(config, "CACHE_TTL", 3600)
     try:
+        from utils.keydb.keydb_utils import get_keydb_connection
         pool = await get_keydb_connection()
         raw = await pool.get(cache_key)
         if raw is not None:
@@ -58,6 +61,7 @@ async def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) 
     if ttl is None:
         ttl = getattr(config, "CACHE_TTL", 3600)
     try:
+        from utils.keydb.keydb_utils import get_keydb_connection
         pool = await get_keydb_connection()
         payload = canonical_json(data)
         # aioredis 1.x supports expire argument in set
@@ -71,6 +75,7 @@ async def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) 
 async def _invalidate_cache_pattern_async(pattern: str) -> int:
     """Asynchronously delete keys matching pattern from KeyDB. Returns number deleted."""
     try:
+        from utils.keydb.keydb_utils import get_keydb_connection
         pool = await get_keydb_connection()
         # Use KEYS for simplicity; for large keyspaces consider SCAN.
         keys = await pool.keys(pattern)
@@ -403,6 +408,7 @@ async def send_sms(phone: str, msg: str) -> bool:
 @asynccontextmanager
 async def get_db_context():
     """Database connection context manager"""
+    from utils.mysql.database_utils import get_db_connection
     conn = await get_db_connection()
     try:
         yield conn
@@ -417,7 +423,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
         return cached_email
     
     if config.is_testing():
-        return os.getenv("DUMMY_EMAIL")
+        return get_env_var("DUMMY_EMAIL")
     
     async with get_db_context() as conn:
         try:
@@ -813,7 +819,7 @@ def rate_limit(max_requests: int, window: int):
             client_ip = request.remote_addr
             identifier = f"{client_ip}:{func.__name__}"
             
-            if not check_rate_limit(identifier, max_requests, window):
+            if not await check_rate_limit(identifier, max_requests, window):
                 return jsonify({"error": "Rate limit exceeded"}), 429
             
             return await func(*args, **kwargs)
@@ -834,6 +840,7 @@ def require_api_key(func):
 
 async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and health"""
+    from utils.mysql.database_utils import get_db_connection
     conn = await get_db_connection()
     
     try:
@@ -912,6 +919,7 @@ async def get_system_health() -> Dict[str, Any]:
     
     # Try to fetch KeyDB dbsize as cache_size; if unavailable set 0
     try:
+        from utils.keydb.keydb_utils import get_keydb_connection
         from_keydb = await get_keydb_connection()
         try:
             cache_size = int(await from_keydb.dbsize())
@@ -1009,10 +1017,10 @@ def initialize_application() -> bool:
 
 async def validate_csrf_token():
     """Validate CSRF token from form data"""
-    from utils import validate_csrf_token
+    from utils.helpers.csrf_protection import validate_csrf_token as validate_token
     form = await request.form
     token = form.get('csrf_token')
-    if not validate_csrf_token(token):
+    if not validate_token(token):
         await flash("CSRF token validation failed. Please try again.", "danger")
         return False
     return True
@@ -1177,6 +1185,7 @@ def generate_code(code_length: Optional[int] = None) -> int:
 
 async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int]]:
     """Enhanced code verification with security features"""
+    from utils.mysql.database_utils import get_db_connection
     conn = await get_db_connection()
     
     if config.is_testing():
@@ -1219,6 +1228,7 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
 
 async def delete_code() -> None:
     """Delete expired verification codes"""
+    from utils.mysql.database_utils import get_db_connection
     conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -1486,6 +1496,7 @@ async def validate_file_upload(file, allowed_extensions: List[str], max_size: Op
 async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: # TODO: fix the device limit where it should delete from interactions table
     """Check if user has reached device limit"""
     try:
+        from utils.mysql.database_utils import get_db_connection
         conn = await get_db_connection()
         async with conn.cursor() as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
@@ -1525,6 +1536,7 @@ async def check_login_attempts(identifier: str) -> Tuple[bool, int]:
     """Check login attempts in KeyDB and return (allowed, remaining)."""
     cache_key = f"login_attempts:{identifier}"
     try:
+        from utils.keydb.keydb_utils import get_keydb_connection
         pool = await get_keydb_connection()
         raw = await pool.get(cache_key)
         attempts = int(raw or 0)
@@ -1538,6 +1550,7 @@ async def record_login_attempt(identifier: str, success: bool) -> None:
     """Record login attempt in KeyDB (increment on failure, clear on success)."""
     cache_key = f"login_attempts:{identifier}"
     try:
+        from utils.keydb.keydb_utils import get_keydb_connection
         pool = await get_keydb_connection()
         if success:
             await pool.delete(cache_key)

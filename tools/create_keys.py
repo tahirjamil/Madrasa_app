@@ -76,7 +76,7 @@ def read_env_to_os(env_path: Path) -> None:
 def list_missing_keys() -> List[str]:
     missing: List[str] = []
     for key in KEY_GENERATORS.keys():
-        if not os.getenv(key):
+        if not get_env_var(key):
             missing.append(key)
     return missing
 

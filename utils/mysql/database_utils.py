@@ -2,7 +2,7 @@ import asyncio
 import aiomysql, os
 from typing import Any, cast, TypedDict, Optional
 from quart import current_app
-from config import config, MadrasaApp
+from config import config
 
 class AiomysqlConnectConfig(TypedDict, total=False):
     host: str
@@ -94,7 +94,7 @@ async def connect_to_db() -> Optional[aiomysql.Connection]:
 
 async def get_db():
     """Get the database connection from the app context."""
-    app = cast(MadrasaApp, current_app)
+    app = cast('MadrasaApp', current_app)  # type: ignore [Use string annotation to avoid import]
     if not hasattr(app, 'db') or app.db is None:
         raise RuntimeError("Database connection not available")
     return app.db
@@ -123,8 +123,8 @@ async def create_tables():
             return
 
         # Get the path to the create_tables.sql file
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        sql_file_path = os.path.join(current_dir, 'config' 'mysql', 'create_tables.sql')
+        config_dir = os.path.join(config.get_project_root(), 'config')
+        sql_file_path = os.path.join(config_dir, 'mysql', 'create_tables.sql')
         
         # Read the SQL file
         try:

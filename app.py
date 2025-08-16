@@ -11,7 +11,7 @@ from quart_babel import Babel
 import socket
 
 from config import config, MadrasaConfig, MadrasaApp
-from database import create_tables
+from utils import create_tables
 from utils.mysql.database_utils import connect_to_db
 from utils.keydb.keydb_utils import connect_to_keydb, close_keydb
 from utils.otel.otel_utils import init_otel
@@ -19,8 +19,7 @@ from utils.otel.asgi_middleware import RequestTracingMiddleware
 
 # API & Web Blueprints
 from utils.helpers.helpers import (
-    get_system_health, initialize_application, metrics_collector, rate_limiter, security_manager,
-    get_keydb_connection
+    get_system_health, initialize_application, security_manager,
 )
 from routes.admin_routes import admin_routes
 from routes.api import api

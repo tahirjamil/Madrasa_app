@@ -29,34 +29,6 @@ class ServerConfig:
         # Ensure directories exist
         self.log_dir.mkdir(exist_ok=True)
         self.temp_dir.mkdir(exist_ok=True)
-        
-        # Load or create default config
-        self.config = self._load_config()
-        
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from file"""
-        if self.config_file.exists():
-            try:
-                with open(self.config_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Error loading config file: {e}")
-                print("Please check your server_config.json file")
-                sys.exit(1)
-        else:
-            print(f"Config file not found: {self.config_file}")
-            print("Please create server_config.json with your configuration")
-            sys.exit(1)
-    
-    def save_config(self):
-        """Save current configuration to file"""
-        try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config, f, indent=2)
-        except Exception as e:
-            print(f"Warning: Could not save config: {e}")
-
-server_config = ServerConfig()
 
 # ─── Logging Setup ─────────────────────────────────────────────────────────────
 

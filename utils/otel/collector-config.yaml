@@ -2,19 +2,50 @@ receivers:
   otlp:
     protocols:
       grpc:
+        endpoint: "0.0.0.0:4317"
       http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
 
 exporters:
-  logging:
-    loglevel: info
+  debug:
+    verbosity: detailed
+
+  # Expose metrics for Prometheus to scrape
+  prometheus:
+    endpoint: "0.0.0.0:9464"
+    namespace: "madrasa_app"
+    const_labels:
+      service: "madrasa_app"
+      environment: "production"
+
+  # Send traces to Jaeger via OTLP HTTP
+  otlphttp:
+    endpoint: "http://jaeger:4318/v1/traces"
+    tls:
+      insecure: true
+
+
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      exporters: [logging]
+      processors: [batch]
+      exporters: [otlphttp, debug]
     metrics:
       receivers: [otlp]
-      exporters: [logging]
+      processors: [batch]
+      exporters: [prometheus, debug]
 
-
+  # Health check endpoint
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: none

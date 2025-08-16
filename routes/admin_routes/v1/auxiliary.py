@@ -20,7 +20,7 @@ async def logs_data():
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
+            await cursor.execute("SELECT log_id, action, trace_info, message, created_at FROM logs ORDER BY created_at DESC")
             logs = await cursor.fetchall()
         # Convert datetime to string
         for l in logs:
@@ -129,8 +129,8 @@ async def info_data_admin():
 #     username = request.form.get('username')
 #     password = request.form.get('password')
 
-#     ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-#     ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
+#     ADMIN_USER = get_env_var("ADMIN_USERNAME", "admin")
+#     ADMIN_PASS = get_env_var("ADMIN_PASSWORD", "admin")
 
 #     if username != ADMIN_USER or password != ADMIN_PASS:
 #         flash("Unauthorized", "danger")
@@ -209,8 +209,8 @@ async def info_data_admin():
 #     username = request.form.get('username', '')
 #     password = request.form.get('password', '')
 
-#     ADMIN_USER = os.getenv('ADMIN_USERNAME')
-#     ADMIN_PASS = os.getenv('ADMIN_PASSWORD')
+#     ADMIN_USER = get_env_var('ADMIN_USERNAME')
+#     ADMIN_PASS = get_env_var('ADMIN_PASSWORD')
 
 #     if username != ADMIN_USER or password != ADMIN_PASS:
 #         flash('Invalid admin credentials', 'danger')

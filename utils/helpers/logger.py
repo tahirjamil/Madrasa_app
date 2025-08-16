@@ -9,6 +9,9 @@ def get_crypto_funcs(data: str, which: str) -> str | None:
     if not which in ["hash", "encrypt"]:
         raise ValueError("Invalid which value. Must be 'hash' or 'encrypt'.")
     
+    if not data:
+        return None
+    
     try:
         from utils.helpers.helpers import encrypt_sensitive_data, hash_sensitive_data
         if which == "hash":
@@ -17,8 +20,8 @@ def get_crypto_funcs(data: str, which: str) -> str | None:
             return encrypt_sensitive_data(data)
         else:
             return None
-    except Exception:
-        print("Failed to import crypto helpers from utils.helpers.py")
+    except Exception as e:
+        print(f"Failed to import or execute crypto helpers from utils.helpers.py: {e}")
         return None
 
 log_count = 0
@@ -52,10 +55,12 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
                 trace_info_hash = get_crypto_funcs(data=trace_info, which="hash")
                 trace_info_encrypted = get_crypto_funcs(data=trace_info, which="encrypt")
 
+                # If crypto functions fail, fall back to non-secure logging
                 if not trace_info_hash or not trace_info_encrypted:
-                    raise ValueError("Failed to generate secure trace info")
-
-                params.extend([trace_info_hash, trace_info_encrypted])
+                    print("Warning: Crypto functions failed, falling back to non-secure logging")
+                    params.extend([None, None])
+                else:
+                    params.extend([trace_info_hash, trace_info_encrypted])
             else:
                 params.extend([None, None])
 

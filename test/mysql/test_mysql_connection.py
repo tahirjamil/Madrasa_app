@@ -13,7 +13,7 @@ import aiomysql
 from pathlib import Path
 
 # Add parent directory to path to import config
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from config import config
 
@@ -149,7 +149,8 @@ def test_sql_file_parsing():
     print("-" * 50)
     
     try:
-        sql_file_path = Path(__file__).parent.parent / "database" / "commands" / "create_tables.sql"
+        project_root = Path(__file__).parent.parent.parent
+        sql_file_path = project_root / "config" / "mysql" / "create_tables.sql"
         
         if not sql_file_path.exists():
             print(f"❌ SQL file not found: {sql_file_path}")
@@ -197,7 +198,7 @@ def test_environment_variables():
     missing_vars = []
     
     for var in required_vars:
-        value = os.getenv(var)
+        value = get_env_var(var)
         if value:
             print(f"✅ {var}: {value}")
         else:

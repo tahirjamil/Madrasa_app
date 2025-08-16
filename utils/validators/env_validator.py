@@ -53,16 +53,16 @@ class EnvValidator:
 
         # 1) Check core required variables exist (basic presence)
         for var, desc in cls.CORE_REQUIRED.items():
-            val = os.getenv(var)
+            val = get_env_var(var)
             if val is None:
                 errors.append(f"Missing required env var: {var} ({desc})")
             elif var in cls.NON_EMPTY and not val.strip():
                 errors.append(f"Empty value for required env var: {var}")
 
         # 2) Validate admin credentials presence: accept ADMIN_KEY OR ADMIN_USERNAME+ADMIN_PASSWORD
-        admin_key = os.getenv('ADMIN_KEY')
-        admin_user = os.getenv('ADMIN_USERNAME')
-        admin_pass = os.getenv('ADMIN_PASSWORD')
+        admin_key = get_env_var('ADMIN_KEY')
+        admin_user = get_env_var('ADMIN_USERNAME')
+        admin_pass = get_env_var('ADMIN_PASSWORD')
 
         if not admin_key:
             if not (admin_user and admin_pass):
@@ -75,10 +75,10 @@ class EnvValidator:
 
         # 3) Validate that at least one sender email address exists
         email_candidates = {
-            'EMAIL_ADDRESS': os.getenv('EMAIL_ADDRESS'),
-            'BUSINESS_EMAIL': os.getenv('BUSINESS_EMAIL'),
-            'MADRASA_EMAIL': os.getenv('MADRASA_EMAIL'),
-            'DEV_EMAIL': os.getenv('DEV_EMAIL'),
+            'EMAIL_ADDRESS': get_env_var('EMAIL_ADDRESS'),
+            'BUSINESS_EMAIL': get_env_var('BUSINESS_EMAIL'),
+            'MADRASA_EMAIL': get_env_var('MADRASA_EMAIL'),
+            'DEV_EMAIL': get_env_var('DEV_EMAIL'),
         }
         if not any(email_candidates.values()):
             errors.append(
@@ -92,12 +92,12 @@ class EnvValidator:
                         errors.append(f"Invalid email format in {name}: {val}")
 
         # 4) Redis / KeyDB support: if USE_REDIS_CACHE true, require REDIS_HOST/PORT (or KEYDB_*)
-        use_cache = os.getenv('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes')
+        use_cache = get_env_var('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes')
         if use_cache:
             # accept either REDIS_* or KEYDB_*
-            redis_host = os.getenv('REDIS_HOST') or os.getenv('KEYDB_HOST')
-            redis_port = os.getenv('REDIS_PORT') or os.getenv('KEYDB_PORT')
-            redis_db = os.getenv('REDIS_DB')
+            redis_host = get_env_var('REDIS_HOST') or get_env_var('KEYDB_HOST')
+            redis_port = get_env_var('REDIS_PORT') or get_env_var('KEYDB_PORT')
+            redis_db = get_env_var('REDIS_DB')
             if not redis_host:
                 errors.append("USE_REDIS_CACHE enabled but REDIS_HOST / KEYDB_HOST is not set")
             if not redis_port:
@@ -116,7 +116,7 @@ class EnvValidator:
                     errors.append(f"REDIS_DB must be an integer: {redis_db}")
 
         # 5) SMS provider key: accept SMS_API_KEY or TEXTBELT_KEY
-        if not (os.getenv('SMS_API_KEY') or os.getenv('TEXTBELT_KEY')):
+        if not (get_env_var('SMS_API_KEY') or get_env_var('TEXTBELT_KEY')):
             # If the app needs SMS at startup, consider this an error; otherwise keep as warning.
             # We'll treat as required because your .env contains SMS_API_KEY.
             errors.append("SMS API key missing: set SMS_API_KEY or TEXTBELT_KEY")
@@ -128,7 +128,7 @@ class EnvValidator:
         errors.extend(cls._validate_file_permissions())
 
         # 8) Validate madrasa name as SQL identifier
-        madrasa_name = os.getenv('MADRASA_NAME')
+        madrasa_name = get_env_var('MADRASA_NAME')
         if madrasa_name and not cls._is_valid_identifier(madrasa_name):
             errors.append(f"Invalid MADRASA_NAME '{madrasa_name}': must be a valid SQL identifier (letters, digits, underscore; start with letter or underscore)")
 
@@ -139,7 +139,7 @@ class EnvValidator:
         errors: List[str] = []
 
         # SECRET_KEY strength recommendation
-        secret = os.getenv('SECRET_KEY') or ''
+        secret = get_env_var('SECRET_KEY') or ''
         if not secret.strip():
             errors.append("SECRET_KEY is empty; set a secure random value (required for sessions).")
         else:
@@ -147,27 +147,27 @@ class EnvValidator:
                 errors.append("SECRET_KEY should be at least 32 characters for production security")
 
         # EMAIL_PASSWORD presence checked earlier, check simple sanity
-        email_pw = os.getenv('EMAIL_PASSWORD')
+        email_pw = get_env_var('EMAIL_PASSWORD')
         if email_pw is None or not email_pw.strip():
             errors.append("EMAIL_PASSWORD not set or empty")
 
         # REDIS boolean flags (typo-proof)
-        if os.getenv('REDIS_SLL'):
-            val = os.getenv('REDIS_SLL', 'true').lower()
+        if get_env_var('REDIS_SLL'):
+            val = get_env_var('REDIS_SLL', 'true').lower()
             if val not in ('true', 'false', '0', '1', 'yes', 'no'):
                 errors.append("REDIS_SLL must be a boolean-like value (true/false)")
 
         # Validate numeric port for optional SSLCOMMERZ? not necessary here
 
         # Recaptcha keys (if one present, both must be present)
-        site_key = os.getenv('RECAPTCHA_SITE_KEY')
-        secret_key = os.getenv('RECAPTCHA_SECRET_KEY')
+        site_key = get_env_var('RECAPTCHA_SITE_KEY')
+        secret_key = get_env_var('RECAPTCHA_SECRET_KEY')
         if (site_key and not secret_key) or (secret_key and not site_key):
             errors.append("Both RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY should be provided together")
 
         # Validate phone number basic format for DEV_PHONE / BUSINESS_PHONE if present
         for phone_var in ('DEV_PHONE', 'BUSINESS_PHONE', 'MADRASA_PHONE'):
-            phone = os.getenv(phone_var)
+            phone = get_env_var(phone_var)
             if phone and not re.match(r'^[\d\+\-\s\(\)]+$', phone):
                 errors.append(f"{phone_var} looks invalid: {phone}")
 
@@ -226,27 +226,27 @@ class EnvValidator:
         cfg: Dict[str, Any] = {}
         # include core keys
         for k in cls.CORE_REQUIRED:
-            cfg[k] = os.getenv(k)
+            cfg[k] = get_env_var(k)
 
         # pick a sender email (first available)
         cfg['SENDER_EMAIL'] = (
-            os.getenv('EMAIL_ADDRESS') or
-            os.getenv('BUSINESS_EMAIL') or
-            os.getenv('MADRASA_EMAIL') or
-            os.getenv('DEV_EMAIL')
+            get_env_var('EMAIL_ADDRESS') or
+            get_env_var('BUSINESS_EMAIL') or
+            get_env_var('MADRASA_EMAIL') or
+            get_env_var('DEV_EMAIL')
         )
 
-        cfg['USE_REDIS_CACHE'] = os.getenv('USE_REDIS_CACHE', 'false')
-        cfg['REDIS_HOST'] = os.getenv('REDIS_HOST') or os.getenv('KEYDB_HOST')
-        cfg['REDIS_PORT'] = os.getenv('REDIS_PORT') or os.getenv('KEYDB_PORT') or '6379'
-        cfg['REDIS_DB'] = os.getenv('REDIS_DB', '0')
+        cfg['USE_REDIS_CACHE'] = get_env_var('USE_REDIS_CACHE', 'false')
+        cfg['REDIS_HOST'] = get_env_var('REDIS_HOST') or get_env_var('KEYDB_HOST')
+        cfg['REDIS_PORT'] = get_env_var('REDIS_PORT') or get_env_var('KEYDB_PORT') or '6379'
+        cfg['REDIS_DB'] = get_env_var('REDIS_DB', '0')
 
         # reasonable defaults
-        cfg['OPENTELEMETRY_ENDPOINT'] = os.getenv('OPENTELEMETRY_ENDPOINT', 'http://localhost:4317')
-        cfg['APP_NAME'] = os.getenv('APP_NAME', 'Madrasa App')
-        cfg['APP_VERSION'] = os.getenv('APP_VERSION', '1.0.0')
-        cfg['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', '16777216'))  # 16MB
-        cfg['REDIS_EXPIRATION'] = int(os.getenv('REDIS_EXPIRATION', '3600'))  # 1 hour
+        cfg['OPENTELEMETRY_ENDPOINT'] = get_env_var('OPENTELEMETRY_ENDPOINT', 'http://localhost:4317')
+        cfg['APP_NAME'] = get_env_var('APP_NAME', 'Madrasa App')
+        cfg['APP_VERSION'] = get_env_var('APP_VERSION', '1.0.0')
+        cfg['MAX_CONTENT_LENGTH'] = int(get_env_var('MAX_CONTENT_LENGTH', '16777216'))  # 16MB
+        cfg['REDIS_EXPIRATION'] = int(get_env_var('REDIS_EXPIRATION', '3600'))  # 1 hour
 
         return cfg
 
@@ -260,7 +260,7 @@ def validate_environment() -> bool:
     success, errors = EnvValidator.validate()
     EnvValidator.print_report(errors)
 
-    if not success and not os.getenv('SKIP_ENV_VALIDATION'):
+    if not success and not get_env_var('SKIP_ENV_VALIDATION'):
         print("\n⚠️  Set SKIP_ENV_VALIDATION=1 to bypass validation (not recommended)")
         return False
 

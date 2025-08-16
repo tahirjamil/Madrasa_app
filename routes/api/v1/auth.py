@@ -125,7 +125,7 @@ async def register() -> Tuple[Response, int]:
         hashed_email = hash_sensitive_data(email) if email else None
         
         # Insert user into database
-        madrasa_name = os.getenv("MADRASA_NAME")
+        madrasa_name = get_env_var("MADRASA_NAME")
         conn = await get_db_connection()
         
         try:
@@ -263,7 +263,7 @@ async def login() -> Tuple[Response, int] | None:
         }), 429
     
     # Authenticate user
-    madrasa_name = data.get("madrasa_name") or os.getenv("MADRASA_NAME")
+    madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
     conn = await get_db_connection()
     
     try: 
@@ -792,7 +792,7 @@ async def get_account_status() -> Tuple[Response, int]:
         phone = data.get("phone")
         user_id = data.get("user_id")
         fullname = data.get("name_en")
-        madrasa_name = data.get("madrasa_name") or os.getenv("MADRASA_NAME")
+        madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone)

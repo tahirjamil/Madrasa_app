@@ -17,7 +17,7 @@ from typing import Optional, Union
 from aiomysql import Connection
 from redis.asyncio import Redis
 
-from observability.db_tracing import TracedRedisPool
+from utils.otel.db_tracing import TracedRedisPool
 
 # Load environment variables
 load_dotenv()

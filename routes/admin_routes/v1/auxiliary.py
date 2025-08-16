@@ -18,7 +18,7 @@ async def logs_data():
     
     try:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("SELECT log_id, action, phone, message, created_at FROM logs ORDER BY created_at DESC")
             logs = await cursor.fetchall()

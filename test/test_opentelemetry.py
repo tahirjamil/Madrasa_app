@@ -34,9 +34,9 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 
 # Import our OTEL modules
-from observability.otel_utils import init_otel
-from observability.asgi_middleware import RequestTracingMiddleware
-from observability.db_tracing import TracedCursorWrapper, TracedRedisPool
+from utils.otel.otel_utils import init_otel
+from utils.otel.asgi_middleware import RequestTracingMiddleware
+from utils.otel.db_tracing import TracedCursorWrapper, TracedRedisPool
 
 
 class TestOpenTelemetryInitialization(unittest.TestCase):

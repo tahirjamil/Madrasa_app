@@ -65,7 +65,7 @@ async def admin_dashboard():
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Load database list
             await cursor.execute("SHOW DATABASES")
@@ -193,7 +193,7 @@ async def view_logs():
 
     try:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
                 "SELECT log_id, action, phone, message, created_at "
@@ -329,7 +329,7 @@ async def members():
         pending = base_cached.get('pending', [])
     else:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Fetch all peoples with account types
             await cursor.execute(f"""
@@ -481,7 +481,7 @@ async def routines():
     else:
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from observability.db_tracing import TracedCursorWrapper
+                from utils.otel.db_tracing import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute("""
                     SELECT *
@@ -544,7 +544,7 @@ async def events():
         return await render_template("admin/events.html", events=events)
 
     async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from observability.db_tracing import TracedCursorWrapper
+        from utils.otel.db_tracing import TracedCursorWrapper
         cursor = TracedCursorWrapper(_cursor)
         # TODO: Disabled for view-only mode
         # ─── handle form submission ────────────────────────────
@@ -677,7 +677,7 @@ async def exams():
 
     # Fetch all exams from the database
     async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from observability.db_tracing import TracedCursorWrapper
+        from utils.otel.db_tracing import TracedCursorWrapper
         cursor = TracedCursorWrapper(_cursor)
 
         # Fetch all exams
@@ -843,7 +843,7 @@ async def interactions():
         rows = cached
     else:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("SELECT * FROM global.interactions")
             rows = list(await cursor.fetchall())

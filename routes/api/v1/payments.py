@@ -30,7 +30,7 @@ async def payments():
 
 
     async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from observability.db_tracing import TracedCursorWrapper
+        from utils.otel.db_tracing import TracedCursorWrapper
         cursor = TracedCursorWrapper(_cursor)
         await cursor.execute(f"""
         SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
@@ -120,7 +120,7 @@ async def get_transactions():
     conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             transactions = await cursor.fetchall()

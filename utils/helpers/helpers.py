@@ -422,7 +422,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
     async with get_db_context() as conn:
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from observability.db_tracing import TracedCursorWrapper
+                from utils.otel.db_tracing import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
                     "SELECT email FROM global.users WHERE fullname = %s AND phone = %s",
@@ -452,7 +452,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
     async with get_db_context() as conn:
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from observability.db_tracing import TracedCursorWrapper
+                from utils.otel.db_tracing import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
                     "SELECT user_id FROM global.users WHERE phone = %s AND fullname = %s",
@@ -479,7 +479,7 @@ async def upsert_translation(conn, translation_text: str, madrasa_name: str, bn_
     translation_text = translation_text.strip()
     
     async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from observability.db_tracing import TracedCursorWrapper
+        from utils.otel.db_tracing import TracedCursorWrapper
         cursor = TracedCursorWrapper(_cursor)
         # Upsert translation entry
         sql = f"""
@@ -580,7 +580,7 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                     peoples_fields[key] = value
             
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from observability.db_tracing import TracedCursorWrapper
+                from utils.otel.db_tracing import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 # Insert into acc_types table FIRST if user_id exists
                 if 'user_id' in peoples_fields and peoples_fields['user_id']:
@@ -644,7 +644,7 @@ async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid
         async with get_db_context() as conn:
             try:
                 async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from observability.db_tracing import TracedCursorWrapper
+                    from utils.otel.db_tracing import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                     if not uid and not acc_type:
                         await cursor.execute(f"""
@@ -1184,7 +1184,7 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
     
     try:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("""
                 SELECT code, created_at FROM global.verifications
@@ -1222,7 +1222,7 @@ async def delete_code() -> None:
     conn = await get_db_connection()
     try:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("""
                 DELETE FROM global.verifications
@@ -1488,7 +1488,7 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
     try:
         conn = await get_db_connection()
         async with conn.cursor() as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Check if this device is already registered for this user
             await cursor.execute(

@@ -130,7 +130,7 @@ async def register() -> Tuple[Response, int]:
         
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from observability.db_tracing import TracedCursorWrapper
+                from utils.otel.db_tracing import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 # Check if user already exists
                 await cursor.execute(
@@ -268,7 +268,7 @@ async def login() -> Tuple[Response, int] | None:
     
     try: 
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Get user information
             await cursor.execute(
@@ -411,7 +411,7 @@ async def send_verification_code() -> Tuple[Response, int]:
         # Check rate limiting
         conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Check existing user if password provided
             if password and fullname:
@@ -542,7 +542,7 @@ async def reset_password() -> Tuple[Response, int]:
         # Authenticate user and update password
         conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Get user information
             await cursor.execute(
@@ -631,7 +631,7 @@ async def manage_account(page_type: str): # -> Tuple[Response, int] TODO: remove
         # Authenticate user
         conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
                 "SELECT user_id, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
@@ -735,7 +735,7 @@ async def undo_remove() -> Tuple[Response, int]:
         # Reactivate account
         conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(
                 "SELECT user_id, deactivated_at, scheduled_deletion_at FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
@@ -845,7 +845,7 @@ async def get_account_status() -> Tuple[Response, int]:
         # Validate account in database
         conn = await get_db_connection()
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from observability.db_tracing import TracedCursorWrapper
+            from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(f"""
                 SELECT u.deactivated_at, u.email, p.*, 

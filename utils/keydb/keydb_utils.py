@@ -5,7 +5,7 @@ from typing import Any, Optional, Tuple, TypedDict, cast
 from quart import current_app
 
 from config import config, MadrasaApp
-from observability.db_tracing import TracedRedisPool
+from utils.otel.db_tracing import TracedRedisPool
 
 # Redis asyncio client (redis-py >= 4.2 / 5.x)
 import redis.asyncio as redis

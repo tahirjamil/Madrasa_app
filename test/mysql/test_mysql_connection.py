@@ -12,6 +12,8 @@ import asyncio
 import aiomysql
 from pathlib import Path
 
+from utils.helpers.improved_funtions import get_env_var
+
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 

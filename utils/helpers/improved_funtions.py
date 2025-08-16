@@ -3,11 +3,13 @@ from pathlib import Path
 from quart import jsonify, Response
 from typing import Tuple, Any
 
-def get_env_var(var_name: str, default: str | None = None) -> str | None:
+def get_env_var(var_name: str, default: Any | None = None) -> Any:
     """Get an environment variable with a default value."""
     value = os.getenv(var_name)
     if not value:
         print(f"Critical: Environment variable {var_name} is not set")
+        if not default:
+            raise ValueError(f"Environment variable {var_name} is not set")
         return default
     return value
 

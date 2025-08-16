@@ -10,6 +10,8 @@ from config import config
 # Redis asyncio client (redis-py >= 4.2 / 5.x)
 import redis.asyncio as redis
 
+from utils.helpers.improved_funtions import get_env_var
+
 
 class RedisConnectConfig(TypedDict, total=False):
     """Connection options for redis.asyncio client."""

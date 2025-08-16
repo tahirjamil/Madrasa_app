@@ -17,6 +17,8 @@ import asyncio
 from typing import Any
 import redis.asyncio as redis
 
+from utils.helpers.improved_funtions import get_env_var
+
 
 # Add project root to path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))

@@ -22,6 +22,7 @@ from cryptography.fernet import Fernet
 # from utils.mysql.database_utils import get_db_connection
 # from utils.keydb.keydb_utils import get_keydb_connection
 from config import config
+from utils.helpers.improved_funtions import get_env_var
 from utils.helpers.logger import log
 
 load_dotenv()

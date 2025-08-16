@@ -18,6 +18,8 @@ from typing import Optional, Union
 from aiomysql import Connection
 from redis.asyncio import Redis
 
+from utils.helpers.improved_funtions import get_env_var
+
 # Load environment variables
 load_dotenv()
 

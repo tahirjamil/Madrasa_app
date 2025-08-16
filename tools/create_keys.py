@@ -27,6 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
+from utils.helpers.improved_funtions import get_env_var
+
 try:
     from cryptography.fernet import Fernet
 except Exception:  # cryptography should be installed per requirements.txt

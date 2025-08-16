@@ -11,6 +11,8 @@ from quart import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
+from utils.helpers.improved_funtions import get_env_var
+
 # Local imports
 from . import api
 from utils.mysql.database_utils import get_db_connection

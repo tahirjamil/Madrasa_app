@@ -25,13 +25,6 @@ from routes.admin_routes import admin_routes
 from routes.api import api
 from routes.web_routes import web_routes
 
-# ─── Validate Environment Variables ─────────────────────────
-from utils.validators.env_validator import validate_environment
-if not validate_environment():
-    import sys
-    print("❌ Application startup aborted due to environment validation failures")
-    sys.exit(1)
-
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
     level=logging.WARNING,

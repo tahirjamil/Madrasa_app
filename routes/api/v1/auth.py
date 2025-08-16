@@ -87,12 +87,6 @@ async def register() -> Tuple[Response, int]:
         device_id = data.get("device_id") # TODO: get device id from client
         ip_address = data.get("ip_address") # TODO: get ip address from client
         
-        # Validate device information
-        is_valid_device, device_error = await validate_device_info(device_id, ip_address)
-        if not is_valid_device:
-            log.warning(action="register_invalid_device", trace_info=ip_address, message=f"Invalid device: {device_error}", secure=False)
-            return jsonify({"message": device_error}), 400
-        
         # Validate fullname
         is_valid_name, name_error = validate_fullname(fullname)
         if not is_valid_name:
@@ -991,7 +985,7 @@ async def track_user_activity(user_id: int, activity_type: str, details: Dict[st
             'user_id': user_id,
             'activity_type': activity_type,
             'timestamp': datetime.now(timezone.utc).isoformat(),
-            'ip_address': get_client_info()["ip_address"] or None, # TODO: get ip address from client
+            'ip_address': (await get_client_info() or {}).get("ip_address"),
             'details': details or {}
         }
         

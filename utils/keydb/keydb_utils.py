@@ -4,7 +4,7 @@ from typing import Any, Optional, Tuple, TypedDict, cast
 
 from quart import current_app
 
-from config import config
+# Import config when needed to avoid circular imports
 # from utils.otel.db_tracing import TracedRedisPool  # Import when needed to avoid circular imports
 
 # Redis asyncio client (redis-py >= 4.2 / 5.x)
@@ -29,6 +29,9 @@ class RedisConnectConfig(TypedDict, total=False):
 
 def get_keydb_config() -> RedisConnectConfig | None:
     """Build KeyDB/Redis connection config from config/env with sane defaults."""
+    # Import config here to avoid circular imports
+    from config import config
+    
     # Check if Redis cache is enabled
     use_redis_cache = get_env_var('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes', 'on')
     if not use_redis_cache:

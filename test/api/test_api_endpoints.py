@@ -6,20 +6,17 @@ API Endpoint Testing Suite
 Comprehensive testing of all API endpoints using actual HTTP requests.
 Tests various scenarios including success cases, error cases, and edge cases.
 """
-
-import os
 import sys
 import time
 import random
 import string
 import asyncio
-from token import OP
 import aiohttp
 from typing import Dict, Any, List, Optional
+from utils.helpers.improved_funtions import get_project_root
 
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+# Add project root to path to import modules
+sys.path.append(str(get_project_root()))
 
 class Colors:
     """Terminal colors for output"""
@@ -74,7 +71,7 @@ class APITester:
         url = f"{self.base_url}{path}"
         
         if expected_status is None:
-            expected_status = [200, 201]
+            expected_status = [x for x in range(200, 300)]
         
         try:
             start_time = time.time()

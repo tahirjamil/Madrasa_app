@@ -2,7 +2,7 @@ import asyncio
 import aiomysql, os
 from typing import Any, cast, TypedDict, Optional
 from quart import current_app
-from config import config
+# Import config when needed to avoid circular imports
 
 class AiomysqlConnectConfig(TypedDict, total=False):
     host: str
@@ -18,6 +18,9 @@ class AiomysqlConnectConfig(TypedDict, total=False):
 
 # Centralized Async DB Connection
 def get_db_config() -> AiomysqlConnectConfig:
+    # Import config here to avoid circular imports
+    from config import config
+    
     # Basic presence checks
     if not all([
         config.MYSQL_HOST,
@@ -115,6 +118,8 @@ async def get_db_connection(max_retries: int = 3) -> Any:
 
 # Table Creation
 async def create_tables():
+    # Import config here to avoid circular imports
+    from config import config
     conn = None
     try:
         conn = await connect_to_db()

@@ -2,12 +2,13 @@
 """CSRF Protection Module"""
 
 import secrets, hashlib, time, logging
-from config import config
 
 class CSRFProtect:
     """Enhanced CSRF protection with better security and logging"""
     
     def __init__(self):
+        # Import config here to avoid circular import
+        from config import config
         self.secret_key = config.WTF_CSRF_SECRET_KEY
         self.logger = logging.getLogger(__name__)
         
@@ -110,22 +111,29 @@ class CSRFProtect:
         except Exception as e:
             return {"valid": False, "reason": f"Error: {e}"}
 
-# Global CSRF instance
-csrf = CSRFProtect()
+# Global CSRF instance (lazy initialization)
+_csrf_instance = None
+
+def _get_csrf():
+    """Get or create CSRF instance"""
+    global _csrf_instance
+    if _csrf_instance is None:
+        _csrf_instance = CSRFProtect()
+    return _csrf_instance
 
 # Convenience functions
 def generate_csrf_token():
     """Generate a new CSRF token"""
-    return csrf.generate_csrf()
+    return _get_csrf().generate_csrf()
 
 def validate_csrf_token(token):
     """Validate a CSRF token"""
-    return csrf.validate_csrf(token)
+    return _get_csrf().validate_csrf(token)
 
 def refresh_csrf_token(token):
     """Refresh a CSRF token if needed"""
-    return csrf.refresh_token(token)
+    return _get_csrf().refresh_token(token)
 
 def get_csrf_token_info(token):
     """Get information about a CSRF token"""
-    return csrf.get_token_info(token) 
+    return _get_csrf().get_token_info(token) 

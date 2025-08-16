@@ -970,7 +970,7 @@ def handle_async_errors(func: Callable) -> Callable:
             log.critical(action="unexpected_error", trace_info="error_handler", message=str(e), secure=False)
             # metrics removed
             response, status = send_json_response("An unexpected error occurred", 500)
-            response.update({"error_code": "INTERNAL_ERROR"})
+            response.update({"error_code": "INTERNAL_ERROR", "details": str(e)})
             return jsonify(response), status
     
     return wrapper
@@ -1460,7 +1460,7 @@ def validate_password_strength(password: str) -> Tuple[bool, str]:
     return True, ""
 
 
-async def validate_file_upload(file, allowed_extensions: List[str], max_size: Optional[int] = config.MAX_CONTENT_LENGTH) -> Tuple[bool, str]:
+async def validate_file_upload(file, allowed_extensions: List[str], max_size: Optional[int] = None) -> Tuple[bool, str]:
     """Enhanced file upload validation with security checks"""
     if not file or not file.filename:
         return False, "No file provided"
@@ -1474,8 +1474,8 @@ async def validate_file_upload(file, allowed_extensions: List[str], max_size: Op
         return False, f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
     
     # Check file size
-    if file.content_length and file.content_length > max_size:
-        return False, f"File size exceeds maximum allowed size ({max_size or config.MAX_CONTENT_LENGTH / 1024 / 1024} MB)"
+    if max_size and file.content_length and file.content_length > max_size:
+        return False, f"File size exceeds maximum allowed size ({max_size / 1024 / 1024} MB)"
     
     # Check for suspicious filename patterns
     suspicious_patterns = [
@@ -1522,6 +1522,8 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
             result = await cursor.fetchone()
             device_count = result['device_count'] if result else 0
             
+            # Import config here to avoid circular import
+            from config import config
             if device_count >= config.MAX_DEVICES_PER_USER:
                 return False, f"Maximum devices ({config.MAX_DEVICES_PER_USER}) reached. Please remove an existing device to add this one."
             
@@ -1545,6 +1547,8 @@ async def check_login_attempts(identifier: str) -> Tuple[bool, int]:
         attempts = int(raw or 0)
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable for login attempts check: {e}")
+    # Import config here to avoid circular import
+    from config import config
     if attempts >= config.LOGIN_ATTEMPTS_LIMIT:
         return False, 0
     return True, config.LOGIN_ATTEMPTS_LIMIT - attempts
@@ -1560,6 +1564,8 @@ async def record_login_attempt(identifier: str, success: bool) -> None:
         else:
             raw = await pool.get(cache_key)
             attempts = int(raw or 0) + 1
+            # Import config here to avoid circular import
+            from config import config
             await pool.set(cache_key, attempts, expire=int(config.LOGIN_LOCKOUT_MINUTES * 60))
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable for recording login attempts: {e}")

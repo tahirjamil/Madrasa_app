@@ -3,7 +3,6 @@ from .helpers.csrf_protection import * # noqa: F401
 from .helpers.logger import * # noqa: F401
 from .keydb.keydb_utils import * # noqa: F401
 from .mysql.database_utils import *  # noqa: F401
-from .helpers.improved_funtions import * # noqa: F401
 
 __all__ = [
     "logger", 
@@ -16,7 +15,4 @@ __all__ = [
     "connect_to_db", 
     "create_tables", 
     "get_db_connection",
-    "get_env_var",
-    "send_json_response",
-    "get_project_root",
     ]

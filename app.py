@@ -67,7 +67,7 @@ async def get_locale():
 babel.localeselector = get_locale # type: ignore attribute-defined-outside-init
 
 # Import CSRF protection from dedicated module
-from utils.helpers.csrf_protection import csrf
+from utils.helpers.csrf_protection import _get_csrf
 
 # Wrap ASGI app with tracing middleware only if OTEL is enabled
 if getattr(config, 'OTEL_ENABLED', True):

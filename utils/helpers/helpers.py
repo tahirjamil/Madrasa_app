@@ -1,7 +1,6 @@
 """Helper Functions for Madrasha Application"""
 import dataclasses
 import decimal
-from pathlib import Path
 import base64, hashlib, random, re, aiomysql, phonenumbers, requests
 import uuid
 import datetime as dt
@@ -11,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
 from functools import wraps
-from typing import Any, Dict, List, Optional, Tuple, Callable, Union, Iterable
+from typing import Any, Dict, List, Optional, Tuple, Callable, Union
 
 from aiomysql import IntegrityError
 from dotenv import load_dotenv

@@ -21,13 +21,12 @@ def get_project_root(marker_files= ("pyproject.toml", "app.py")) -> Path:
             return parent
     raise FileNotFoundError("Project root not found")
 
-def send_json_response(message: str, status_code: int, data: dict[str, Any] | None = None) -> Tuple[Response, int]:
+def send_json_response(message: str, status_code: int) -> Tuple[Response, int]:
     """Send a JSON response with a status code."""
     success: bool = status_code >= 200 and status_code < 300
-    error: bool = status_code >= 400 and status_code < 500
+    error: bool = False if success else True
     return jsonify({
         "success": success,
         "error": error,
         "message": message,
-        "info": data
     }), status_code

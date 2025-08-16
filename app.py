@@ -12,13 +12,13 @@ import socket
 
 from config import config, MadrasaConfig, MadrasaApp
 from database import create_tables
-from database.database_utils import connect_to_db
-from keydb.keydb_utils import connect_to_keydb, close_keydb
+from utils.mysql.database_utils import connect_to_db
+from utils.keydb.keydb_utils import connect_to_keydb, close_keydb
 from observability.otel_utils import init_otel
 from observability.asgi_middleware import RequestTracingMiddleware
 
 # API & Web Blueprints
-from utils.helpers import (
+from utils.helpers.helpers import (
     get_system_health, initialize_application, metrics_collector, rate_limiter, security_manager,
     get_keydb_connection
 )
@@ -27,7 +27,7 @@ from routes.api import api
 from routes.web_routes import web_routes
 
 # ─── Validate Environment Variables ─────────────────────────
-from utils.env_validator import validate_environment
+from utils.validators.env_validator import validate_environment
 if not validate_environment():
     import sys
     print("❌ Application startup aborted due to environment validation failures")
@@ -74,7 +74,7 @@ async def get_locale():
 babel.localeselector = get_locale # type: ignore attribute-defined-outside-init
 
 # Import CSRF protection from dedicated module
-from utils.csrf_protection import csrf
+from utils.helpers.csrf_protection import csrf
 
 # Wrap ASGI app with tracing middleware only if OTEL is enabled
 if getattr(config, 'OTEL_ENABLED', True):
@@ -301,7 +301,7 @@ app.register_blueprint(api)
 # Inject CSRF token into templates (for forms)
 @app.context_processor
 def inject_csrf_token():
-    from utils.csrf_protection import generate_csrf_token
+    from utils.helpers.csrf_protection import generate_csrf_token
     return dict(csrf_token=generate_csrf_token)
 
 # ─── Note ───────────────────────────────────────────────────

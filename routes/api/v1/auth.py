@@ -13,16 +13,16 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 # Local imports
 from . import api
-from database.database_utils import get_db_connection
+from utils.mysql.database_utils import get_db_connection
 from config import config
-from utils.helpers import (
+from utils.helpers.helpers import (
     check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, 
     get_client_info, record_login_attempt, secure_data, send_sms, send_email, 
     get_email, rate_limit, encrypt_sensitive_data, hash_sensitive_data,
     handle_async_errors, validate_device_info, validate_email, validate_fullname, validate_password_strength,
 )
 from quart_babel import gettext as _
-from utils.logger import log
+from utils.helpers.logger import log
 
 # ─── Errors ───────────────────────────────────────────────
 ERROR_MESSAGES = {
@@ -1002,7 +1002,7 @@ async def track_user_activity(user_id: int, activity_type: str, details: Dict[st
         )
         
         # Store in cache for rate limiting using KeyDB-backed helper
-        from utils.helpers import set_cached_data
+        from utils.helpers.helpers import set_cached_data
         cache_key = f"user_activity:{user_id}:{activity_type}"
         await set_cached_data(cache_key, activity_data, ttl=3600)
         
@@ -1013,7 +1013,7 @@ async def check_account_security_status(user_id: int) -> Dict[str, Any]:
     """Check account security status and return security metrics"""
     try:
         # Get recent login attempts
-        from utils.helpers import get_cached_data
+        from utils.helpers.helpers import get_cached_data
         login_attempts = await get_cached_data(f"login_attempts:{user_id}", default=0)
         
         # Get recent activities

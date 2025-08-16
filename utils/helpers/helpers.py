@@ -17,10 +17,10 @@ from dotenv import load_dotenv
 from quart import Request, Response, flash, g, jsonify, redirect, request
 from quart_babel import gettext as _
 from cryptography.fernet import Fernet
-from database.database_utils import get_db_connection
-from keydb.keydb_utils import get_keydb_connection
+from utils.mysql.database_utils import get_db_connection
+from utils.keydb.keydb_utils import get_keydb_connection
 from config import config
-from utils.logger import log
+from utils.helpers.logger import log
 
 load_dotenv()
 
@@ -865,7 +865,7 @@ async def check_file_system_health() -> Dict[str, Any]:
 async def check_keydb_health() -> Dict[str, Any]:
     """Check KeyDB health"""
     try:
-        from keydb.keydb_utils import ping_keydb
+        from utils.keydb.keydb_utils import ping_keydb
         if await ping_keydb():
             return {"status": "healthy", "message": "KeyDB connection successful"}
         else:

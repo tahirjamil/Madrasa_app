@@ -9,10 +9,9 @@ import os, sys, platform, subprocess, signal, time, json, logging, argparse, thr
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
+from config import server_config as default_config
 
-import requests
-
-from utils.helpers import get_system_health
+from utils.helpers.helpers import get_system_health
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 
@@ -21,10 +20,11 @@ class ServerConfig:
     
     def __init__(self):
         self.base_dir = Path(__file__).resolve().parent
-        self.config_file = self.base_dir / "config/server_config.json"
+        self.config_dir = self.base_dir / "config"
         self.pid_file = self.base_dir / "server.pid"
         self.log_dir = self.base_dir / "logs"
         self.temp_dir = self.base_dir / "temp"
+        self.hypercorn_config = self.config_dir / "hosting/hypercorn.toml"
         
         # Ensure directories exist
         self.log_dir.mkdir(exist_ok=True)
@@ -56,6 +56,8 @@ class ServerConfig:
         except Exception as e:
             print(f"Warning: Could not save config: {e}")
 
+server_config = ServerConfig()
+
 # ─── Logging Setup ─────────────────────────────────────────────────────────────
 
 class AdvancedLogger:
@@ -64,7 +66,7 @@ class AdvancedLogger:
     def __init__(self, config: ServerConfig):
         self.config = config
         self.logger = logging.getLogger("MadrashaServer")
-        self.logger.setLevel(getattr(logging, config.config["logging"]["level"]))
+        self.logger.setLevel(getattr(logging, default_config.LOGGING_LEVEL))
         
         # Clear existing handlers
         self.logger.handlers.clear()
@@ -136,17 +138,14 @@ class ProcessManager:
             
             # Use Hypercorn for all platforms
             if dev_mode:
-                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "config/hypercorn.toml", "--log-level", "debug", "--access-logformat", "%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s \"%(f)s\" \"%(a)s\""]
+                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", self.config.hypercorn_config, "--log-level", "debug", "--access-logformat", "%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s \"%(f)s\" \"%(a)s\""]
             else:
-                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", "config/hypercorn.toml"]
+                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", self.config.hypercorn_config]
             
             # Set environment variables
             env = os.environ.copy()
             env["PYTHONPATH"] = str(self.config.base_dir)
             
-            # Set TEST_MODE for dev mode
-            if dev_mode:
-                env["TEST_MODE"] = "true"
             
             # Start process with different output handling for dev mode
             if dev_mode:
@@ -223,13 +222,13 @@ class ProcessManager:
                     return_code = self.process.returncode
                     self.logger.warning(f"Server process died with return code: {return_code}")
                     
-                    if self.config.config["monitoring"]["auto_restart"]:
+                    if default_config.AUTO_RESTART:
                         self._handle_restart()
                     else:
                         self.logger.error("Auto-restart disabled. Server stopped.")
                         break
                 
-                time.sleep(self.config.config["monitoring"]["health_check_interval"])
+                time.sleep(default_config.HEALTH_CHECK_INTERVAL)
                 
             except Exception as e:
                 self.logger.error(f"Error in process monitoring: {e}")
@@ -247,7 +246,7 @@ class ProcessManager:
         
         self.last_restart_time = current_time
         
-        if self.restart_count > self.config.config["monitoring"]["restart_threshold"]:
+        if self.restart_count > default_config.RESTART_THRESHOLD:
             self.logger.critical(f"Too many restarts ({self.restart_count}). Stopping server.")
             return
         
@@ -260,9 +259,7 @@ class ProcessManager:
             self.start_server()
     
     def stop_server(self, graceful: bool = True, *, for_restart: bool = False):
-        """Stop the server process.
-        If for_restart is True, do not set the global shutdown_event so the runner loop continues.
-        """
+        """Stop the server process."""
         with self._lock:
             if not for_restart:
                 self.shutdown_event.set()
@@ -274,7 +271,7 @@ class ProcessManager:
                     
                     # Wait for graceful shutdown
                     try:
-                        self.process.wait(timeout=30)
+                        self.process.wait(timeout=default_config.SERVER_TIMEOUT)
                     except subprocess.TimeoutExpired:
                         self.logger.warning("Server did not stop gracefully, forcing shutdown...")
                         self.process.kill()
@@ -287,7 +284,7 @@ class ProcessManager:
                     try:
                         self.config.pid_file.unlink()
                     except Exception:
-                        pass
+                        self.logger.error("Error cleaning up PID file")
             
             if self.monitor_thread and self.monitor_thread.is_alive():
                 self.monitor_thread.join(timeout=2)
@@ -366,6 +363,36 @@ class AdvancedServerRunner:
                 self.logger.error("Configuration validation failed")
                 return False
             
+            # Handle daemon mode
+            if daemon:
+                self.logger.info("Starting server in daemon mode...")
+                if platform.system() != "Windows":
+                    # Fork and detach from parent process (Unix-like systems)
+                    try:
+                        pid = os.fork()
+                        if pid > 0:
+                            # Parent process - exit
+                            self.logger.info(f"Daemon started with PID: {pid}")
+                            return True
+                        elif pid == 0:
+                            # Child process - continue
+                            os.setsid()  # Create new session
+                            os.umask(0)  # Set file creation mask
+                            # Redirect standard file descriptors
+                            sys.stdout.flush()
+                            sys.stderr.flush()
+                            with open(os.devnull, 'r') as f:
+                                os.dup2(f.fileno(), sys.stdin.fileno())
+                            with open(os.devnull, 'a+') as f:
+                                os.dup2(f.fileno(), sys.stdout.fileno())
+                                os.dup2(f.fileno(), sys.stderr.fileno())
+                    except OSError as e:
+                        self.logger.error(f"Failed to fork daemon process: {e}")
+                        return False
+                else:
+                    # Windows - use subprocess with DETACHED_PROCESS flag
+                    self.logger.warning("Daemon mode on Windows is limited - using detached process")
+            
             # Start server
             if not self.process_manager.start_server(dev_mode):
                 return False
@@ -386,6 +413,9 @@ class AdvancedServerRunner:
             
         except KeyboardInterrupt:
             self.logger.info("Received interrupt signal")
+            return True
+        except SystemExit:
+            self.logger.info("Received system exit signal")
             return True
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}")
@@ -420,17 +450,17 @@ class AdvancedServerRunner:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
             result = sock.connect_ex((
-                self.config.config["server"]["host"],
-                self.config.config["server"]["port"]
+                default_config.SERVER_HOST,
+                default_config.SERVER_PORT
             ))
             sock.close()
             
             if result == 0:
-                self.logger.warning(f"Port {self.config.config['server']['port']} is already in use")
+                self.logger.warning(f"Port {default_config.SERVER_PORT} is already in use")
                 return False
             
             # Check required files
-            required_files = ["app.py", "config/hypercorn.toml"]
+            required_files = ["app.py", self.config.hypercorn_config]
             for file in required_files:
                 if not (self.config.base_dir / file).exists():
                     self.logger.error(f"Required file not found: {file}")
@@ -454,7 +484,6 @@ def main():
         python run_server.py                    # Start in production mode
         python run_server.py --dev              # Start in development mode
         python run_server.py --daemon           # Start as daemon
-        python run_server.py --config           # Show current configuration
         python run_server.py --stop             # Stop running server
         python run_server.py --status           # Check server status
         python run_server.py --restart          # Gracefully restart running server
@@ -464,7 +493,6 @@ def main():
     
     parser.add_argument("--dev", action="store_true", help="Run in development mode")
     parser.add_argument("--daemon", action="store_true", help="Run as daemon")
-    parser.add_argument("--config", action="store_true", help="Show current configuration")
     parser.add_argument("--stop", action="store_true", help="Stop running server")
     parser.add_argument("--status", action="store_true", help="Check server status")
     parser.add_argument("--restart", action="store_true", help="Gracefully restart running server")
@@ -474,11 +502,6 @@ def main():
     
     # Initialize runner
     runner = AdvancedServerRunner()
-    
-    if args.config:
-        print("Current Configuration:")
-        print(json.dumps(runner.config.config, indent=2))
-        return
     
     if args.stop:
         if runner._is_server_running():
@@ -520,11 +543,12 @@ def main():
             print("No server is currently running")
         return
     
-    # Check for dev mode file
+    # Check for --dev argument
     dev_mode = bool(args.dev)
     
     print(f"Detected OS: {platform.system()}")
     print(f"Dev mode: {'ON' if dev_mode else 'OFF'}")
+    print(f"Daemon mode: {'ON' if args.daemon else 'OFF'}")
     
     # Run server
     success = asyncio.run(runner.run(dev_mode=dev_mode, daemon=args.daemon))

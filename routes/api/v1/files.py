@@ -5,10 +5,10 @@ import os
 import re
 from werkzeug.utils import secure_filename
 from . import api
-from utils.helpers import (
+from utils.helpers.helpers import (
     get_safe_file_path, get_client_info, ERROR_MESSAGES, handle_async_errors, validate_folder_access
 )
-from utils.logger import log
+from utils.helpers.logger import log
 from config import config
 
 # ─── Security and Validation Functions ───────────────────────────────────────

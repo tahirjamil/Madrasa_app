@@ -9,9 +9,9 @@ import logging
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from utils.helpers import delete_users
-from utils.logger import log
-from database.backup_db import main as backup_main
+from utils.helpers.helpers import delete_users
+from utils.helpers.logger import log
+from utils.mysql.backup_db import main as backup_main
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

@@ -1,19 +1,19 @@
 from quart import render_template, request, flash, session, redirect, url_for, current_app, jsonify
 from . import admin_routes
-from database.database_utils import connect_to_db
+from utils.mysql.database_utils import connect_to_db
 from datetime import datetime, date
-from utils.helpers import (
+from utils.helpers.helpers import (
     load_results, load_notices, save_notices, save_results, 
     cache_with_invalidation, 
     handle_async_errors, rate_limit, hash_sensitive_data, 
     encrypt_sensitive_data, format_phone_number, get_db_context,
     get_cache_key, get_cached_data, set_cached_data
 )
-from utils.logger import log
+from utils.helpers.logger import log
 from config import config
 import json, re, os, aiomysql, subprocess
 from functools import wraps
-from utils.helpers import require_csrf
+from utils.helpers.helpers import require_csrf
 
 #  DIRS
 EXAM_DIR     = config.EXAM_RESULTS_UPLOAD_FOLDER

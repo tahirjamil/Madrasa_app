@@ -2,10 +2,10 @@ from quart import request, jsonify
 from . import api
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
-from database.database_utils import get_db_connection
-from utils.helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation
+from utils.mysql.database_utils import get_db_connection
+from utils.helpers.helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation
 from config import config
-from utils.logger import log
+from utils.helpers.logger import log
 from quart_babel import gettext as _
 
 # ====== Payment Fee Info ======

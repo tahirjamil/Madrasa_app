@@ -331,3 +331,36 @@ class MadrasaConfig:
 
 # Create global configuration instance
 config = MadrasaConfig()
+
+class ServerConfig:
+    """Configuration for the server."""
+
+    # Server Configuration
+    SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+    SERVER_PORT = int(os.getenv("SERVER_PORT", 8000))
+    SERVER_WORKERS = 1
+    SERVER_TIMEOUT = 15
+    SERVER_MAX_REQUESTS = 1000
+    SERVER_MAX_REQUESTS_JITTER = 50
+    
+    # Logging Configuration
+    LOGGING_LEVEL = "INFO"
+    LOGGING_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    LOGGING_ROTATION = "1 day"
+    LOGGING_RETENTION = "30 days"
+    LOGGING_MAX_SIZE = "10MB"
+    
+    # Monitoring Configuration 
+    HEALTH_CHECK_INTERVAL = 30
+    MAX_MEMORY_USAGE = "512MB"
+    MAX_CPU_USAGE = 80
+    AUTO_RESTART = True
+    RESTART_THRESHOLD = 3
+
+    # Security Configuration
+    BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")
+    ALLOWED_HOSTS = list(os.getenv("ALLOWED_HOSTS", "*").split(","))
+    RATE_LIMIT = 100
+    TIMEOUT = 30
+
+server_config = ServerConfig()

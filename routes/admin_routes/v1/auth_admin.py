@@ -3,7 +3,7 @@ from datetime import datetime
 from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
 from config import config
-from utils.helpers import rate_limit, require_csrf
+from utils.helpers.helpers import rate_limit, require_csrf
 
 login_attempts = {}
 

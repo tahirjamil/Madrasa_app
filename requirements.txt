@@ -3,7 +3,6 @@ Quart
 quart-cors
 quart-csrf
 aiomysql
-# Use redis-py asyncio client instead of deprecated aioredis
 redis[hiredis]>=5.0.0
 hypercorn
 quart-babel
@@ -19,8 +18,13 @@ Pillow
 markdown
 cryptography
 psutil
+uvloop # for better performance
+watchfiles # for hot reloading
 
 # Observability
 opentelemetry-sdk
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-asgi
+
+# Docker
+docker

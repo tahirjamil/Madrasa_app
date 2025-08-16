@@ -1,4 +1,4 @@
-from database.database_utils import get_db_connection
+from utils.mysql.database_utils import get_db_connection
 import aiomysql, asyncio, json
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +10,7 @@ def get_crypto_funcs(data: str, which: str) -> str | None:
         raise ValueError("Invalid which value. Must be 'hash' or 'encrypt'.")
     
     try:
-        from utils.helpers import encrypt_sensitive_data, hash_sensitive_data
+        from utils.helpers.helpers import encrypt_sensitive_data, hash_sensitive_data
         if which == "hash":
             return hash_sensitive_data(data)
         elif which == "encrypt":

@@ -124,7 +124,7 @@ async def create_tables():
 
         # Get the path to the create_tables.sql file
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        sql_file_path = os.path.join(current_dir, 'commands', 'create_tables.sql')
+        sql_file_path = os.path.join(current_dir, 'config' 'mysql', 'create_tables.sql')
         
         # Read the SQL file
         try:

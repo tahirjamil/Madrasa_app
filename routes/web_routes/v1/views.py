@@ -1,6 +1,6 @@
 from . import web_routes
 from quart import render_template, request, redirect, url_for, flash
-from utils.helpers import send_email
+from utils.helpers.helpers import send_email
 import os
 import markdown
 import re

@@ -1,5 +1,5 @@
 from quart import Blueprint, jsonify, request
-from utils.helpers import require_api_key
+from utils.helpers.helpers import require_api_key
 from quart_babel import gettext as _
 from config import config
 

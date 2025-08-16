@@ -22,7 +22,7 @@ import redis.asyncio as redis
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import config  # noqa: E402
-from keydb.keydb_utils import (  # noqa: E402
+from utils.keydb.keydb_utils import (  # noqa: E402
     connect_to_keydb,
     close_keydb,
 )
@@ -208,7 +208,7 @@ def test_aioredis_missing() -> bool:
     print("\n🧪 Testing Behavior When aioredis Is Missing...")
     print("-" * 50)
     try:
-        import keydb.keydb_utils as kdu
+        import utils.keydb.keydb_utils as kdu
         original = kdu.redis
         kdu.redis = None
         async def _run() -> None:

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-"""
-Enhanced Madrasa App Maintenance Script
-This script performs periodic maintenance tasks with advanced monitoring and error handling.
-"""
+"""Enhanced Madrasa App Maintenance Script
+This script performs periodic maintenance tasks with advanced monitoring and error handling."""
 
 import asyncio, os, sys
 import logging

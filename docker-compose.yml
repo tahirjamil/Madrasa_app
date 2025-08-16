@@ -32,6 +32,7 @@ services:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
       - "9464:9464"   # Prometheus metrics
+      - "13133:13133" # Health check endpoint
     networks:
       - observability_network
     healthcheck:

@@ -5,10 +5,10 @@ Advanced Server Runner for Madrasha App
 """
 
 import asyncio
-import os, sys, platform, subprocess, signal, time, json, logging, argparse, threading, psutil, socket
+import os, sys, platform, subprocess, signal, time, logging, argparse, threading, psutil, socket
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
 from config import server_config as default_config
 
 from utils.helpers.helpers import get_system_health

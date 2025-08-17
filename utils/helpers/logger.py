@@ -1,5 +1,4 @@
 import sys
-from utils.mysql.database_utils import get_db_connection
 import aiomysql, asyncio, json
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +50,7 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
         level = "info"
     
     try:
+        from utils.mysql.database_utils import get_db_connection
         async with get_db_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
                 from utils.otel.db_tracing import TracedCursorWrapper

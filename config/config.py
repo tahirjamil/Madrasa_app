@@ -46,7 +46,7 @@ class MadrasaConfig:
     BASE_URL = "http://www.annurcomplex.com/"
     
     # CORS Configuration
-    ALLOWED_ORIGINS = get_env_var("ALLOWED_ORIGINS").split(",").strip()
+    ALLOWED_ORIGINS = get_env_var("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
     
     # ============================================================================
     # OBSERVABILITY / OPENTELEMETRY CONFIGURATION

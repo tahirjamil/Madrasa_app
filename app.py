@@ -79,7 +79,7 @@ babel.localeselector = get_locale # type: ignore attribute-defined-outside-init
 from utils.helpers.csrf_protection import _get_csrf
 
 # Wrap ASGI app with tracing middleware only if OTEL is enabled
-if getattr(config, 'OTEL_ENABLED', True):
+if config.OTEL_ENABLED:
     app.asgi_app = RequestTracingMiddleware(app.asgi_app)
 
 # Security headers
@@ -116,7 +116,7 @@ async def startup():
     app.start_time = time.time()
 
     # Initialize observability (traces/metrics) only if enabled
-    if getattr(config, 'OTEL_ENABLED', True):
+    if config.OTEL_ENABLED:
         init_otel(
             service_name="madrasa-app",
             environment="development",

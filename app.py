@@ -252,7 +252,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 req_json = json.loads(body) if body else None
                 # Need to recreate request with body for downstream
                 from starlette.datastructures import Headers
-                request = Request(request.scope, receive=lambda: {"type": "http.request", "body": body})
+                async def receive():
+                    return {"type": "http.request", "body": body}
+                request = Request(request.scope, receive=receive)
             except Exception:
                 pass
 

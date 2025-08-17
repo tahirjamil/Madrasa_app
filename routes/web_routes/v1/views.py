@@ -1,11 +1,14 @@
-from utils.helpers.improved_funtions import get_env_var
+from typing import Tuple
+from utils.helpers.improved_functions import get_env_var, send_json_response
 from . import web_routes
-from quart import render_template, request, redirect, url_for, flash
+from quart import Response, jsonify, render_template, request, redirect, url_for, flash
+from quart_babel import gettext as _
 from utils.helpers.helpers import send_email
 import os
 import markdown
 import re
 from datetime import datetime
+from quart_babel import gettext as _
 
 @web_routes.route("/")
 async def home():
@@ -61,8 +64,25 @@ async def privacy():
     if not contact_email or not contact_phone or not effective_date:
         raise ValueError("Missing required environment variables")
 
-    with open('content/privacy_policy.md', 'r', encoding='utf-8') as f:
-        policy_md = f.read()
+    try:
+        with open('content/privacy_policy.md', 'r', encoding='utf-8') as f:
+            policy_md = f.read()
+    except FileNotFoundError:
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="privacy_policy_file_not_found", trace_info="system", message="Privacy policy file not found: content/privacy_policy.md", secure=False)
+        return await render_template('error.html', 
+                                   error_title="Privacy Policy Unavailable",
+                                   error_message="The privacy policy is currently unavailable. Please try again later or contact support.",
+                                   contact_email=contact_email), 503
+    except Exception as e:
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="privacy_policy_file_error", trace_info="system", message=f"Error reading privacy policy file: {str(e)}", secure=False)
+        return await render_template('error.html', 
+                                   error_title="Privacy Policy Error",
+                                   error_message="There was an error loading the privacy policy. Please try again later or contact support.",
+                                   contact_email=contact_email), 500
 
     # Replace placeholders with actual contact info
     policy_md = policy_md.replace('{{ contact_email }}', contact_email)
@@ -108,8 +128,25 @@ async def terms():
     if not contact_email or not contact_phone or not effective_date:
         raise ValueError("Missing required environment variables")
 
-    with open('content/terms.md', 'r', encoding='utf-8') as f:
-        terms_md = f.read()
+    try:
+        with open('content/terms.md', 'r', encoding='utf-8') as f:
+            terms_md = f.read()
+    except FileNotFoundError:
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="terms_file_not_found", trace_info="system", message="Terms file not found: content/terms.md", secure=False)
+        return await render_template('error.html', 
+                                   error_title="Terms of Service Unavailable",
+                                   error_message="The terms of service are currently unavailable. Please try again later or contact support.",
+                                   contact_email=contact_email), 503
+    except Exception as e:
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="terms_file_error", trace_info="system", message=f"Error reading terms file: {str(e)}", secure=False)
+        return await render_template('error.html', 
+                                   error_title="Terms of Service Error",
+                                   error_message="There was an error loading the terms of service. Please try again later or contact support.",
+                                   contact_email=contact_email), 500
 
     # Replace placeholders with actual contact info
     terms_md = terms_md.replace('{{ contact_email }}', contact_email)
@@ -142,4 +179,17 @@ async def terms():
         introduction_html=introduction_html,
         sections=parsed_sections,
         effective_date=effective_date
+    )
+
+@web_routes.route("/account/<page_type>", methods=['GET'])
+async def manage_account(page_type: str):
+    """Manage account (deactivate/delete) with enhanced security"""
+    # Validate page type
+    if page_type not in ("remove", "deactivate"):
+        response, status = send_json_response(_("Invalid page type"), 400)
+        return jsonify(response), status
+    
+    return await render_template(
+        "account_manage.html",
+        page_type=page_type.capitalize()
     )

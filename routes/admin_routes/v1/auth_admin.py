@@ -4,12 +4,15 @@ from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
 from config import config
 from utils.helpers.helpers import rate_limit, require_csrf
+from threading import Lock
 
+# Thread-safe login attempts tracking
 login_attempts = {}
+login_attempts_lock = Lock()
 
 @admin_routes.route('/login', methods=['GET', 'POST'])
 @require_csrf
-# @rate_limit(max_requests=5, window=300)  # TODO: Temporarily disabled for testing
+@rate_limit(max_requests=50, window=300)
 async def login():
 
     # See for test mode

@@ -18,7 +18,7 @@ from typing import Optional, Union
 from aiomysql import Connection
 from redis.asyncio import Redis
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_functions import get_env_var
 
 # Load environment variables
 load_dotenv()
@@ -79,7 +79,7 @@ class MadrasaConfig:
     # Session Configuration
     SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
     SESSION_COOKIE_SAMESITE = "Lax"
-    SESSION_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False # REMINDER: SET THIS TO TRUE IN PRODUCTION
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1 * 3600  # 1 hour session timeout
     
@@ -99,7 +99,6 @@ class MadrasaConfig:
     SERVICE_PHONE_API_KEY = get_env_var("SMS_API_KEY")
     SERVICE_EMAIL_PORT = 587
     SERVICE_EMAIL_PASSWORD = get_env_var("EMAIL_PASSWORD")
-    SERVICE_EMAIL_API_KEY = get_env_var("EMAIL_API_KEY", required=False) # TODO: Remove this
     
     # Password Security
     PASSWORD_MIN_LENGTH = 8
@@ -140,13 +139,14 @@ class MadrasaConfig:
     # ============================================================================
 
     # MySQL Connection Settings
-    MYSQL_HOST = get_env_var("MYSQL_HOST", "localhost")
-    MYSQL_USER = get_env_var("MYSQL_USER", "tahir")
+    MYSQL_HOST = get_env_var("MYSQL_HOST")
+    MYSQL_USER = get_env_var("MYSQL_USER")
     MYSQL_PASSWORD = get_env_var("MYSQL_PASSWORD")
-    MYSQL_DB = get_env_var("MYSQL_DB", "default")
-    MYSQL_PORT = int(get_env_var("MYSQL_PORT", 3306))
-    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None, required=False) # TODO: Remove this
-    MYSQL_POOL_SIZE = 10
+    MYSQL_DB = get_env_var("MYSQL_DB")
+    MYSQL_PORT = int(get_env_var("MYSQL_PORT"))
+    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None, required=False) # REMINDER: ADD THIS IN PRODUCTION
+    MYSQL_MIN_CONNECTIONS = 2
+    MYSQL_MAX_CONNECTIONS = 10
     MYSQL_MAX_OVERFLOW = 5
     MYSQL_TIMEOUT = 60.0
 
@@ -157,7 +157,7 @@ class MadrasaConfig:
     # Redis Connection Settings
     REDIS_HOST = get_env_var("REDIS_HOST", "localhost")
     REDIS_PORT = int(get_env_var("REDIS_PORT", 6379))
-    REDIS_PASSWORD = get_env_var("REDIS_PASSWORD", None, required=False) # TODO: Remove this
+    REDIS_PASSWORD = get_env_var("REDIS_PASSWORD", None, required=False) # REMINDER: ADD THIS IN PRODUCTION
     REDIS_DB = int(get_env_var("REDIS_DB", 0))
     REDIS_SSL = get_env_var("REDIS_SSL", "false")
     REDIS_MINSIZE = 1
@@ -183,7 +183,7 @@ class MadrasaConfig:
     PROFILE_IMG_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'profile_pics')
     EXAM_RESULTS_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
     NOTICES_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
-    GALLERY_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'gallery')\
+    GALLERY_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'gallery')
     
     # Index Files
     EXAM_RESULTS_INDEX_FILE = os.path.join(EXAM_RESULTS_UPLOAD_FOLDER, 'index.json')
@@ -290,8 +290,9 @@ class MadrasaConfig:
         # Print warnings
         for warning in warnings:
             print(f"WARNING: {warning}")
+
     @lru_cache(maxsize=1)
-    def get_project_root(self, marker_files: tuple[str, ...] = ("pyproject.toml", "setup.py", ".git")) -> Path:
+    def get_project_root(self, marker_files: tuple[str, ...] = ("pyproject.toml", "app.py")) -> Path:
         """Return project root directory by searching upwards for a marker file."""
         current = Path(__file__).resolve()
         for parent in [current] + list(current.parents):
@@ -300,7 +301,7 @@ class MadrasaConfig:
         raise FileNotFoundError("Project root not found")
     
     @lru_cache(maxsize=1)
-    def get_database_url(self) -> str | None:
+    def get_database_url(self) -> Optional[str]:
         """Generate database connection URL."""
         try:
             return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
@@ -309,7 +310,7 @@ class MadrasaConfig:
             return None
 
     @lru_cache(maxsize=1)
-    def get_keydb_url(self) -> str | None:
+    def get_keydb_url(self) -> Optional[str]:
         """Generate keydb connection URL."""
         try:
             url = "redis://"

@@ -1,8 +1,10 @@
 from quart import render_template, request, flash, session, redirect, url_for, current_app, jsonify
+from collections import deque
+from threading import Lock
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_functions import get_env_var
 from . import admin_routes
-from utils.mysql.database_utils import connect_to_db
+from utils.mysql.database_utils import get_db_connection
 from datetime import datetime, date
 from utils.helpers.helpers import (
     load_results, load_notices, save_notices, save_results, 
@@ -40,11 +42,6 @@ async def admin_dashboard():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    # Get database connection (handled by @handle_async_errors)
-    conn = await connect_to_db()
-    if conn is None:
-        await flash("Database connection failed", "danger")
-        return await render_template("admin/dashboard.html", databases=[], tables={}, query_result=None, query_error=None)
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     databases = []
@@ -66,84 +63,85 @@ async def admin_dashboard():
     student_class = request.args.get('student_class', 'all')
 
     try:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            # Load database list
-            await cursor.execute("SHOW DATABASES")
-            databases = [row["Database"] for row in await cursor.fetchall()]
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                # Load database list
+                await cursor.execute("SHOW DATABASES")
+                databases = [row["Database"] for row in await cursor.fetchall()]
 
-            # Validate selected_db
-            if selected_db not in databases:
-                selected_db = databases[0] if databases else None
+                # Validate selected_db
+                if selected_db not in databases:
+                    selected_db = databases[0] if databases else None
 
-            # Load tables & descriptions
-            if selected_db:
-                await cursor.execute(f"USE `{selected_db}`")
-                await cursor.execute("SHOW TABLES")
-                table_list = [row[f'Tables_in_{selected_db}'] for row in await cursor.fetchall()]
-                for table in table_list:
-                    await cursor.execute(f"DESCRIBE `{table}`")
-                    tables[table] = await cursor.fetchall()
+                # Load tables & descriptions
+                if selected_db:
+                    await cursor.execute(f"USE `{selected_db}`")
+                    await cursor.execute("SHOW TABLES")
+                    table_list = [row[f'Tables_in_{selected_db}'] for row in await cursor.fetchall()]
+                    for table in table_list:
+                        await cursor.execute(f"DESCRIBE `{table}`")
+                        tables[table] = await cursor.fetchall()
 
-            # Handle SQL form submission
-            if request.method == "POST":
-                form = await request.form
-                raw_sql = form.get('sql', '').strip() if not config.is_testing() else ''
-                username = form.get('username', '')
-                password = form.get('password', '')
+                # Handle SQL form submission
+                if request.method == "POST":
+                    form = await request.form
+                    raw_sql = form.get('sql', '').strip() if not config.is_testing() else ''
+                    username = form.get('username', '')
+                    password = form.get('password', '')
 
-                ADMIN_USER = get_env_var("ADMIN_USERNAME")
-                ADMIN_PASS = get_env_var("ADMIN_PASSWORD")
+                    ADMIN_USER = get_env_var("ADMIN_USERNAME")
+                    ADMIN_PASS = get_env_var("ADMIN_PASSWORD")
 
-                # Say test mode if in test
-                if config.is_testing():
-                    await flash("The server is in testing mode.", "danger")
-                # Authenticate admin credentials
-                elif username != ADMIN_USER or password != ADMIN_PASS:
-                    await flash("Unauthorized admin login.", "danger")
-                # Forbid dangerous keywords (whole‑word match)
-                elif _FORBIDDEN_RE.search(raw_sql):
-                    await flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
-                    log.warning(action="forbidden_query_attempt", trace_info=username, message=raw_sql, secure=False)
+                    # Say test mode if in test
+                    if config.is_testing():
+                        await flash("The server is in testing mode.", "danger")
+                    # Authenticate admin credentials
+                    elif username != ADMIN_USER or password != ADMIN_PASS:
+                        await flash("Unauthorized admin login.", "danger")
+                    # Forbid dangerous keywords (whole‑word match)
+                    elif _FORBIDDEN_RE.search(raw_sql):
+                        await flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
+                        log.warning(action="forbidden_query_attempt", trace_info=username, message=raw_sql, secure=False)
+                    else:
+                        try:
+                            await cursor.execute(raw_sql)
+                            # If it's a SELECT or similar, fetch results
+                            if cursor.description:
+                                query_result = await cursor.fetchall()
+                            else:
+                                await conn.commit()
+                                query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
+                            log.info(action="query_run", trace_info=username, message=raw_sql, secure=False)
+                        except Exception as e:
+                            query_error = str(e)
+                            log.error(action="query_error", trace_info=username, message=f"{raw_sql} | {str(e)}", secure=False)
+
+                # --- Fetch transactions ---
+                if txn_limit_val:
+                    await cursor.execute("SELECT * FROM global.transactions ORDER BY date DESC LIMIT %s", (txn_limit_val,))
                 else:
-                    try:
-                        await cursor.execute(raw_sql)
-                        # If it's a SELECT or similar, fetch results
-                        if cursor.description:
-                            query_result = await cursor.fetchall()
-                        else:
-                            await conn.commit()
-                            query_result = f"✅ Query OK. Rows affected: {cursor.rowcount}"
-                        log.info(action="query_run", trace_info=username, message=raw_sql, secure=False)
-                    except Exception as e:
-                        query_error = str(e)
-                        log.error(action="query_error", trace_info=username, message=f"{raw_sql} | {str(e)}", secure=False)
+                    await cursor.execute("SELECT * FROM global.transactions ORDER BY date DESC")
+                transactions = await cursor.fetchall()
 
-            # --- Fetch transactions ---
-            if txn_limit_val:
-                await cursor.execute("SELECT * FROM global.transactions ORDER BY date DESC LIMIT %s", (txn_limit_val,))
-            else:
-                await cursor.execute("SELECT * FROM global.transactions ORDER BY date DESC")
-            transactions = await cursor.fetchall()
-
-            # --- Fetch all students payment info ---
-            student_sql = f'''
-                SELECT u.fullname, u.phone, p.class, p.gender, pay.special_food, pay.reduced_fee,
-                       pay.food, pay.due_months AS month, pay.payment_id, pay.user_id
-                FROM global.users u
-                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
-                JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
-                JOIN global.acc_types a ON a.user_id = u.user_id
-                WHERE a.main_type = 'students'
-            '''
-            params = []
-            if student_class and student_class != 'all':
-                student_sql += " AND p.class = %s"
-                params.append(student_class)
-            student_sql += " ORDER BY p.class, u.fullname"
-            await cursor.execute(student_sql, params)
-            student_payments = await cursor.fetchall()
+                # --- Fetch all students payment info ---
+                student_sql = f'''
+                    SELECT u.fullname, u.phone, p.class, p.gender, pay.special_food, pay.reduced_fee,
+                           pay.food, pay.due_months AS month, pay.payment_id, pay.user_id
+                    FROM global.users u
+                    JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+                    JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
+                    JOIN global.acc_types a ON a.user_id = u.user_id
+                    WHERE a.main_type = 'students'
+                '''
+                params = []
+                if student_class and student_class != 'all':
+                    student_sql += " AND p.class = %s"
+                    params.append(student_class)
+                student_sql += " ORDER BY p.class, u.fullname"
+                await cursor.execute(student_sql, params)
+                student_payments = await cursor.fetchall()
 
     except Exception as e:
         query_error = str(e)
@@ -178,15 +176,6 @@ async def view_logs():
         # await flash("Server is in test mode", "danger")  # Removed hardcoded test mode message
         return await render_template("admin/logs.html", logs=[])
     
-    try:
-        conn = await connect_to_db()
-        if conn is None:
-            await flash("Database connection failed", "danger")
-            return await render_template("admin/logs.html", logs=[])
-    except Exception as e:
-        await flash(f"Database connection error: {str(e)}", "danger")
-        return await render_template("admin/logs.html", logs=[])
-
     # Try cache first
     cache_key = get_cache_key("admin:logs")
     cached_logs = await get_cached_data(cache_key)
@@ -194,16 +183,17 @@ async def view_logs():
         return await render_template("admin/logs.html", logs=cached_logs)
 
     try:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute(
-                "SELECT log_id, action, trace_info, message, created_at "
-                "FROM logs "
-                "ORDER BY created_at DESC"
-            )
-            logs = await cursor.fetchall()
-            await set_cached_data(cache_key, logs, ttl=config.SHORT_CACHE_TTL)
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute(
+                    "SELECT log_id, action, trace_info, message, created_at "
+                    "FROM logs "
+                    "ORDER BY created_at DESC"
+                )
+                logs = await cursor.fetchall()
+                await set_cached_data(cache_key, logs, ttl=config.SHORT_CACHE_TTL)
     except Exception as e:
         await flash(f"Database error: {str(e)}", "danger")
         logs = []
@@ -220,7 +210,14 @@ async def info_admin():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    logs = getattr(current_app, 'request_response_log', [])[-100:] if not config.is_testing() else []
+    # Thread-safe access to request log
+    if config.is_testing():
+        logs = []
+    else:
+        request_log = getattr(current_app, 'request_response_log', deque())
+        request_log_lock = getattr(current_app, 'request_log_lock', Lock())
+        with request_log_lock:
+            logs = list(request_log)[-100:]
 
     return await render_template("admin/info.html", logs=logs)
 
@@ -237,7 +234,7 @@ async def exam_results():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    # TODO: Disabled for view-only mode
+    # REMINDER: Disabled for view-only mode
     # if request.method == 'POST':
     #     username    = request.form.get('username')
     #     password    = request.form.get('password')
@@ -280,7 +277,7 @@ async def exam_results():
     return await render_template("admin/exam_results.html", results=results)
 
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/exam_results/delete/<filename>', methods=['POST'])
 # def delete_exam_result(filename):
 #     if not session.get('admin_logged_in'):
@@ -317,10 +314,6 @@ async def members():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await connect_to_db()
-    if conn is None:
-        await flash("Database connection failed", "danger")
-        return await render_template("admin/members.html", types=[], selected_type=None, members=[], pending=[])
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     # Cache the base peoples/pending payload
@@ -330,23 +323,24 @@ async def members():
         peoples = base_cached.get('peoples', [])
         pending = base_cached.get('pending', [])
     else:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            # Fetch all peoples with account types
-            await cursor.execute(f"""
-                SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
-                FROM {madrasa_name}.peoples p
-                LEFT JOIN global.acc_types a ON a.user_id = p.user_id
-            """)
-            peoples = list(await cursor.fetchall())
-            
-            # Note: verify_peoples table might not exist in new schema
-            try:
-                await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
-                pending = await cursor.fetchall()
-            except:
-                pending = []
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                # Fetch all peoples with account types
+                await cursor.execute(f"""
+                    SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
+                    FROM {madrasa_name}.peoples p
+                    LEFT JOIN global.acc_types a ON a.user_id = p.user_id
+                """)
+                peoples = list(await cursor.fetchall())
+                
+                # Note: verify_peoples table might not exist in new schema
+                try:
+                    await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
+                    pending = await cursor.fetchall()
+                except:
+                    pending = []
         await set_cached_data(base_key, {"peoples": peoples, "pending": pending}, ttl=config.SHORT_CACHE_TTL)
 
     # Build list of distinct account types
@@ -402,7 +396,7 @@ async def notice_page():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
     
-    # TODO: Disabled for view-only mode
+    # REMINDER: Disabled for view-only mode
     # if request.method == 'POST':
     #     username = request.form.get('username')
     #     password = request.form.get('password')
@@ -471,10 +465,6 @@ async def routines():
 
     sort = request.args.get('sort', 'default')
 
-    conn = await connect_to_db()
-    if conn is None:
-        await flash("Database connection failed", "danger")
-        return await render_template("admin/routines.html", routines_by_class={}, sort=sort)
     # cache routines list per madrasa
     cache_key = get_cache_key("admin:routines", madrasa=get_env_var("MADRASA_NAME", "annur"))
     cached = await get_cached_data(cache_key)
@@ -482,16 +472,17 @@ async def routines():
         rows = cached
     else:
         try:
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.db_tracing import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
-                await cursor.execute("""
-                    SELECT *
-                      FROM routines
-                     ORDER BY class_group ASC, serial ASC
-                """)
-                rows = await cursor.fetchall()
-                await set_cached_data(cache_key, rows, ttl=config.SHORT_CACHE_TTL)
+            async with get_db_connection() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                    from utils.otel.db_tracing import TracedCursorWrapper
+                    cursor = TracedCursorWrapper(_cursor)
+                    await cursor.execute("""
+                        SELECT *
+                          FROM routines
+                         ORDER BY class_group ASC, serial ASC
+                    """)
+                    rows = await cursor.fetchall()
+                    await set_cached_data(cache_key, rows, ttl=config.SHORT_CACHE_TTL)
         except Exception as e:
             rows = []
 
@@ -533,10 +524,6 @@ async def events():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    conn = await connect_to_db()
-    if conn is None:
-        await flash("Database connection failed", "danger")
-        return await render_template("admin/events.html", events=[])
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     cache_key = get_cache_key("admin:events", madrasa=madrasa_name)
@@ -545,10 +532,11 @@ async def events():
         events = cached if not config.is_testing() else []
         return await render_template("admin/events.html", events=events)
 
-    async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from utils.otel.db_tracing import TracedCursorWrapper
-        cursor = TracedCursorWrapper(_cursor)
-        # TODO: Disabled for view-only mode
+    async with get_db_connection() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from utils.otel.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
+        # REMINDER: Disabled for view-only mode
         # ─── handle form submission ────────────────────────────
         # if request.method == 'POST':
         #     username     = request.form.get('username', '').strip()
@@ -605,7 +593,7 @@ async def madrasa_pictures():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
-    # TODO: Disabled for view-only mode
+    # REMINDER: Disabled for view-only mode
     # 2) Handle upload
     # if request.method == 'POST':
     #     username     = request.form.get('username', '')
@@ -672,23 +660,19 @@ async def exams():
     if not config.is_testing():
         return await render_template('admin/exams.html', exams=[])
 
-    conn = await connect_to_db()
-    if conn is None:
-        await flash("Database connection failed", "danger")
-        return await render_template('admin/exams.html', exams=[])
-
     # Fetch all exams from the database
-    async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from utils.otel.db_tracing import TracedCursorWrapper
-        cursor = TracedCursorWrapper(_cursor)
+    async with get_db_connection() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from utils.otel.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
 
-        # Fetch all exams
-        await cursor.execute("SELECT * FROM exams ORDER BY date DESC, start_time ASC")
-        exams = await cursor.fetchall()
+            # Fetch all exams
+            await cursor.execute("SELECT * FROM exams ORDER BY date DESC, start_time ASC")
+            exams = await cursor.fetchall()
 
     return await render_template('admin/exams.html', exams=exams)
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/admin/add_exam', methods=['POST'])
 # def add_exam():
 #     if not session.get('admin_logged_in'):
@@ -754,7 +738,7 @@ async def exams():
 
 #     return redirect(url_for('admin_routes.exams'))
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/members/delete_pending/<int:verify_people_id>', methods=['POST'])
 # def delete_pending_member(verify_people_id):
 #     if not session.get('admin_logged_in'):
@@ -776,7 +760,7 @@ async def exams():
 
 #     return redirect(url_for('admin_routes.members'))
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/payments/<modify>', methods=['GET', 'POST'])
 # def modify_payment(modify):
 #     if not session.get('admin_logged_in'):
@@ -834,21 +818,18 @@ async def interactions():
         return redirect(url_for('admin_routes.login'))
 
     sort = request.args.get('sort', 'default')
-    conn = await connect_to_db()
-    if conn is None:
-        await flash("Database connection failed", "danger")
-        return await render_template('admin/interactions.html', interactions=[], sort=sort)
     
     cache_key = get_cache_key("admin:interactions")
     cached = await get_cached_data(cache_key)
     if cached is not None:
         rows = cached
     else:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute("SELECT * FROM global.interactions")
-            rows = list(await cursor.fetchall())
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute("SELECT * FROM global.interactions")
+                rows = list(await cursor.fetchall())
         await set_cached_data(cache_key, rows, ttl=config.SHORT_CACHE_TTL)
 
     # Sorting logic

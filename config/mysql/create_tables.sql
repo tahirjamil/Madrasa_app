@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS transactions (
                 user_id             INT     NOT NULL,
                 type           VARCHAR(20)  NOT NULL CHECK (type IN ('fees','donations','others')),
                 month          VARCHAR(50),
-                amount         INT    NOT NULL  CHECK (amount > 0), -- TODO: float?
+                amount         FLOAT    NOT NULL  CHECK (amount > 0.0),
                 date           DATETIME NOT NULL,
 
                 updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -241,9 +241,9 @@ CREATE TABLE IF NOT EXISTS payments (
                 user_id        INT           NULL,
                 food         BOOLEAN       NOT NULL,
                 special_food BOOLEAN       NOT NULL,
-                reduced_fee   INT           DEFAULT 0    CHECK (reduced_fee >= 0), -- TODO: float?
+                reduced_fee   FLOAT       DEFAULT 0.0    CHECK (reduced_fee >= 0.0),
                 due_months   INT           NOT NULL     CHECK (due_months >= 0),
-                tax           INT           NOT NULL     CHECK (tax >= 0), -- TODO: float?
+                tax           FLOAT           NOT NULL     CHECK (tax >= 0.0),
 
                 updated_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,

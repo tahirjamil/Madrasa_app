@@ -4,7 +4,7 @@
 {% block content %}
 <div class="container">
   <h2 class="mb-4">{{ 'Edit' if mode == 'edit' else 'Add' }} Payment</h2>
-  {# <form method="POST" class="row g-3"> #} {# TODO: Disabled for view-only mode #}
+  {# <form method="POST" class="row g-3"> #} {# REMINDER: Disabled for view-only mode #}
     <div class="col-md-6">
       <label class="form-label">User ID</label>
       <input type="number" name="user_id" class="form-control" required value="{{ payments.user_id if payments else '' }}" {% if mode == 'edit' %}readonly{% endif %}>

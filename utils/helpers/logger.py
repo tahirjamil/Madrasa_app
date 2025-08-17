@@ -31,11 +31,8 @@ async def log_event(action: str, trace_info: str, message: str, secure: bool, le
     global log_count
     
     try:
-        conn = await get_db_connection()
-        if not conn:
-            raise RuntimeError("Database connection unavailable for logging")
-
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Prepare metadata

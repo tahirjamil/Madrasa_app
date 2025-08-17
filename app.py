@@ -9,11 +9,12 @@ from quart_cors import cors
 from dotenv import load_dotenv
 from quart_babel import Babel
 import socket
+from threading import Lock
+from collections import deque
 
 from config import config, MadrasaConfig, MadrasaApp
 from utils import create_tables
-from utils.helpers.improved_funtions import send_json_response
-from utils.mysql.database_utils import connect_to_db
+from utils.helpers.improved_functions import send_json_response
 from utils.keydb.keydb_utils import connect_to_keydb, close_keydb
 from utils.otel.otel_utils import init_otel
 from utils.otel.asgi_middleware import RequestTracingMiddleware
@@ -28,7 +29,7 @@ from routes.web_routes import web_routes
 
 # ─── Setup Logging ──────────────────────────────────────────
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.DEBUG,  # Changed from WARNING to DEBUG to allow debug logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('debug.log'),
@@ -47,7 +48,7 @@ env = BASE_DIR / ".env"
 load_dotenv(env)
 
 app = MadrasaApp(__name__)
-app = cors(app, allow_origin="*")
+app = cors(app, allow_origin="*") # REMINDER: RESTRICT this in production
 app.config.from_object(MadrasaConfig)
 
 # Quart-Babel setup
@@ -113,22 +114,22 @@ async def startup():
 
     initialize_application()
     await create_tables_async()
-    # Create single database connection for server lifetime
-    app.db = await connect_to_db()
+    # Initialize database connection pool
+    from utils.mysql.database_utils import get_db_pool
+    setattr(app, 'db_pool', await get_db_pool())
     app.keydb = await connect_to_keydb()
-    if app.db is None:
-        raise RuntimeError("Failed to establish database connection")
-    print("Database connection established successfully")
+    print("Database connection pool established successfully")
 
 @app.after_serving
 async def shutdown():
-    # Close database connection when server shuts down
-    if hasattr(app, 'db') and app.db:
+    # Close database connection pool when server shuts down
+    if getattr(app, 'db_pool', None) is not None:
         try:
-            app.db.close()
-            print("Database connection closed successfully")
+            from utils.mysql.database_utils import close_db_pool
+            await close_db_pool()
+            print("Database connection pool closed successfully")
         except Exception as e:
-            print(f"Error closing database connection: {e}")
+            print(f"Error closing database connection pool: {e}")
     if hasattr(app, 'keydb') and app.keydb:
         try:
             await close_keydb(app.keydb)
@@ -137,8 +138,11 @@ async def shutdown():
             print(f"Error closing keydb connection: {e}")
 
 # ─── Request/Response Logging ───────────────────────────────
-request_response_log = []
+# Thread-safe request log with max size of 100 entries
+request_response_log = deque(maxlen=100)
+request_log_lock = Lock()
 setattr(app, 'request_response_log', request_response_log)
+setattr(app, 'request_log_lock', request_log_lock)
 
 @app.before_request
 async def block_xss_inputs():
@@ -210,9 +214,9 @@ async def log_every_request():
         "res_json": None,
     }
     g.log_entry = entry
-    request_response_log.append(entry)
-    if len(request_response_log) > 100:
-        request_response_log.pop(0)
+    # Thread-safe append to request log
+    with request_log_lock:
+        request_response_log.append(entry)
 
 @app.after_request
 async def attach_response_data(response):

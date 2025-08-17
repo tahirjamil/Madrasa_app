@@ -12,7 +12,7 @@ from quart import (
 )
 from werkzeug.utils import secure_filename
 
-from utils.helpers.improved_funtions import get_env_var, send_json_response
+from utils.helpers.improved_functions import get_env_var, send_json_response
 
 # Local imports
 from . import api
@@ -261,16 +261,16 @@ async def add_person() -> Tuple[Response, int]:
         await insert_person(madrasa_name, fields, acc_type, formatted_phone)
         
         # Get image path for response
-        conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute(
-                f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
-                (fullname.lower(), formatted_phone)
-            )
-            row = await cursor.fetchone()
-            img_path = row["image_path"] if row else None
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute(
+                    f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
+                    (fullname.lower(), formatted_phone)
+                )
+                row = await cursor.fetchone()
+                img_path = row["image_path"] if row else None
         
         # Log successful addition
         log.info(action="add_person", trace_info=formatted_phone, message=f"User {fullname} added successfully", secure=True)
@@ -289,11 +289,11 @@ async def add_person() -> Tuple[Response, int]:
 @handle_async_errors
 async def get_info() -> Tuple[Response, int]:
     """Get member information with caching and incremental updates"""
-    try:
+    async with get_db_connection() as conn:
         # Get request data
-        data = await request.get_json() # TODO: Validate request data
+        data, error = await secure_data()
         if not data:
-            response, status = send_json_response("Invalid request data", 400)
+            response, status = send_json_response(error, 400)
             return jsonify(response), status
         
         madrasa_name = get_env_var("MADRASA_NAME")
@@ -349,7 +349,7 @@ async def get_info() -> Tuple[Response, int]:
         if cached_members is not None:
             return jsonify(cached_members), 200
         
-        conn = await get_db_connection()
+        
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
@@ -368,85 +368,72 @@ async def get_info() -> Tuple[Response, int]:
         
         return jsonify(result_data), 200
         
-    except Exception as e:
-        log.critical(action="get_members_error", trace_info="system", message=f"Error retrieving members: {str(e)}", secure=False)
-        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
-        return jsonify(response), status
 
 @api.route("/routines", methods=["POST"]) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def get_routine() -> Tuple[Response, int]:
     """Get routine information with caching and incremental updates"""
-    # Check maintenance mode
-    if config.is_maintenance:
-        response, status = send_json_response(ERROR_MESSAGES['maintenance_mode'], 503)
+    # Get request data
+    data, error = await secure_data()
+    if not data:
+        response, status = send_json_response(error, 400)
         return jsonify(response), status
     
-    # Get client info for logging
-    # client_info = get_client_info()
+    madrasa_name = get_env_var("MADRASA_NAME")
+    lastfetched = data.get("updatedSince")
     
-    try:
-        # Get request data
-        data = await request.get_json()
-        if not data:
-            response, status = send_json_response("Invalid request data", 400)
+    # Process timestamp using enhanced validation
+    corrected_time = None
+    if lastfetched:
+        if not validate_timestamp_format(lastfetched):
+            log.warning(action="invalid_routine_timestamp", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp format: {lastfetched}", secure=False)
+            response, status = send_json_response("Invalid timestamp format", 400)
             return jsonify(response), status
-        
-        madrasa_name = get_env_var("MADRASA_NAME")
-        lastfetched = data.get("updatedSince")
-        
-        # Process timestamp using enhanced validation
-        corrected_time = None
-        if lastfetched:
-            if not validate_timestamp_format(lastfetched):
-                log.warning(action="invalid_routine_timestamp", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp format: {lastfetched}", secure=False)
-                response, status = send_json_response("Invalid timestamp format", 400)
-                return jsonify(response), status
-            try:
-                corrected_time = lastfetched.replace("T", " ").replace("Z", "")
-            except Exception as e:
-                log.warning(action="routine_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-                response, status = send_json_response("Invalid timestamp format", 400)
-                return jsonify(response), status
-        
-        # Build SQL query
-        sql = f"""
-            SELECT 
-                r.gender, r.class_group, r.class_level, r.weekday, r.serial,
-                tsubject.translation_text AS subject_en, 
-                tsubject.bn_text AS subject_bn, 
-                tsubject.ar_text AS subject_ar, 
-                tname.translation_text AS name_en, 
-                tname.bn_text AS name_bn, 
-                tname.ar_text AS name_ar 
-            FROM {madrasa_name}.routines r
-            JOIN global.translations tsubject ON tsubject.translation_text = r.subject 
-            JOIN global.translations tname ON tname.translation_text = r.name
-        """
-        
-        params = []
-        if corrected_time:
-            sql += " WHERE r.updated_at > %s"
-            params.append(corrected_time)
-        
-        sql += " ORDER BY r.class_level, r.weekday, r.serial"
-        
-        # Execute query with enhanced cache management
-        cache_key = get_cache_key("routines", lastfetched=lastfetched)
-        cached_routines = await get_cached_data(cache_key)
-        
-        if cached_routines is not None:
-            return jsonify(cached_routines), 200
-        
-        conn = await get_db_connection()
+        try:
+            corrected_time = lastfetched.replace("T", " ").replace("Z", "")
+        except Exception as e:
+            log.warning(action="routine_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
+            response, status = send_json_response("Invalid timestamp format", 400)
+            return jsonify(response), status
+    
+    # Build SQL query
+    sql = f"""
+        SELECT 
+            r.gender, r.class_group, r.class_level, r.weekday, r.serial,
+            tsubject.translation_text AS subject_en, 
+            tsubject.bn_text AS subject_bn, 
+            tsubject.ar_text AS subject_ar, 
+            tname.translation_text AS name_en, 
+            tname.bn_text AS name_bn, 
+            tname.ar_text AS name_ar 
+        FROM {madrasa_name}.routines r
+        JOIN global.translations tsubject ON tsubject.translation_text = r.subject 
+        JOIN global.translations tname ON tname.translation_text = r.name
+    """
+    
+    params = []
+    if corrected_time:
+        sql += " WHERE r.updated_at > %s"
+        params.append(corrected_time)
+    
+    sql += " ORDER BY r.class_level, r.weekday, r.serial"
+    
+    # Execute query with enhanced cache management
+    cache_key = get_cache_key("routines", lastfetched=lastfetched)
+    cached_routines = await get_cached_data(cache_key)
+    
+    if cached_routines is not None:
+        return jsonify(cached_routines), 200
+    
+    async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
-        
-        # Cache the result
+    
+    # Cache the result
         result_data = {
             "routines": result,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -457,73 +444,54 @@ async def get_routine() -> Tuple[Response, int]:
         log.info(action="get_routines", trace_info=data.get("ip_address", ""), message=f"Routines retrieved successfully", secure=False)
         
         return jsonify(result_data), 200
-        
-    except Exception as e:
-        log.critical(action="get_routines_error", trace_info="system", message=f"Error retrieving routines: {str(e)}", secure=False)
-        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
-        return jsonify(response), status
 
 @api.route('/events', methods=['POST']) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def events() -> Tuple[Response, int]:
+    """Get events with enhanced date processing and status classification"""
+    # Get request data
+    data = await request.get_json() or {}
+    madrasa_name = get_env_var("MADRASA_NAME")
+    lastfetched = data.get('updatedSince')
+    DHAKA = ZoneInfo("Asia/Dhaka")
+    
+    # Build SQL query
+    sql = f"""
+        SELECT 
+            e.type, e.time, e.date, e.function_url,
+            ttitle.translation_text AS title_en, 
+            ttitle.bn_text AS title_bn, 
+            ttitle.ar_text AS title_ar
+        FROM {madrasa_name}.events e
+        JOIN global.translations ttitle ON ttitle.translation_text = e.title
     """
-    Get events with enhanced date processing and status classification
     
-    Returns:
-        JSON response with events data and sync timestamp
-    """
-    # Check maintenance mode
-    if config.is_maintenance:
-        response, status = send_json_response(ERROR_MESSAGES['maintenance_mode'], 503)
-        return jsonify(response), status
+    params = []
+    if lastfetched:
+        if not validate_timestamp_format(lastfetched):
+            log.error(action="get_events_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
+            response, status = send_json_response("Invalid updatedSince format", 400)
+            return jsonify(response), status
+        try:
+            cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
+            sql += " WHERE e.created_at > %s"
+            params.append(cutoff)
+        except ValueError as e:
+            log.error(action="events_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
+            response, status = send_json_response("Invalid updatedSince format", 400)
+            return jsonify(response), status
     
-    # Get client info for logging
-    # client_info = get_client_info()
+    sql += " ORDER BY e.event_id DESC"
     
-    try:
-        # Get request data
-        data = await request.get_json() or {}
-        madrasa_name = get_env_var("MADRASA_NAME")
-        lastfetched = data.get('updatedSince')
-        DHAKA = ZoneInfo("Asia/Dhaka")
-        
-        # Build SQL query
-        sql = f"""
-            SELECT 
-                e.type, e.time, e.date, e.function_url,
-                ttitle.translation_text AS title_en, 
-                ttitle.bn_text AS title_bn, 
-                ttitle.ar_text AS title_ar
-            FROM {madrasa_name}.events e
-            JOIN global.translations ttitle ON ttitle.translation_text = e.title
-        """
-        
-        params = []
-        if lastfetched:
-            if not validate_timestamp_format(lastfetched):
-                log.error(action="get_events_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
-                response, status = send_json_response("Invalid updatedSince format", 400)
-                return jsonify(response), status
-            try:
-                cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
-                sql += " WHERE e.created_at > %s"
-                params.append(cutoff)
-            except ValueError as e:
-                log.error(action="events_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-                response, status = send_json_response("Invalid updatedSince format", 400)
-                return jsonify(response), status
-        
-        sql += " ORDER BY e.event_id DESC"
-        
-        # Execute query with enhanced cache management
-        cache_key = get_cache_key("events", lastfetched=lastfetched)
-        cached_events = await get_cached_data(cache_key)
-        
-        if cached_events is not None:
-            return jsonify(cached_events), 200
-        
-        conn = await get_db_connection()
+    # Execute query with enhanced cache management
+    cache_key = get_cache_key("events", lastfetched=lastfetched)
+    cached_events = await get_cached_data(cache_key)
+    
+    if cached_events is not None:
+        return jsonify(cached_events), 200
+    
+    async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
@@ -569,76 +537,62 @@ async def events() -> Tuple[Response, int]:
         log.info(action="get_events", trace_info=data.get("ip_address", ""), message=f"Events retrieved successfully", secure=False)
         
         return jsonify(result_data), 200
-        
-    except Exception as e:
-        log.critical(action="get_events_error", trace_info="system", message=f"Error retrieving events: {str(e)}", secure=False)
-        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
-        return jsonify(response), status
 
 @api.route('/exams', methods=['POST']) # type: ignore
 @cache_with_invalidation
 @handle_async_errors
 async def get_exams() -> Tuple[Response, int]:
     """Get exam information with enhanced validation and error handling"""
-    # Check maintenance mode
-    if config.is_maintenance:
-        response, status = send_json_response(ERROR_MESSAGES['maintenance_mode'], 503)
+    # Get request data
+    data, error = await secure_data()
+    if not data:
+        response, status = send_json_response(error, 400)
         return jsonify(response), status
     
-    # Get client info for logging
-    # client_info = get_client_info()
+    madrasa_name = get_env_var("MADRASA_NAME")
+    lastfetched = data.get("updatedSince")
     
-    try:
-        # Get request data
-        data, error = await secure_data()
-        if not data:
-            response, status = send_json_response(error, 400)
+    # Process timestamp using enhanced validation
+    cutoff = None
+    if lastfetched:
+        if not validate_timestamp_format(lastfetched):
+            log.error(action="get_exams_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
+            response, status = send_json_response("Invalid updatedSince format", 400)
             return jsonify(response), status
-        
-        madrasa_name = get_env_var("MADRASA_NAME")
-        lastfetched = data.get("updatedSince")
-        
-        # Process timestamp using enhanced validation
-        cutoff = None
-        if lastfetched:
-            if not validate_timestamp_format(lastfetched):
-                log.error(action="get_exams_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
-                response, status = send_json_response("Invalid updatedSince format", 400)
-                return jsonify(response), status
-            try:
-                cutoff = lastfetched.replace("T", " ").replace("Z", "")
-            except Exception as e:
-                log.error(action="exams_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-                response, status = send_json_response("Invalid updatedSince format", 400)
-                return jsonify(response), status
-        
-        # Build SQL query
-        sql = f"""
-            SELECT 
-                e.class, e.gender, e.start_time, e.end_time, e.date, e.weekday, 
-                e.sec_start_time, e.sec_end_time,
-                tbook.translation_text AS book_en, 
-                tbook.bn_text AS book_bn, 
-                tbook.ar_text AS book_ar
-            FROM {madrasa_name}.exams e
-            JOIN global.translations tbook ON tbook.translation_text = e.book
-        """
-        
-        params = []
-        if cutoff:
-            sql += " WHERE e.created_at > %s"
-            params.append(cutoff)
-        
-        sql += " ORDER BY e.exam_id"
-        
-        # Execute query with enhanced cache management
-        cache_key = get_cache_key("exams", lastfetched=lastfetched)
-        cached_exams = await get_cached_data(cache_key)
-        
-        if cached_exams is not None:
-            return jsonify(cached_exams), 200
-        
-        conn = await get_db_connection()
+        try:
+            cutoff = lastfetched.replace("T", " ").replace("Z", "")
+        except Exception as e:
+            log.error(action="exams_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
+            response, status = send_json_response("Invalid updatedSince format", 400)
+            return jsonify(response), status
+    
+    # Build SQL query
+    sql = f"""
+        SELECT 
+            e.class, e.gender, e.start_time, e.end_time, e.date, e.weekday, 
+            e.sec_start_time, e.sec_end_time,
+            tbook.translation_text AS book_en, 
+            tbook.bn_text AS book_bn, 
+            tbook.ar_text AS book_ar
+        FROM {madrasa_name}.exams e
+        JOIN global.translations tbook ON tbook.translation_text = e.book
+    """
+    
+    params = []
+    if cutoff:
+        sql += " WHERE e.created_at > %s"
+        params.append(cutoff)
+    
+    sql += " ORDER BY e.exam_id"
+    
+    # Execute query with enhanced cache management
+    cache_key = get_cache_key("exams", lastfetched=lastfetched)
+    cached_exams = await get_cached_data(cache_key)
+    
+    if cached_exams is not None:
+        return jsonify(cached_exams), 200
+    
+    async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
@@ -656,13 +610,6 @@ async def get_exams() -> Tuple[Response, int]:
         log.info(action="get_exams", trace_info=data.get("ip_address", ""), message=f"Exams retrieved successfully", secure=False)
         
         return jsonify(result_data), 200
-        
-    except Exception as e:
-        log.critical(action="get_exams_error", trace_info="system", message=f"Error retrieving exams: {str(e)}", secure=False)
-        response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
-        return jsonify(response), status
-
-
 
 
 

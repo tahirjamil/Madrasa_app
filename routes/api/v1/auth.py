@@ -11,7 +11,7 @@ from quart import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from utils.helpers.improved_funtions import get_env_var, send_json_response
+from utils.helpers.improved_functions import get_env_var, send_json_response
 
 # Local imports
 from . import api
@@ -119,12 +119,13 @@ async def register() -> Tuple[Response, int]:
         
         # Insert user into database
         madrasa_name = get_env_var("MADRASA_NAME")
-        conn = await get_db_connection()
+        
         
         try:
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.db_tracing import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
+            async with get_db_connection() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                    from utils.otel.db_tracing import TracedCursorWrapper
+                    cursor = TracedCursorWrapper(_cursor)
                 # Check if user already exists
                 await cursor.execute(
                     "SELECT user_id FROM global.users WHERE phone = %s OR LOWER(fullname) = LOWER(%s)",
@@ -201,13 +202,11 @@ async def register() -> Tuple[Response, int]:
                 return jsonify(response), status
                 
         except aiomysql.IntegrityError as e:
-            await conn.rollback()
             log.critical(action="register_integrity_error", trace_info=ip_address, message=f"Database integrity error: {str(e)}", secure=False)
             response, status = send_json_response(ERROR_MESSAGES['user_already_exists'], 409)
             return jsonify(response), status
             
         except Exception as e:
-            await conn.rollback()
             log.critical(action="register_database_error", trace_info=ip_address, message=f"Database error during registration: {str(e)}", secure=False)
             response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
             return jsonify(response), status
@@ -257,12 +256,13 @@ async def login() -> Tuple[Response, int] | None:
     
     # Authenticate user
     madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
-    conn = await get_db_connection()
+    
     
     try: 
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
             # Get user information
             await cursor.execute(
                 "SELECT user_id, deactivated_at, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
@@ -402,10 +402,11 @@ async def send_verification_code() -> Tuple[Response, int]:
             email = await get_email(phone=formatted_phone, fullname=fullname or "")
         
         # Check rate limiting
-        conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
+        
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
             # Check existing user if password provided
             if password and fullname:
                 await cursor.execute(
@@ -531,10 +532,11 @@ async def reset_password() -> Tuple[Response, int]:
                 return jsonify(response), status
         
         # Authenticate user and update password
-        conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
+        
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
             # Get user information
             await cursor.execute(
                 "SELECT user_id, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
@@ -577,8 +579,7 @@ async def reset_password() -> Tuple[Response, int]:
                 "UPDATE global.users SET password_hash = %s, ip_address = %s WHERE LOWER(fullname) = LOWER(%s) AND phone = %s",
                 (hashed_password, ip_address, fullname, formatted_phone)
             )
-            await conn.commit()
-            
+                        
             # Log successful password reset
             log.info(action="password_reset_successful", trace_info=ip_address, message=f"Password reset successful for: {fullname}", secure=False)
             
@@ -590,22 +591,15 @@ async def reset_password() -> Tuple[Response, int]:
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
         return jsonify(response), status
 
-@api.route("/account/<page_type>", methods=["GET", "POST"])
+@api.route("/account/<page_type>", methods=["POST"])
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
-async def manage_account(page_type: str): # -> Tuple[Response, int] TODO: remove get
+async def manage_account(page_type: str) -> Tuple[Response, int]:
     """Manage account (deactivate/delete) with enhanced security"""
     # Validate page type
     if page_type not in ("remove", "deactivate", "delete"):
         response, status = send_json_response(_("Invalid page type"), 400)
         return jsonify(response), status
-    
-    # Handle GET request (render form)
-    if request.method == "GET":
-        return await render_template(
-            "account_manage.html",
-            page_type=page_type.capitalize()
-        )
     
     # Handle POST request
     try:
@@ -628,29 +622,29 @@ async def manage_account(page_type: str): # -> Tuple[Response, int] TODO: remove
             return jsonify(response), status
         
         # Authenticate user
-        conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute(
-                "SELECT user_id, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-                (formatted_phone, fullname)
-            )
-            user = await cursor.fetchone()
-            
-            if not user or not check_password_hash(user["password_hash"], password or ""):
-                log.error(action="manage_account_invalid_credentials", trace_info=formatted_phone, message="Invalid credentials for account management", secure=True)
-                response, status = send_json_response(_("Invalid login details"), 401)
-                return jsonify(response), status
-            
-            # Prepare confirmation message
-            deletion_days = config.ACCOUNT_DELETION_DAYS
-            if page_type in ["remove", "delete"]:
-                msg = _("Your account has been successfully put for deletion.\nIt will take %(days)d days to fully delete your account.\nIf it wasn't you, please contact us for account recovery.\n\n@An-Nur.app") % {"days": deletion_days}
-                subject = _("Account Deletion Confirmation")
-            else:  # deactivate
-                msg = _("Your account has been successfully deactivated.\nYou can reactivate it within our app.\nIf it wasn't you, please contact us immediately.\n\n@An-Nur.app")
-                subject = _("Account Deactivation Confirmation")
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute(
+                    "SELECT user_id, password_hash FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    (formatted_phone, fullname)
+                )
+                user = await cursor.fetchone()
+                
+                if not user or not check_password_hash(user["password_hash"], password or ""):
+                    log.error(action="manage_account_invalid_credentials", trace_info=formatted_phone, message="Invalid credentials for account management", secure=True)
+                    response, status = send_json_response(_("Invalid login details"), 401)
+                    return jsonify(response), status
+                
+                # Prepare confirmation message
+                deletion_days = config.ACCOUNT_DELETION_DAYS
+                if page_type in ["remove", "delete"]:
+                    msg = _("Your account has been successfully put for deletion.\nIt will take %(days)d days to fully delete your account.\nIf it wasn't you, please contact us for account recovery.\n\n@An-Nur.app") % {"days": deletion_days}
+                    subject = _("Account Deletion Confirmation")
+                else:  # deactivate
+                    msg = _("Your account has been successfully deactivated.\nYou can reactivate it within our app.\nIf it wasn't you, please contact us immediately.\n\n@An-Nur.app")
+                    subject = _("Account Deactivation Confirmation")
             
             # Send notifications
             errors = 0
@@ -733,15 +727,16 @@ async def undo_remove() -> Tuple[Response, int]:
             return jsonify(response), status
         
         # Reactivate account
-        conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute(
-                "SELECT user_id, deactivated_at, scheduled_deletion_at FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-                (formatted_phone, fullname)
-            )
-            user = await cursor.fetchone()
+        
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute(
+                    "SELECT user_id, deactivated_at, scheduled_deletion_at FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    (formatted_phone, fullname)
+                )
+                user = await cursor.fetchone()
             
             if not user or not user["deactivated_at"]:
                 log.warning(action="reactivate_no_deactivated_account", trace_info=data.get("ip_address", ""), message=f"No deactivated account found for: {fullname}", secure=False)
@@ -760,7 +755,6 @@ async def undo_remove() -> Tuple[Response, int]:
                 "UPDATE global.users SET deactivated_at = NULL, scheduled_deletion_at = NULL, ip_address = %s WHERE user_id = %s",
                 (data.get("ip_address"), user["user_id"])
             )
-            await conn.commit()
             
             # Log successful reactivation
             log.info(action="account_reactivated_successfully", trace_info=data.get("ip_address", ""), message=f"Account reactivated successfully for: {fullname}", secure=False)
@@ -851,10 +845,11 @@ async def get_account_status() -> Tuple[Response, int]:
                 return jsonify(response), status
         
         # Validate account in database
-        conn = await get_db_connection()
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
+        
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(f"""
                 SELECT u.deactivated_at, u.email, p.*, 
                     tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
@@ -947,7 +942,6 @@ async def get_account_status() -> Tuple[Response, int]:
                     WHERE device_id = %s AND device_brand = %s AND user_id = %s
                 """, (opened, device_id, device_brand, user_id))
             
-            await conn.commit()
             
             # Log successful account check
             log.info(action="account_check_successful", trace_info=ip_address or "", message=f"Account check successful for: {fullname}", secure=False)

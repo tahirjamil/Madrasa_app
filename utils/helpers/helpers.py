@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
 from functools import wraps
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Callable, Union
 
 from aiomysql import IntegrityError
@@ -21,7 +22,7 @@ from cryptography.fernet import Fernet
 # from utils.mysql.database_utils import get_db_connection
 # from utils.keydb.keydb_utils import get_keydb_connection
 from config import config
-from utils.helpers.improved_funtions import get_env_var, send_json_response
+from utils.helpers.improved_functions import get_env_var, send_json_response
 from utils.helpers.logger import log
 
 load_dotenv()
@@ -409,11 +410,8 @@ async def send_sms(phone: str, msg: str) -> bool:
 async def get_db_context():
     """Database connection context manager"""
     from utils.mysql.database_utils import get_db_connection
-    conn = await get_db_connection()
-    try:
+    async with get_db_connection() as conn:
         yield conn
-    finally:
-        conn.close()
 
 async def get_email(fullname: str, phone: str) -> Optional[str]:
     """Get user email with caching"""
@@ -708,44 +706,47 @@ async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid
 
 # ─── Business Logic Functions ────────────────────────────────────────────────
 
-def calculate_fees(class_name: str, gender: str, special_food: int, 
-                  reduced_fee: int, food: int) -> int:
+def calculate_fees(class_name: str, gender: str, special_food: bool = False, 
+                  reduced_fee: float = 0.0, food: bool = True, tax: float = 0.0) -> float:
     """Calculate fees with comprehensive pricing logic"""
-    total = 0
+    total = 0.0
     class_lower = class_name.lower()
     
     if config.is_testing():
-        return 9999
+        return 9999.0
     
     # Food charges
-    if food == 1:
-        total += 2400
-    if special_food == 1:
-        total += 3000
+    if food:
+        total += 2400.0
+    if special_food:
+        total += 3000.0
     
     # Base fees by gender and class
     if gender.lower() == 'male':
         if class_lower in ['class 3', 'class 2']:
-            total += 1600
+            total += 1600.0
         elif class_lower in ['hifz', 'nazara']:
-            total += 1800
+            total += 1800.0
         else:
-            total += 1300
+            total += 1300.0
     elif gender.lower() == 'female':
         if class_lower == 'nursery':
-            total += 800
+            total += 800.0
         elif class_lower == 'class 1':
-            total += 1000
+            total += 1000.0
         elif class_lower == 'hifz':
-            total += 2000
+            total += 2000.0
         elif class_lower in ['class 2', 'class 3', 'nazara']:
-            total += 1200
+            total += 1200.0
         else:
-            total += 1500
+            total += 1500.0
     
     # Apply fee reduction
     if reduced_fee:
         total -= reduced_fee
+
+    if tax:
+        total += tax
     
     return max(0, total)  # Ensure non-negative total
 
@@ -863,16 +864,11 @@ def require_api_key(func):
 async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and health"""
     from utils.mysql.database_utils import get_db_connection
-    conn = await get_db_connection()
     
-    try:
+    async with get_db_connection() as conn:
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT 1")
             return {"status": "healthy", "message": "Database connection successful"}
-    except Exception as e:
-        return {"status": "unhealthy", "message": f"Database error: {str(e)}"}
-    finally:
-        await conn.close()
 
 async def check_file_system_health() -> Dict[str, Any]:
     """Check file system health and permissions"""
@@ -966,7 +962,7 @@ async def get_system_health() -> Dict[str, Any]:
 
 
 # ─── Advanced Error Handling ───────────────────────────────────────────────
-class AppError(Exception): # TODO: Implement this
+class AppError(Exception):
     """Base application error class"""
     def __init__(self, message: str, error_code = None, details = None):
         super().__init__(message)
@@ -1062,39 +1058,41 @@ def require_csrf(f):
 # ─── Rate Limiting ───────────────────────────────────────────────────────────
 
 class RateLimiter:
-    """Advanced rate limiting with sliding window"""
+    """Advanced rate limiting with sliding window and thread safety"""
     
     def __init__(self):
         self._requests: Dict[str, List[float]] = {}
         self._cleanup_interval = 1 * 3600  # 1 hour
         self._last_cleanup = time.time()
+        self._lock = Lock()
     
     def is_allowed(self, identifier: str, max_requests: int, window: int) -> bool:
-        """Check if request is allowed based on rate limit"""
+        """Check if request is allowed based on rate limit (thread-safe)"""
         current_time = time.time()
         
-        # Cleanup old entries periodically
-        if current_time - self._last_cleanup > self._cleanup_interval:
-            self._cleanup()
-            self._last_cleanup = current_time
-        
-        # Get request history for this identifier
-        requests = self._requests.get(identifier, [])
-        
-        # Remove requests outside the window
-        window_start = current_time - window
-        requests = [req_time for req_time in requests if req_time > window_start]
-        
-        # Check if under limit
-        if len(requests) < max_requests:
-            requests.append(current_time)
-            self._requests[identifier] = requests
-            return True
-        
-        return False
+        with self._lock:
+            # Cleanup old entries periodically
+            if current_time - self._last_cleanup > self._cleanup_interval:
+                self._cleanup()
+                self._last_cleanup = current_time
+            
+            # Get request history for this identifier
+            requests = self._requests.get(identifier, [])
+            
+            # Remove requests outside the window
+            window_start = current_time - window
+            requests = [req_time for req_time in requests if req_time > window_start]
+            
+            # Check if under limit
+            if len(requests) < max_requests:
+                requests.append(current_time)
+                self._requests[identifier] = requests
+                return True
+            
+            return False
     
     def _cleanup(self) -> None:
-        """Remove old request records"""
+        """Remove old request records (thread-safe)"""
         current_time = time.time()
         old_identifiers = []
         
@@ -1205,44 +1203,45 @@ def generate_code(code_length: Optional[int] = None) -> int:
 async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int]]:
     """Enhanced code verification with security features"""
     from utils.mysql.database_utils import get_db_connection
-    conn = await get_db_connection()
+    
     
     if config.is_testing():
         return None
     
     try:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute("""
-                SELECT code, created_at FROM global.verifications
-                WHERE phone = %s
-                ORDER BY created_at DESC
-                LIMIT 1
-            """, (phone,))
-            result = await cursor.fetchone()
-            
-            if not result:
-                response, status = send_json_response("No verification code found", 404)
-                return jsonify(response), status
-            
-            db_code = result["code"]
-            created_at = result["created_at"]
-            now = datetime.now()
-            
-            # Check expiration
-            if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
-                response, status = send_json_response("Verification code expired", 410)
-                return jsonify(response), status
-            
-            # Constant-time comparison
-            if int(user_code) == db_code:
-                await delete_code()
-                return None
-            else:
-                log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
-                response, status = send_json_response("Verification code mismatch", 400)
-                return jsonify(response), status
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute("""
+                    SELECT code, created_at FROM global.verifications
+                    WHERE phone = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (phone,))
+                result = await cursor.fetchone()
+                
+                if not result:
+                    response, status = send_json_response("No verification code found", 404)
+                    return jsonify(response), status
+                
+                db_code = result["code"]
+                created_at = result["created_at"]
+                now = datetime.now()
+                
+                # Check expiration
+                if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
+                    response, status = send_json_response("Verification code expired", 410)
+                    return jsonify(response), status
+                
+                # Constant-time comparison
+                if int(user_code) == db_code:
+                    await delete_code()
+                    return None
+                else:
+                    log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
+                    response, status = send_json_response("Verification code mismatch", 400)
+                    return jsonify(response), status
     
     except Exception as e:
         log.critical(action="verification_error", trace_info=phone, message=str(e), secure=True)
@@ -1252,8 +1251,8 @@ async def check_code(user_code: str, phone: str) -> Optional[Tuple[Response, int
 async def delete_code() -> None:
     """Delete expired verification codes"""
     from utils.mysql.database_utils import get_db_connection
-    conn = await get_db_connection()
-    try:
+    
+    async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
@@ -1261,9 +1260,6 @@ async def delete_code() -> None:
                 DELETE FROM global.verifications
                 WHERE created_at < NOW() - INTERVAL 1 DAY
             """)
-        await conn.commit()
-    except Exception as e:
-        log.critical(action="failed_to_delete_verifications", trace_info="N/A", message=f"Database Error {str(e)}", secure=False)
 
 # ─── Validation Functions ────────────────────────────────────────────────────
 
@@ -1367,6 +1363,7 @@ class SecurityManager:
         ]
         self.blocked_ips = set() # save the blocked ips in a set or database
         self.suspicious_activities = {} # save the suspicious activities in a dictionary or database
+        self._lock = Lock() # Thread safety for shared state
     
     def detect_sql_injection(self, input_str: str) -> bool:
         """Detect potential SQL injection attempts"""
@@ -1405,20 +1402,21 @@ class SecurityManager:
         return sanitized.strip()
     
     async def track_suspicious_activity(self, ip_address: str, activity: str) -> None:
-        """Track suspicious activities for threat analysis"""
-        if ip_address not in self.suspicious_activities:
-            self.suspicious_activities[ip_address] = []
-        
-        self.suspicious_activities[ip_address].append({
-            'activity': activity,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        # If too many suspicious activities, block IP
-        if len(self.suspicious_activities[ip_address]) > 10:
-            self.blocked_ips.add(ip_address)
-            await _send_security_notifications(ip_address, "system", f"Too many suspicious activities: {activity}")
-            log.critical(action="ip_blocked", trace_info=ip_address, message=f"Too many suspicious activities: {activity}", secure=False)
+        """Track suspicious activities for threat analysis (thread-safe)"""
+        with self._lock:
+            if ip_address not in self.suspicious_activities:
+                self.suspicious_activities[ip_address] = []
+            
+            self.suspicious_activities[ip_address].append({
+                'activity': activity,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # If too many suspicious activities, block IP
+            if len(self.suspicious_activities[ip_address]) > 10:
+                self.blocked_ips.add(ip_address)
+                await _send_security_notifications(ip_address, "system", f"Too many suspicious activities: {activity}")
+                log.critical(action="ip_blocked", trace_info=ip_address, message=f"Too many suspicious activities: {activity}", secure=False)
 
 # Global security manager
 security_manager = SecurityManager()
@@ -1518,9 +1516,9 @@ async def validate_file_upload(file, allowed_extensions: List[str], max_size: Op
 # ──── User Login Limits ────────────────────────────────────────────────────
 async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: # TODO: fix the device limit where it should delete from interactions table
     """Check if user has reached device limit"""
-    try:
-        from utils.mysql.database_utils import get_db_connection
-        conn = await get_db_connection()
+    from utils.mysql.database_utils import get_db_connection
+
+    async with get_db_connection() as conn:
         async with conn.cursor() as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
@@ -1548,25 +1546,15 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
                 return False, f"Maximum devices ({config.MAX_DEVICES_PER_USER}) reached. Please remove an existing device to add this one."
             
             return True, ""
-    except Exception as e:
-        log.critical(
-            action="device_limit_check_error",
-            trace_info=str(user_id),
-            message=f"Error checking device limit: {str(e)}",
-            secure=False
-        )
-        return False, "Error checking device limit"
+    
 
 async def check_login_attempts(identifier: str) -> Tuple[bool, int]:
     """Check login attempts in KeyDB and return (allowed, remaining)."""
     cache_key = f"login_attempts:{identifier}"
-    try:
-        from utils.keydb.keydb_utils import get_keydb_connection
-        pool = await get_keydb_connection()
-        raw = await pool.get(cache_key)
-        attempts = int(raw or 0)
-    except Exception as e:
-        raise RuntimeError(f"KeyDB unavailable for login attempts check: {e}")
+    from utils.keydb.keydb_utils import get_keydb_connection
+    pool = await get_keydb_connection()
+    raw = await pool.get(cache_key)
+    attempts = int(raw or 0)
     # Import config here to avoid circular import
     from config import config
     if attempts >= config.LOGIN_ATTEMPTS_LIMIT:
@@ -1576,19 +1564,16 @@ async def check_login_attempts(identifier: str) -> Tuple[bool, int]:
 async def record_login_attempt(identifier: str, success: bool) -> None:
     """Record login attempt in KeyDB (increment on failure, clear on success)."""
     cache_key = f"login_attempts:{identifier}"
-    try:
-        from utils.keydb.keydb_utils import get_keydb_connection
-        pool = await get_keydb_connection()
-        if success:
-            await pool.delete(cache_key)
-        else:
-            raw = await pool.get(cache_key)
-            attempts = int(raw or 0) + 1
-            # Import config here to avoid circular import
-            from config import config
-            await pool.set(cache_key, attempts, expire=int(config.LOGIN_LOCKOUT_MINUTES * 60))
-    except Exception as e:
-        raise RuntimeError(f"KeyDB unavailable for recording login attempts: {e}")
+    from utils.keydb.keydb_utils import get_keydb_connection
+    pool = await get_keydb_connection()
+    if success:
+        await pool.delete(cache_key)
+    else:
+        raw = await pool.get(cache_key)
+        attempts = int(raw or 0) + 1
+        # Import config here to avoid circular import
+        from config import config
+        await pool.set(cache_key, attempts, expire=int(config.LOGIN_LOCKOUT_MINUTES * 60))
 
 
 # ─── Utility Functions ─────────────────────────────────────────────────────

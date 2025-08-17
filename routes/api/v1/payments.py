@@ -1,7 +1,7 @@
 from typing import Tuple
 from quart import Response, request, jsonify
 
-from utils.helpers.improved_funtions import get_env_var, send_json_response
+from utils.helpers.improved_functions import get_env_var, send_json_response
 from . import api
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
@@ -16,7 +16,6 @@ from quart_babel import gettext as _
 @cache_with_invalidation
 @handle_async_errors
 async def payments() -> Tuple[Response, int]:
-    conn = await get_db_connection()
 
     data = await request.get_json()
     phone = data.get('phone') or ""
@@ -33,35 +32,37 @@ async def payments() -> Tuple[Response, int]:
         return jsonify(response), status
 
 
-    async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from utils.otel.db_tracing import TracedCursorWrapper
-        cursor = TracedCursorWrapper(_cursor)
-        await cursor.execute(f"""
-        SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
-            pay.food, pay.due_months AS month, u.phone, u.fullname
-            FROM global.users u
-            JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
-            JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
-            WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
-        """, (formatted_phone, fullname))
-        result = await cursor.fetchone()
+    async with get_db_connection() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            from utils.otel.db_tracing import TracedCursorWrapper
+            cursor = TracedCursorWrapper(_cursor)
+            await cursor.execute(f"""
+            SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
+                pay.food, pay.due_months AS month, u.phone, u.fullname
+                FROM global.users u
+                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+                JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
+                WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
+            """, (formatted_phone, fullname))
+            result = await cursor.fetchone()
 
-        if not result:
-            log.error(action="payments_user_not_found", trace_info=formatted_phone, message=f"User {fullname} not found", secure=True)
-            response, status = send_json_response(_("User not found for payments"), 404)
-            return jsonify(response), status
+            if not result:
+                log.error(action="payments_user_not_found", trace_info=formatted_phone, message=f"User {fullname} not found", secure=True)
+                response, status = send_json_response(_("User not found for payments"), 404)
+                return jsonify(response), status
 
 
     # Extract data
-    class_name = result['class']
-    gender = result['gender']
-    special_food = result['special_food']
-    reduced_fee = result['reduced_fee']
-    food = result['food']
-    due_months = result['month']
+    class_name: str = result['class']
+    gender: str = result['gender']
+    special_food: bool = result['special_food'] == 1
+    reduced_fee: float = float(result['reduced_fee'] or 0.0)
+    food: bool = result['food'] == 1
+    due_months: int = int(result['month'])
+    tax: float = float(result['tax'] or 0.0)
 
     # Calculate fees
-    fees = calculate_fees(class_name, gender, special_food, reduced_fee, food)
+    fees: float = calculate_fees(class_name, gender, special_food, reduced_fee, food, tax)
 
     return jsonify({"amount": fees, "month": due_months}), 200
 
@@ -125,18 +126,12 @@ async def get_transactions():
     sql += " ORDER BY t.date DESC"
 
     # Execute
-    conn = await get_db_connection()
-    try:
+    async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
             from utils.otel.db_tracing import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             transactions = await cursor.fetchall()
-    except Exception as e:
-        await conn.rollback()
-        log.critical(action="payment_transaction_error", trace_info=formatted_phone, message=str(e), secure=True)
-        response, status = send_json_response(_("Internal server error during payments processing"), 500)
-        return jsonify(response), status
 
     # Handle no‐results
     if not transactions:
@@ -161,18 +156,18 @@ async def get_transactions():
 @handle_async_errors
 async def pay_sslcommerz():
     data = await request.get_json() or {}
-    phone            = data.get('phone') or "01XXXXXXXXX"
-    fullname         = (data.get('fullname') or 'guest').strip()
-    amount           = data.get('amount')
-    months           = data.get('months')
-    transaction_type = data.get('type')
-    email            = (data.get('email') or '').strip()
+    phone: str        = data.get('phone') or "01XXXXXXXXX"
+    fullname: str     = (data.get('fullname') or 'guest').strip()
+    amount: float     = float(data.get('amount') or 0.0)
+    months: int       = int(data.get('months') or 0)
+    transaction_type: str = data.get('type') or ""
+    email: str        = (data.get('email') or '').strip()
 
     # fallback dummy email .
     if not email:
        email = config.DUMMY_EMAIL
 
-    if not transaction_type or amount is None:
+    if not transaction_type or amount == 0.0:
         log.error(action="payment_missing_fields", trace_info=phone, message="Missing payment info", secure=True)
         response, status = send_json_response(_("Amount and payment type are required"), 400)
         return jsonify(response), status
@@ -265,13 +260,13 @@ async def payments_success_ssl(return_type):
         response, status = send_json_response(_("Payment cancelled"), 400)
         return jsonify(response), status
     
-    data            = (await request.form).to_dict() or {}
-    phone           = str(data.get('value_a'))
-    fullname        = str(data.get('value_b'))
-    amount          = data.get('amount')
-    months          = data.get('value_c')
-    transaction_type= data.get('value_d')
-    tran_id         = data.get('value_e')
+    data: dict     = (await request.form).to_dict() or {}
+    phone: str      = str(data.get('value_a'))
+    fullname: str   = str(data.get('value_b'))
+    amount: float   = float(data.get('amount') or 0.0)
+    months: int     = int(data.get('value_c') or 0)
+    transaction_type: str = data.get('value_d') or ""
+    tran_id: str    = data.get('value_e') or ""
 
     # Ensure we received our transaction identifier back
     if not tran_id:
@@ -308,12 +303,8 @@ async def payments_success_ssl(return_type):
 
         
     # 2️⃣ Record transaction directly in the database
-    db = None
-    try:
-        db = await get_db_connection()
-        async with db.cursor(aiomysql.DictCursor) as cursor:
-            # Start transaction
-            await db.begin()
+    async with get_db_connection() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             
             # Fetch the user's internal ID
             await cursor.execute(
@@ -332,14 +323,6 @@ async def payments_success_ssl(return_type):
                 "VALUES (%s, %s, %s, %s, CURDATE())",
                 (user['user_id'], transaction_type, months or '', amount)
             )
-            # Commit transaction
-            await db.commit()
-    except Exception as e:
-        if db:
-            await db.rollback()
-        log.critical(action="payment_insert_fail", trace_info=formatted_phone, message=str(e), secure=True)
-        response, status = send_json_response(_("Transaction failed"), 500)
-        return jsonify(response), status
             
     response, status = send_json_response(_("Payment recorded successfully"), 200)
     return jsonify(response), status

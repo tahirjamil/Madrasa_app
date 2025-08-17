@@ -77,19 +77,19 @@ INSERT INTO translations (
 INSERT INTO transactions (
     transaction_id, user_id, type, month, amount, date
 ) VALUES (
-    9999, 9999, 'donations', 9, 9999, '2009-09-09'
+    9999, 9999, 'donations', 9, 9999.0, '2009-09-09'
 );
 
 -- Insert into transactions table (generic transaction)
 INSERT INTO transactions (
     transaction_id, user_id, type, amount, date
 ) VALUES (
-    999, 9999, 'fees', 9999, '2009-09-09'
+    999, 9999, 'fees', 9999.0, '2009-09-09'
 );
 
 -- Insert into payments table
 INSERT INTO payments (
-    payment_id, user_id, food, special_food, reduced_fee, due_months
+    payment_id, user_id, food, special_food, reduced_fee, due_months, tax
 ) VALUES (
-    9999, 9999, 1, 1, 99, 9
+    9999, 9999, 1, 1, 99.0, 9, 9.0
 );

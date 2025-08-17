@@ -1,19 +1,21 @@
+import os
 import asyncio
-import aiomysql, os
-from typing import Any, cast, TypedDict, Optional
-from quart import current_app
-# Import config when needed to avoid circular imports
+from typing import Optional, Any, Dict, cast
+from contextlib import asynccontextmanager
+from utils.helpers.improved_functions import get_project_root
 
-class AiomysqlConnectConfig(TypedDict, total=False):
-    host: str
-    unix_socket: str
-    user: str
-    password: str
-    db: str
-    port: int
-    autocommit: bool
-    charset: str
-    connect_timeout: int
+try:
+    import aiomysql
+    from aiomysql import Connection, Pool
+except ImportError:  # pragma: no cover
+    aiomysql = None
+    Connection = None
+    Pool = None
+
+from utils.helpers.logger import log
+
+# Type alias for database configuration
+AiomysqlConnectConfig = Dict[str, Any]
 
 
 # Centralized Async DB Connection
@@ -83,122 +85,148 @@ def get_db_config() -> AiomysqlConnectConfig:
     }
     return tcp_cfg
 
-async def connect_to_db() -> Optional[aiomysql.Connection]:
+# Global connection pool
+_db_pool: Optional[Any] = None
+_pool_lock = asyncio.Lock()
+
+async def get_db_pool() -> Any:
+    """Get or create the database connection pool (thread-safe)"""
+    global _db_pool
+    
+    if _db_pool is None:
+        async with _pool_lock:
+            if _db_pool is None:  # Double-check pattern
+                _db_pool = await create_db_pool()
+    
+    return _db_pool
+
+async def create_db_pool() -> Any:
+    """Create a new database connection pool"""
+    from config import config
     if aiomysql is None:  # pragma: no cover
         raise RuntimeError("aiomysql is not installed. Please add 'aiomysql' to requirements.txt")
 
     try:
-        SQL_config: AiomysqlConnectConfig = get_db_config()
-        return await aiomysql.connect(**SQL_config)
+        SQL_config: Dict[str, Any] = get_db_config()
+        
+        # Create connection pool with optimal settings
+        pool = await aiomysql.create_pool(
+            **SQL_config,
+            minsize=config.MYSQL_MIN_CONNECTIONS,  # Minimum connections in pool
+            maxsize=config.MYSQL_MAX_CONNECTIONS,  # Maximum connections in pool
+            pool_recycle=3600,  # Recycle connections after 1 hour
+            echo=False,  # Don't echo SQL queries
+            autocommit=True,  # Auto-commit transactions
+        )
+        
+        log.info(action="db_pool_created", trace_info="system", message="Database connection pool created successfully", secure=False)
+        return pool
+        
     except Exception as e:
-        # Prefer raising in production, but printing is okay for dev
-        print(f"Database connection failed: {e}")
-        return None
+        log.critical(action="db_pool_creation_failed", trace_info="system", message=f"Failed to create database pool: {str(e)}", secure=False)
+        raise RuntimeError(f"Database pool creation failed: {e}")
 
-async def get_db():
-    """Get the database connection from the app context."""
-    app = cast('MadrasaApp', current_app)  # type: ignore [Use string annotation to avoid import]
-    if not hasattr(app, 'db') or app.db is None:
-        raise RuntimeError("Database connection not available")
-    return app.db
-
-async def get_db_connection(max_retries: int = 3) -> Any:
-    """Get database connection with retry logic"""
-    for attempt in range(max_retries):
-        try:
-            conn = await get_db()
-            return conn
-        except Exception as e:
-            if attempt == max_retries - 1:
-                raise
-            else:
-                await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+async def close_db_pool():
+    """Close the database connection pool"""
+    global _db_pool
     
-    raise Exception("Database connection failed")
+    if _db_pool is not None:
+        _db_pool.close()
+        await _db_pool.wait_closed()
+        _db_pool = None
+        log.info(action="db_pool_closed", trace_info="system", message="Database connection pool closed", secure=False)
+
+@asynccontextmanager
+async def get_db_connection():
+    """Get a database connection from the pool (context manager)"""
+    pool = await get_db_pool()
+    conn = None
+    try:
+        conn = await pool.acquire()
+        yield conn
+    finally:
+        if conn:
+            pool.release(conn)
+
+
 
 # Table Creation
 async def create_tables():
     # Import config here to avoid circular imports
     from config import config
-    conn = None
+    
+    # Get the path to the create_tables.sql file
+    config_dir = os.path.join(get_project_root(), 'config')
+    sql_file_path = os.path.join(config_dir, 'mysql', 'create_tables.sql')
+    
+    # Read the SQL file
     try:
-        conn = await connect_to_db()
-        if conn is None:
-            print("Database connection failed during table creation")
-            return
+        with open(sql_file_path, 'r', encoding='utf-8') as file:
+            sql_content = file.read()
+    except FileNotFoundError:
+        print(f"SQL file not found at: {sql_file_path}")
+        return
+    except Exception as e:
+        print(f"Error reading SQL file: {e}")
+        return
 
-        # Get the path to the create_tables.sql file
-        config_dir = os.path.join(config.get_project_root(), 'config')
-        sql_file_path = os.path.join(config_dir, 'mysql', 'create_tables.sql')
-        
-        # Read the SQL file
-        try:
-            with open(sql_file_path, 'r', encoding='utf-8') as file:
-                sql_content = file.read()
-        except FileNotFoundError:
-            print(f"SQL file not found at: {sql_file_path}")
-            return
-        except Exception as e:
-            print(f"Error reading SQL file: {e}")
-            return
+    try:
+        async with get_db_connection() as conn:
+            if conn is None:
+                print("Database connection failed during table creation")
+                return
 
-        # Suppress MySQL warnings
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute("SET sql_notes = 0")
-            await conn.commit()
+            # Suppress MySQL warnings
+            if aiomysql is not None:
+                async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                    from utils.otel.db_tracing import TracedCursorWrapper
+                    cursor = TracedCursorWrapper(_cursor)
+                    await cursor.execute("SET sql_notes = 0")
+                    await conn.commit()
 
-        # Split the SQL content into individual statements
-        # Remove comments and split by semicolon
-        sql_statements = []
-        lines = sql_content.split('\n')
-        current_statement = ""
-        
-        for line in lines:
-            # Skip comment lines and empty lines
-            stripped_line = line.strip()
-            if stripped_line.startswith('--') or stripped_line == '':
-                continue
+            # Split the SQL content into individual statements
+            # Remove comments and split by semicolon
+            sql_statements = []
+            lines = sql_content.split('\n')
+            current_statement = ""
             
-            current_statement += line + '\n'
-            
-            # If line ends with semicolon, we have a complete statement
-            if stripped_line.endswith(';'):
-                sql_statements.append(current_statement.strip())
-                current_statement = ""
+            for line in lines:
+                # Skip comment lines and empty lines
+                stripped_line = line.strip()
+                if stripped_line.startswith('--') or stripped_line == '':
+                    continue
+                
+                current_statement += line + '\n'
+                
+                # If line ends with semicolon, we have a complete statement
+                if stripped_line.endswith(';'):
+                    sql_statements.append(current_statement.strip())
+                    current_statement = ""
 
-        # Execute each SQL statement
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            for statement in sql_statements:
-                if statement.strip():  # Skip empty statements
-                    try:
-                        await cursor.execute(statement)
-                    except Exception as e:
-                        print(f"Error executing SQL statement: {e}")
-                        print(f"Statement: {statement}")
-                        continue
+            # Execute each SQL statement
+            if aiomysql is not None:
+                async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                    from utils.otel.db_tracing import TracedCursorWrapper
+                    cursor = TracedCursorWrapper(_cursor)
+                    for statement in sql_statements:
+                        if statement.strip():  # Skip empty statements
+                            try:
+                                await cursor.execute(statement)
+                            except Exception as e:
+                                print(f"Error executing SQL statement: {e}")
+                                print(f"Statement: {statement}")
+                                continue
 
-        # Re-enable MySQL warnings
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute("SET sql_notes = 1")
-            await conn.commit()
-            
+            # Re-enable MySQL warnings
+            if aiomysql is not None:
+                async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                    from utils.otel.db_tracing import TracedCursorWrapper
+                    cursor = TracedCursorWrapper(_cursor)
+                    await cursor.execute("SET sql_notes = 1")
+                    await conn.commit()
+                
         print("Database tables created successfully from create_tables.sql")
 
     except Exception as e:
-        if conn:
-            await conn.rollback()
         print(f"Database table creation failed: {e}")
         raise
-    finally:
-        if conn:
-            try:
-                if not conn.closed:
-                    conn.close()
-            except Exception as e:
-                print(f"Error closing database connection: {e}")

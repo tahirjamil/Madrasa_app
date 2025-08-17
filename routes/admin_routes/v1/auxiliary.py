@@ -1,31 +1,29 @@
 from . import admin_routes
-from utils.mysql.database_utils import connect_to_db
+from utils.mysql.database_utils import get_db_connection
 from utils.helpers.helpers import handle_async_errors
 from quart import jsonify, session, redirect, url_for, current_app
+from collections import deque
+from threading import Lock
 import aiomysql
 from config import config
 
 @admin_routes.route('/logs/data')
 @handle_async_errors
 async def logs_data():
-    try:
-        conn = await connect_to_db()
-
-        if conn is None or config.is_testing():
-            return jsonify([])
-    except Exception as e:
+    if config.is_testing():
         return jsonify([])
     
     try:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute("SELECT log_id, action, trace_info, message, created_at FROM logs ORDER BY created_at DESC")
-            logs = await cursor.fetchall()
-        # Convert datetime to string
-        for l in logs:
-            l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-        return jsonify(logs)
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as _cursor:
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                await cursor.execute("SELECT log_id, action, trace_info, message, created_at FROM logs ORDER BY created_at DESC")
+                logs = await cursor.fetchall()
+            # Convert datetime to string
+            for l in logs:
+                l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+            return jsonify(logs)
     except Exception as e:
         return jsonify([])
 
@@ -41,7 +39,11 @@ async def info_data_admin():
     if config.is_testing():
         return jsonify([])
 
-    logs = getattr(current_app, 'request_response_log', [])[-100:]
+    # Thread-safe access to request log
+    request_log = getattr(current_app, 'request_response_log', deque())
+    request_log_lock = getattr(current_app, 'request_log_lock', Lock())
+    with request_log_lock:
+        logs = list(request_log)[-100:]
     # serializable copy
     out = []
     for e in logs:
@@ -57,7 +59,7 @@ async def info_data_admin():
 
 
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/member/<modify>', methods=['GET','POST'])
 # def manage_member(modify):
 #     pages = ['add','edit']
@@ -123,7 +125,7 @@ async def info_data_admin():
 
 
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/notice/delete/<filename>', methods=['POST'])
 # def delete_notice(filename):
 #     username = request.form.get('username')
@@ -150,7 +152,7 @@ async def info_data_admin():
 
 
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/routines/add', methods=['GET', 'POST'])
 # def add_routine():
 #     conn = connect_to_db()
@@ -199,7 +201,7 @@ async def info_data_admin():
 
 
 
-# TODO: Disabled for view-only mode
+# REMINDER: Disabled for view-only mode
 # @admin_routes.route('/madrasa_pictures/delete/<filename>', methods=['POST'])
 # def delete_picture(filename):
 #     # 1) Require admin

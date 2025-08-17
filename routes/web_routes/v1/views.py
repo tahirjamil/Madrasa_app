@@ -42,12 +42,12 @@ async def donate(request: Request):
 @rate_limit(max_requests=50, window=60)  # 50 requests per minute to prevent spam
 async def contact_get(request: Request):
     # Read raw comma‑separated strings from env
-    raw_phones = get_env_var('BUSINESS_PHONE')
-    raw_emails = get_env_var('BUSINESS_EMAIL')
+    raw_phones = get_env_var('BUSINESS_PHONE') or ''
+    raw_emails = get_env_var('BUSINESS_EMAIL') or ''
 
     # Turn into clean lists
-    phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
-    emails = [e.strip() for e in raw_emails.split(',') if e.strip()]
+    phones = [p.strip() for p in raw_phones.split(',') if p.strip()] if raw_phones else []
+    emails = [e.strip() for e in raw_emails.split(',') if e.strip()] if raw_emails else []
     
     from . import url_for
     return templates.TemplateResponse("contact.html", {
@@ -70,12 +70,12 @@ async def contact_post(
     description: str = Form(...)
 ):
     # Read raw comma‑separated strings from env
-    raw_phones = get_env_var('BUSINESS_PHONE')
-    raw_emails = get_env_var('BUSINESS_EMAIL')
+    raw_phones = get_env_var('BUSINESS_PHONE') or ''
+    raw_emails = get_env_var('BUSINESS_EMAIL') or ''
 
     # Turn into clean lists
-    phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
-    emails = [e.strip() for e in raw_emails.split(',') if e.strip()]
+    phones = [p.strip() for p in raw_phones.split(',') if p.strip()] if raw_phones else []
+    emails = [e.strip() for e in raw_emails.split(',') if e.strip()] if raw_emails else []
 
     # Validate required fields
     error_message = None

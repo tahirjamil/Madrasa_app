@@ -78,10 +78,10 @@ class MadrasaConfig:
     # ============================================================================
     
     # Session Configuration
-    SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
+    SESSION_COOKIE_DOMAIN = False  # Let FastAPI decide based on IP
     SESSION_COOKIE_SAMESITE = "Lax"
     # SECURITY: Check if in production mode and set secure cookies
-    SESSION_COOKIE_SECURE = not get_env_var("FLASK_ENV") == "development"
+    SESSION_COOKIE_SECURE = not get_env_var("FASTAPI_ENV") == "development"
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1 * 3600  # 1 hour session timeout
     
@@ -347,7 +347,7 @@ class MadrasaConfig:
     @lru_cache(maxsize=1)
     def is_development(self) -> bool:
         """Check if running in development environment."""
-        return get_env_var("FLASK_ENV", "development") == "development"
+        return get_env_var("FASTAPI_ENV", "development") == "development"
     
     @lru_cache(maxsize=1)
     def is_testing(self) -> bool:

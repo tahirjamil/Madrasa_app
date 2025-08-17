@@ -8,11 +8,9 @@ __all__ = [
     "logger", 
     "validate_csrf_token", 
     "connect_to_keydb",
-    "get_keydb",
     "get_keydb_connection",
     "close_keydb",
     "ping_keydb",
-    "connect_to_db", 
     "create_tables", 
     "get_db_connection",
     ]

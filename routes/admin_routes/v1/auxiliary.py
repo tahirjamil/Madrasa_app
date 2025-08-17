@@ -110,7 +110,7 @@ async def info_data_admin(request: Request, is_admin: bool = Depends(require_adm
 #         image = request.files.get('image')
 #         if image and image.filename:
 #             filename = secure_filename(image.filename)
-#             upload_path = os.path.join(current_app.config['PROFILE_IMG_UPLOAD_FOLDER'], filename)
+#             upload_path = os.path.join(config.PROFILE_IMG_UPLOAD_FOLDER, filename)
 #             image.save(upload_path)
 #             data['image_path'] = upload_path  # or just filename if you store relative path
 

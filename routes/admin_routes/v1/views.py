@@ -10,9 +10,9 @@ from utils.mysql.database_utils import get_db_connection
 from datetime import datetime, date
 from utils.helpers.helpers import (
     load_results, load_notices,
-    handle_async_errors, rate_limit,
     get_cache_key, get_cached_data, set_cached_data, validate_madrasa_name
 )
+from utils.helpers.fastapi_helpers import handle_async_errors, rate_limit
 from utils.helpers.logger import log
 from config import config
 import json, re, os, aiomysql, subprocess
@@ -751,7 +751,7 @@ async def exams(request: Request):
 #     username = request.form.get('username')
 #     password = request.form.get('password')
 
-#     if username != current_app.config['ADMIN_USERNAME'] or password != current_app.config['ADMIN_PASSWORD']:
+#     if username != config.ADMIN_USERNAME or password != config.ADMIN_PASSWORD:
 #         return "Invalid admin credentials", 403
 
 #     # ✅ Get form fields

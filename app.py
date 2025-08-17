@@ -19,7 +19,7 @@ from utils.helpers.improved_functions import send_json_response
 from utils.keydb.keydb_utils import connect_to_keydb, close_keydb
 from utils.otel.otel_utils import init_otel
 
-# API & Web Blueprints - will be converted to routers later
+# ─── Import Routers ──────────────────────────────────────────
 from utils.helpers.helpers import (
     get_system_health, initialize_application, security_manager,
 )
@@ -357,11 +357,6 @@ async def health_check():
 
         
 # ─── Register Routers ────────────────────────────────────
-# Import and register routers after app initialization
-from routes.admin_routes.v1 import admin_routes
-from routes.api.v1 import api
-from routes.web_routes.v1 import web_routes
-
 app.include_router(admin_routes, prefix='/admin')
 app.include_router(web_routes)
 app.include_router(api)

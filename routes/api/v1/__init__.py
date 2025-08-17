@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from utils.helpers.helpers import require_api_key
+from utils.helpers.fastapi_helpers import require_api_key
 from config import config
 from utils.helpers.improved_functions import send_json_response
 

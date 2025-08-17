@@ -133,6 +133,13 @@ Fixed routes that were using `request` without declaring it:
   - Removed unnecessary `hasattr` check since password field is now properly defined
 - **Status**: ✅ Complete
 
+### 8. **Fixed WebSocket Middleware Type Error in app.py**
+- **Issue**: `receive` parameter in `Request` constructor expected an async function returning `Message` but was receiving a lambda returning a dictionary
+- **Fix**: 
+  - Changed lambda function to proper async function in `RequestLoggingMiddleware`
+  - Updated `receive=lambda: {"type": "http.request", "body": body}` to `async def receive(): return {"type": "http.request", "body": body}`
+- **Status**: ✅ Complete
+
 ## Final Verification
 
 All modified files pass Python syntax checks:

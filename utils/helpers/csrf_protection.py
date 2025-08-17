@@ -12,6 +12,11 @@ class CSRFProtect:
         self.secret_key = config.WTF_CSRF_SECRET_KEY
         self.logger = logging.getLogger(__name__)
         
+        # Validate secret key
+        if not self.secret_key or len(self.secret_key) < 32:
+            self.logger.error("CSRF secret key is missing or too short (minimum 32 characters)")
+            raise ValueError("CSRF protection requires a secure secret key")
+        
     def generate_csrf(self):
         """Generate a secure CSRF token with timestamp and signature"""
         try:
@@ -21,7 +26,7 @@ class CSRFProtect:
             signature = hashlib.sha256(f"{data}:{self.secret_key}".encode()).hexdigest()
             return f"{data}:{signature}"
         except Exception as e:
-            self.logger.error(f"CSRF token generation failed: {e}")
+            self.logger.error(f"CSRF token generation failed: {type(e).__name__}")
             return None
     
     def validate_csrf(self, token):
@@ -59,7 +64,7 @@ class CSRFProtect:
             return True
             
         except Exception as e:
-            self.logger.error(f"CSRF validation error: {e}")
+            self.logger.error(f"CSRF validation error: {type(e).__name__}")
             return False
     
     def refresh_token(self, old_token):
@@ -83,7 +88,7 @@ class CSRFProtect:
             return old_token
             
         except Exception as e:
-            self.logger.error(f"CSRF token refresh failed: {e}")
+            self.logger.error(f"CSRF token refresh failed: {type(e).__name__}")
             return self.generate_csrf()
     
     def get_token_info(self, token):
@@ -109,7 +114,7 @@ class CSRFProtect:
             }
             
         except Exception as e:
-            return {"valid": False, "reason": f"Error: {e}"}
+            return {"valid": False, "reason": "Token validation error"}
 
 # Global CSRF instance (lazy initialization)
 _csrf_instance = None

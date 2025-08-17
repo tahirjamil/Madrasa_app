@@ -11,6 +11,7 @@ from quart import current_app
 import redis.asyncio as redis
 
 from utils.helpers.improved_functions import get_env_var
+from utils.helpers.logger import log
 
 
 class RedisConnectConfig(TypedDict, total=False):
@@ -35,11 +36,11 @@ def get_keydb_config() -> RedisConnectConfig | None:
     # Check if Redis cache is enabled
     use_redis_cache = get_env_var('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes', 'on')
     if not use_redis_cache:
-        print("USE_REDIS_CACHE environment variable is not set to 'true'. KeyDB/Redis cache is disabled.")
+        log.info(action="redis_cache_disabled", trace_info="system", message="Redis cache is disabled", secure=False)
         return None
     
     # URL first (supports redis://, rediss://)
-    url = config.get_keydb_url()
+    url = config.get_keydb_url(include_password=True)  # Only include password for actual connection
     password = config.REDIS_PASSWORD if config.REDIS_PASSWORD else None
 
     # DB index
@@ -84,7 +85,7 @@ async def connect_to_keydb():
         cfg = get_keydb_config()
     except RuntimeError as e:
         # Redis cache is disabled
-        print(f"KeyDB connection skipped: {e}")
+        log.info(action="keydb_connection_skipped", trace_info="system", message="KeyDB connection skipped - cache disabled", secure=False)
         return None
 
     try:
@@ -116,7 +117,7 @@ async def connect_to_keydb():
         return TracedRedisPool(client)
 
     except Exception as e:
-        print(f"KeyDB connection failed: {e}")
+        log.error(action="keydb_connection_failed", trace_info="system", message=f"KeyDB connection failed: {type(e).__name__}", secure=False)
         return None
 
 
@@ -134,7 +135,7 @@ async def get_keydb_connection(max_retries: int = 3) -> Any:
         try:
             return await get_keydb()
         except RuntimeError as e:
-            print(f"KeyDB/Redis cache is disabled: {e}")
+            log.info(action="keydb_cache_disabled", trace_info="system", message="KeyDB/Redis cache is disabled", secure=False)
             return None
         except Exception:
             if attempt == max_retries - 1:
@@ -178,7 +179,7 @@ async def close_keydb(pool: Any) -> None:
             except Exception:
                 pass
     except Exception as e:  # pragma: no cover
-        print(f"Error closing KeyDB connection: {e}")
+        log.error(action="keydb_close_error", trace_info="system", message=f"Error closing KeyDB connection: {type(e).__name__}", secure=False)
 
 
 async def ping_keydb(timeout: float = 1.0) -> bool:

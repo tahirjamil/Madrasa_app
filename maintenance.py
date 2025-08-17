@@ -72,11 +72,11 @@ async def run_maintenance():
             
         except Exception as e:
             task_duration = (datetime.now() - task_start).total_seconds()
-            error_msg = f"Auto deletion failed: {str(e)}"
+            error_msg = f"Auto deletion failed: {type(e).__name__}"
             maintenance_results["tasks"]["auto_deletion"] = {
                 "status": "failed",
                 "duration": task_duration,
-                "error": str(e)
+                "error": type(e).__name__
             }
             maintenance_results["errors"].append(error_msg)
             logger.error(error_msg)
@@ -89,7 +89,9 @@ async def run_maintenance():
         
         task_start = datetime.now()
         try:
-            backup_main()
+            # Run backup_main in executor since it's synchronous
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, backup_main)
             task_duration = (datetime.now() - task_start).total_seconds()
             maintenance_results["tasks"]["database_backup"] = {
                 "status": "success",
@@ -101,11 +103,11 @@ async def run_maintenance():
             
         except Exception as e:
             task_duration = (datetime.now() - task_start).total_seconds()
-            error_msg = f"Database backup failed: {str(e)}"
+            error_msg = f"Database backup failed: {type(e).__name__}"
             maintenance_results["tasks"]["database_backup"] = {
                 "status": "failed",
                 "duration": task_duration,
-                "error": str(e)
+                "error": type(e).__name__
             }
             maintenance_results["errors"].append(error_msg)
             logger.error(error_msg)
@@ -130,11 +132,11 @@ async def run_maintenance():
             
         except Exception as e:
             task_duration = (datetime.now() - task_start).total_seconds()
-            error_msg = f"Log cleanup failed: {str(e)}"
+            error_msg = f"Log cleanup failed: {type(e).__name__}"
             maintenance_results["tasks"]["log_cleanup"] = {
                 "status": "failed",
                 "duration": task_duration,
-                "error": str(e)
+                "error": type(e).__name__
             }
             maintenance_results["errors"].append(error_msg)
             logger.error(error_msg)
@@ -162,7 +164,7 @@ async def run_maintenance():
         await save_maintenance_report(maintenance_results)
         
     except Exception as e:
-        error_msg = f"Maintenance script failed: {str(e)}"
+        error_msg = f"Maintenance script failed: {type(e).__name__}"
         logger.critical(error_msg)
         print(f"❌ {error_msg}")
         log.critical(action="maintenance_script_failed", trace_info="system", message=error_msg, secure=False)
@@ -187,12 +189,13 @@ async def cleanup_old_logs():
                     log_file.unlink()
                     deleted_count += 1
             except Exception as e:
-                print(f"Error deleting log file {log_file}: {e}")
+                logger = logging.getLogger("maintenance")
+                logger.warning(f"Error deleting log file {log_file.name}: {type(e).__name__}")
         
         return deleted_count
         
     except Exception as e:
-        raise Exception(f"Log cleanup failed: {e}")
+        raise Exception(f"Log cleanup failed: {type(e).__name__}")
 
 async def save_maintenance_report(results):
     """Save maintenance report to file"""
@@ -202,11 +205,14 @@ async def save_maintenance_report(results):
         
         report_file = reports_dir / f"maintenance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
-        with open(report_file, 'w') as f:
+        # Use mode 0o600 for security
+        with open(report_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, default=str)
+        report_file.chmod(0o600)
             
     except Exception as e:
-        print(f"Failed to save maintenance report: {e}")
+        logger = logging.getLogger("maintenance")
+        logger.error(f"Failed to save maintenance report: {type(e).__name__}")
 
 if __name__ == "__main__":
     asyncio.run(run_maintenance()) 

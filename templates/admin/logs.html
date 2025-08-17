@@ -102,6 +102,15 @@
 {% endblock %}
 
 <script>
+function escapeHtml(unsafe) {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // Utility to rebuild the table body
 function renderLogs(logs) {
   const tbody = document.querySelector('#logs-table tbody');
@@ -118,11 +127,11 @@ function renderLogs(logs) {
   for (const log of logs) {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td>${log.log_id}</td>
-      <td>${log.action}</td>
-              <td>${log.trace_info || ''}</td>
-      <td>${log.message}</td>
-      <td>${log.created_at}</td>
+      <td>${escapeHtml(String(log.log_id))}</td>
+      <td>${escapeHtml(log.action)}</td>
+      <td>${escapeHtml(log.trace_info || '')}</td>
+      <td>${escapeHtml(log.message)}</td>
+      <td>${escapeHtml(log.created_at)}</td>
     `;
     tbody.appendChild(row);
   }

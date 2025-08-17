@@ -10,6 +10,10 @@ from config import config
 @admin_routes.route('/logs/data')
 @handle_async_errors
 async def logs_data():
+    # Require admin login - SECURITY FIX
+    if not session.get('admin_logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+    
     if config.is_testing():
         return jsonify([])
     

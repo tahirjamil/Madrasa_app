@@ -46,9 +46,8 @@ def get_db_config() -> AiomysqlConnectConfig:
         except Exception:
             raise ValueError(f"MYSQL_PORT must be an integer, got: {config.MYSQL_PORT}")
         if port <= 0 or port > 65535:
-            port = 3306  # Default MySQL port
-            print(f"Invalid MySQL port: {port}. Must be between 1 and 65535.")
-
+            raise ValueError(f"Invalid MySQL port: {port}. Must be between 1 and 65535.")
+    
     # Timeout (int)
     try:
         timeout: int = int(config.MYSQL_TIMEOUT) if hasattr(config, "MYSQL_TIMEOUT") and config.MYSQL_TIMEOUT is not None else 60
@@ -123,8 +122,8 @@ async def create_db_pool() -> Any:
         return pool
         
     except Exception as e:
-        log.critical(action="db_pool_creation_failed", trace_info="system", message=f"Failed to create database pool: {str(e)}", secure=False)
-        raise RuntimeError(f"Database pool creation failed: {e}")
+        log.critical(action="db_pool_creation_failed", trace_info="system", message=f"Failed to create database pool: {type(e).__name__}", secure=False)
+        raise RuntimeError(f"Database pool creation failed. Please check your database configuration.")
 
 async def close_db_pool():
     """Close the database connection pool"""
@@ -164,17 +163,17 @@ async def create_tables():
         with open(sql_file_path, 'r', encoding='utf-8') as file:
             sql_content = file.read()
     except FileNotFoundError:
-        print(f"SQL file not found at: {sql_file_path}")
-        return
+        log.error(action="sql_file_not_found", trace_info="system", message=f"SQL file not found at: {sql_file_path}", secure=False)
+        raise FileNotFoundError(f"SQL file not found at: {sql_file_path}")
     except Exception as e:
-        print(f"Error reading SQL file: {e}")
-        return
+        log.error(action="sql_file_read_error", trace_info="system", message=f"Error reading SQL file: {type(e).__name__}", secure=False)
+        raise
 
     try:
         async with get_db_connection() as conn:
             if conn is None:
-                print("Database connection failed during table creation")
-                return
+                log.error(action="db_connection_failed", trace_info="system", message="Database connection failed during table creation", secure=False)
+                raise RuntimeError("Database connection failed during table creation")
 
             # Suppress MySQL warnings
             if aiomysql is not None:
@@ -213,8 +212,9 @@ async def create_tables():
                             try:
                                 await cursor.execute(statement)
                             except Exception as e:
-                                print(f"Error executing SQL statement: {e}")
-                                print(f"Statement: {statement}")
+                                # Log error but don't expose SQL statement details
+                                log.error(action="sql_statement_error", trace_info="system", message=f"Error executing SQL statement: {type(e).__name__}", secure=False)
+                                # Continue with other statements
                                 continue
 
             # Re-enable MySQL warnings
@@ -225,8 +225,8 @@ async def create_tables():
                     await cursor.execute("SET sql_notes = 1")
                     await conn.commit()
                 
-        print("Database tables created successfully from create_tables.sql")
+        log.info(action="tables_created", trace_info="system", message="Database tables created successfully from create_tables.sql", secure=False)
 
     except Exception as e:
-        print(f"Database table creation failed: {e}")
+        log.error(action="table_creation_failed", trace_info="system", message=f"Database table creation failed: {type(e).__name__}", secure=False)
         raise

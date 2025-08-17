@@ -121,21 +121,30 @@
   let pollInterval = 5000;
   let pollTimer = null;
 
+  function escapeHtml(unsafe) {
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   function renderRows(data) {
     tableBody.innerHTML = '';
     data.forEach(e => {
       const reqCell = e.req_json !== null
-        ? `<pre class="json-block">${JSON.stringify(e.req_json, null, 2)}</pre>`
+        ? `<pre class="json-block">${escapeHtml(JSON.stringify(e.req_json, null, 2))}</pre>`
         : '—';
       const resCell = e.res_json !== null
-        ? `<pre class="json-block">${JSON.stringify(e.res_json, null, 2)}</pre>`
+        ? `<pre class="json-block">${escapeHtml(JSON.stringify(e.res_json, null, 2))}</pre>`
         : '—';
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${e.time}</td>
-        <td>${e.ip}</td>
-        <td>${e.method}</td>
-        <td>${e.path}</td>
+        <td>${escapeHtml(e.time)}</td>
+        <td>${escapeHtml(e.ip)}</td>
+        <td>${escapeHtml(e.method)}</td>
+        <td>${escapeHtml(e.path)}</td>
         <td>${reqCell}</td>
         <td>${resCell}</td>
       `;

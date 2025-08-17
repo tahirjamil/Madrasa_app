@@ -3,12 +3,13 @@ from utils.helpers.improved_functions import get_env_var, send_json_response
 from . import web_routes
 from quart import Response, jsonify, render_template, request, redirect, url_for, flash
 from quart_babel import gettext as _
-from utils.helpers.helpers import send_email
+from utils.helpers.helpers import send_email, rate_limit, handle_async_errors
 import os
 import markdown
 import re
 from datetime import datetime
 from quart_babel import gettext as _
+import html  # For escaping HTML
 
 @web_routes.route("/")
 async def home():
@@ -19,6 +20,8 @@ async def donate():
     return await render_template("donate.html", current_year=datetime.now().year)
 
 @web_routes.route('/contact', methods=['GET', 'POST'])
+@handle_async_errors
+@rate_limit(max_requests=50, window=60)  # 50 requests per minute to prevent spam
 async def contact():
     # Read raw comma‑separated strings from env
     raw_phones = get_env_var('BUSINESS_PHONE')
@@ -34,18 +37,37 @@ async def contact():
         email_or_phone = form.get('email_or_phone', '').strip()
         description    = form.get('description', '').strip()
 
+        # Validate required fields
         if not fullname or not email_or_phone or not description:
             await flash('All fields are required.', 'danger')
             return redirect(url_for('web_routes.contact'))
+        
+        # Validate field lengths
+        if len(fullname) > 100 or len(email_or_phone) > 100 or len(description) > 1000:
+            await flash('Please keep your input within reasonable length limits.', 'danger')
+            return redirect(url_for('web_routes.contact'))
+        
+        # Basic email/phone validation
+        if '@' not in email_or_phone and not re.match(r'^[\d\s\+\-\(\)]+$', email_or_phone):
+            await flash('Please provide a valid email address or phone number.', 'danger')
+            return redirect(url_for('web_routes.contact'))
 
         try:
+            # Escape HTML to prevent XSS
+            safe_fullname = html.escape(fullname)
+            safe_contact = html.escape(email_or_phone)
+            safe_description = html.escape(description)
+            
             await send_email(
                 to_email=emails[0],  # primary admin address
                 subject="Contact Form Submission",
-                body=f"Name: {fullname}\nContact: {email_or_phone}\n\nDescription: {description}"
+                body=f"Name: {safe_fullname}\nContact: {safe_contact}\n\nDescription: {safe_description}"
             )
         except Exception as e:
-            await flash(f'An error occurred: {e}', 'danger')
+            # Log the error but don't expose details to user
+            from utils.helpers.logger import log
+            log.error(action="contact_form_error", trace_info="web", message=str(e), secure=False)
+            await flash('An error occurred while sending your message. Please try again later.', 'danger')
             return redirect(url_for('web_routes.contact'))
 
         await flash('Your message has been sent successfully!', 'success')
@@ -55,22 +77,23 @@ async def contact():
     return await render_template('contact.html', phones=phones, emails=emails)
 
 @web_routes.route('/privacy')
+@handle_async_errors
 async def privacy():
+    from config import config
     # Load contact info from environment variables
-    contact_email = get_env_var('BUSINESS_EMAIL')
-    contact_phone = get_env_var('BUSINESS_PHONE')
-    effective_date = get_env_var('PRIVACY_POLICY_EFFECTIVE_DATE')
-
-    if not contact_email or not contact_phone or not effective_date:
-        raise ValueError("Missing required environment variables")
+    contact_email = get_env_var('BUSINESS_EMAIL', '')
+    contact_phone = get_env_var('BUSINESS_PHONE', '')
+    effective_date = get_env_var('PRIVACY_POLICY_EFFECTIVE_DATE', '')
 
     try:
-        with open('content/privacy_policy.md', 'r', encoding='utf-8') as f:
+        # Use safe path join
+        policy_path = os.path.join(config.get_project_root(), 'content', 'privacy_policy.md')
+        with open(policy_path, 'r', encoding='utf-8') as f:
             policy_md = f.read()
     except FileNotFoundError:
         # Log the error and return a user-friendly error page
         from utils.helpers.logger import log
-        log.critical(action="privacy_policy_file_not_found", trace_info="system", message="Privacy policy file not found: content/privacy_policy.md", secure=False)
+        log.critical(action="privacy_policy_file_not_found", trace_info="system", message=f"Privacy policy file not found", secure=False)
         return await render_template('error.html', 
                                    error_title="Privacy Policy Unavailable",
                                    error_message="The privacy policy is currently unavailable. Please try again later or contact support.",
@@ -78,7 +101,7 @@ async def privacy():
     except Exception as e:
         # Log the error and return a user-friendly error page
         from utils.helpers.logger import log
-        log.critical(action="privacy_policy_file_error", trace_info="system", message=f"Error reading privacy policy file: {str(e)}", secure=False)
+        log.critical(action="privacy_policy_file_error", trace_info="system", message=f"Error reading privacy policy file: {type(e).__name__}", secure=False)
         return await render_template('error.html', 
                                    error_title="Privacy Policy Error",
                                    error_message="There was an error loading the privacy policy. Please try again later or contact support.",
@@ -119,22 +142,22 @@ async def privacy():
     )
 
 @web_routes.route('/terms')
+@handle_async_errors
 async def terms():
+    from config import config
     # Load contact info from environment variables
-    contact_email = get_env_var('BUSINESS_EMAIL')
-    contact_phone = get_env_var('BUSINESS_PHONE')
-    effective_date = get_env_var('TERMS_EFFECTIVE_DATE')
-
-    if not contact_email or not contact_phone or not effective_date:
-        raise ValueError("Missing required environment variables")
+    contact_email = get_env_var('BUSINESS_EMAIL', '')
+    effective_date = get_env_var('TERMS_EFFECTIVE_DATE', '')
 
     try:
-        with open('content/terms.md', 'r', encoding='utf-8') as f:
+        # Use safe path join
+        terms_path = os.path.join(config.get_project_root(), 'content', 'terms.md')
+        with open(terms_path, 'r', encoding='utf-8') as f:
             terms_md = f.read()
     except FileNotFoundError:
         # Log the error and return a user-friendly error page
         from utils.helpers.logger import log
-        log.critical(action="terms_file_not_found", trace_info="system", message="Terms file not found: content/terms.md", secure=False)
+        log.critical(action="terms_file_not_found", trace_info="system", message=f"Terms file not found", secure=False)
         return await render_template('error.html', 
                                    error_title="Terms of Service Unavailable",
                                    error_message="The terms of service are currently unavailable. Please try again later or contact support.",
@@ -142,7 +165,7 @@ async def terms():
     except Exception as e:
         # Log the error and return a user-friendly error page
         from utils.helpers.logger import log
-        log.critical(action="terms_file_error", trace_info="system", message=f"Error reading terms file: {str(e)}", secure=False)
+        log.critical(action="terms_file_error", trace_info="system", message=f"Error reading terms file: {type(e).__name__}", secure=False)
         return await render_template('error.html', 
                                    error_title="Terms of Service Error",
                                    error_message="There was an error loading the terms of service. Please try again later or contact support.",

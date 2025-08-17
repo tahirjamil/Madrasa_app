@@ -1,7 +1,13 @@
+import sys
 from utils.mysql.database_utils import get_db_connection
 import aiomysql, asyncio, json
 from datetime import datetime
 from pathlib import Path
+
+# Basic logging to stderr without exposing sensitive details
+def _log_error(msg: str) -> None:
+    """Internal error logging without exposing sensitive details"""
+    sys.stderr.write(f"[{datetime.now().isoformat()}] Logger: {msg}\n")
 
 # Enhanced logger with better error handling and performance
 def get_crypto_funcs(data: str, which: str) -> str | None:
@@ -21,78 +27,93 @@ def get_crypto_funcs(data: str, which: str) -> str | None:
         else:
             return None
     except Exception as e:
-        print(f"Failed to import or execute crypto helpers from utils.helpers.py: {e}")
+        _log_error(f"Failed to execute crypto function: {type(e).__name__}")
         return None
 
 log_count = 0
+log_count_lock = asyncio.Lock()
 
 async def log_event(action: str, trace_info: str, message: str, secure: bool, level: str= "info", metadata=None) -> None:
     """Enhanced logging function with better error handling and metadata support"""
     global log_count
     
+    # Input validation
+    if not action or len(action) > 100:
+        _log_error("Invalid action parameter")
+        return
+    if not trace_info or len(trace_info) > 500:
+        _log_error("Invalid trace_info parameter")
+        return
+    if not message or len(message) > 1000:
+        _log_error("Invalid message parameter")
+        return
+    if level not in ["info", "warning", "error", "critical"]:
+        level = "info"
+    
     try:
         async with get_db_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            # Prepare metadata
-            log_metadata = metadata or {}
-            log_metadata.update({
-                "timestamp": datetime.now().isoformat(),
-                "level": level,
-                "action": action,
-                "trace_info": trace_info,
-                "message": message
-            })
+                from utils.otel.db_tracing import TracedCursorWrapper
+                cursor = TracedCursorWrapper(_cursor)
+                # Prepare metadata
+                log_metadata = metadata or {}
+                log_metadata.update({
+                    "timestamp": datetime.now().isoformat(),
+                    "level": level,
+                    "action": action,
+                    "trace_info": trace_info,
+                    "message": message
+                })
 
-            sql: str = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s)"
-            params: list[str | None] = [action, trace_info, message, level, json.dumps(log_metadata)]
+                sql: str = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                params: list[str | None] = [action, trace_info, message, level, json.dumps(log_metadata)]
 
-            if secure:
-                trace_info_hash = get_crypto_funcs(data=trace_info, which="hash")
-                trace_info_encrypted = get_crypto_funcs(data=trace_info, which="encrypt")
+                if secure:
+                    trace_info_hash = get_crypto_funcs(data=trace_info, which="hash")
+                    trace_info_encrypted = get_crypto_funcs(data=trace_info, which="encrypt")
 
-                # If crypto functions fail, fall back to non-secure logging
-                if not trace_info_hash or not trace_info_encrypted:
-                    print("Warning: Crypto functions failed, falling back to non-secure logging")
-                    params.extend([None, None])
+                    # If crypto functions fail, fall back to non-secure logging
+                    if not trace_info_hash or not trace_info_encrypted:
+                        _log_error("Crypto functions failed, falling back to non-secure logging")
+                        params.extend([None, None])
+                    else:
+                        params.extend([trace_info_hash, trace_info_encrypted])
                 else:
-                    params.extend([trace_info_hash, trace_info_encrypted])
-            else:
-                params.extend([None, None])
+                    params.extend([None, None])
 
-            await cursor.execute(sql, params)
-            await conn.commit()
-            
-            if log_count > 500:
-                # Enhanced auto-prune with better performance
-                await cursor.execute("SELECT COUNT(*) AS total FROM logs")
-                result = await cursor.fetchone()
-                total = result['total'] if result else 0
-
-                
-                # If more than 1000, delete oldest (increased from 500)
-                if total > 1000:
-                    await conn.commit()
-                    await cursor.execute("""
-                        DELETE FROM logs 
-                        WHERE log_id IN (
-                            SELECT log_id FROM (
-                                SELECT log_id FROM logs 
-                                ORDER BY created_at ASC 
-                                LIMIT %s
-                            ) AS old_logs
-                        )
-                    """, (total - 1000,))
-                    log_count = 0
+                await cursor.execute(sql, params)
                 await conn.commit()
-            else:
-                log_count += 1
-            
-            
+                
+                async with log_count_lock:
+                    if log_count > 500:
+                        # Enhanced auto-prune with better performance
+                        await cursor.execute("SELECT COUNT(*) AS total FROM logs")
+                        result = await cursor.fetchone()
+                        total = result['total'] if result else 0
+
+                        
+                        # If more than 1000, delete oldest (increased from 500)
+                        if total > 1000:
+                            await conn.commit()
+                            await cursor.execute("""
+                                DELETE FROM logs 
+                                WHERE log_id IN (
+                                    SELECT log_id FROM (
+                                        SELECT log_id FROM logs 
+                                        ORDER BY created_at ASC 
+                                        LIMIT %s
+                                    ) AS old_logs
+                                )
+                            """, (total - 1000,))
+                            log_count = 0
+                        await conn.commit()
+                    else:
+                        log_count += 1
+                
+                
     except Exception as e:
         # Fallback to file logging if database fails
-        print(f"Database logging failed: {e}")
+        _log_error(f"Database logging failed: {type(e).__name__}")
         await _log_to_file(action=action, trace_info=trace_info, secure=secure,
                             message=message, level=level, metadata=metadata, error=True)
 
@@ -124,7 +145,7 @@ async def _log_to_file(action : str, trace_info: str,  message : str, level, sec
             f.write(json.dumps(log_entry) + "\n")
             
     except Exception as e:
-        print(f"File logging also failed: {e}")
+        _log_error(f"File logging also failed: {type(e).__name__}")
 
 def log_event_async(action: str, trace_info: str, message: str, secure: bool, level="info", metadata=None) -> None:
     """Non-blocking wrapper for log_event that schedules logging in the background."""
@@ -142,10 +163,10 @@ def log_event_async(action: str, trace_info: str, message: str, secure: bool, le
                                           message=message, level=level, metadata=metadata
                                           ))
         else:
-            # If no loop is running, just print and skip logging
-            print(f"[{level}] Skipping log: action: {action} - trace_info: {trace_info} - secure: {secure} - message: {message}")
+            # If no loop is running, just skip logging silently
+            _log_error(f"Skipping log - no event loop running")
     except Exception as e:
-        print(f"Failed to schedule log task: {e}")
+        _log_error(f"Failed to schedule log task: {type(e).__name__}")
 
 def log_event_sync(action : str, trace_info: str, message : str, secure: bool, level="info", metadata=None) -> None:
     """Enhanced synchronous wrapper that runs the logging operation and waits for completion."""
@@ -155,7 +176,7 @@ def log_event_sync(action : str, trace_info: str, message : str, secure: bool, l
         loop.run_until_complete(log_event(action=action, trace_info=trace_info, message=message, level=level, metadata=metadata, secure=secure))
         loop.close()
     except Exception as e:
-        print(f"Sync logging failed: {e}")
+        _log_error(f"Sync logging failed: {type(e).__name__}")
 
 # Utility functions for different log levels with backward compatibility
 class logger:

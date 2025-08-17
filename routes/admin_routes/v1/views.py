@@ -7,11 +7,9 @@ from . import admin_routes
 from utils.mysql.database_utils import get_db_connection
 from datetime import datetime, date
 from utils.helpers.helpers import (
-    load_results, load_notices, save_notices, save_results, 
-    cache_with_invalidation, 
-    handle_async_errors, rate_limit, hash_sensitive_data, 
-    encrypt_sensitive_data, format_phone_number, get_db_context,
-    get_cache_key, get_cached_data, set_cached_data
+    load_results, load_notices,
+    handle_async_errors, rate_limit,
+    get_cache_key, get_cached_data, set_cached_data, validate_madrasa_name
 )
 from utils.helpers.logger import log
 from config import config
@@ -25,6 +23,9 @@ NOTICES_DIR = config.NOTICES_UPLOAD_FOLDER
 GALLERY_DIR = config.GALLERY_DIR
 PIC_INDEX_PATH       = os.path.join(GALLERY_DIR, 'index.json')
 
+# ALLOWED MADRASA NAMES - prevent SQL injection
+MADRASA_NAMES_LIST = config.MADRASA_NAMES_LIST
+
 # RE
 _FORBIDDEN_RE = re.compile(
     r'\b(?:drop|truncate|alter|rename|create\s+database|use)\b',
@@ -36,13 +37,18 @@ _FORBIDDEN_RE = re.compile(
 @admin_routes.route('/', methods=['GET', 'POST'])
 @require_csrf
 @handle_async_errors
-# @rate_limit(max_requests=500, window=60)  # Temporarily disabled for testing
+@rate_limit(max_requests=50, window=60)
 async def admin_dashboard():
     # 1) Ensure admin is logged in
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_routes.login'))
 
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
+    
+    # Validate madrasa_name to prevent SQL injection
+    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+        await flash("Invalid madrasa name configuration", "danger")
+        raise ValueError("Invalid madrasa name in admin dashboard")
     
     databases = []
     tables = {}
@@ -71,18 +77,22 @@ async def admin_dashboard():
                 await cursor.execute("SHOW DATABASES")
                 databases = [row["Database"] for row in await cursor.fetchall()]
 
-                # Validate selected_db
+                # Validate selected_db against actual databases
                 if selected_db not in databases:
                     selected_db = databases[0] if databases else None
+                    log.warning(action="invalid_db_selection", trace_info="admin", message=f"Invalid DB selection, defaulting to: {selected_db}", secure=False)
 
                 # Load tables & descriptions
                 if selected_db:
-                    await cursor.execute(f"USE `{selected_db}`")
-                    await cursor.execute("SHOW TABLES")
-                    table_list = [row[f'Tables_in_{selected_db}'] for row in await cursor.fetchall()]
-                    for table in table_list:
-                        await cursor.execute(f"DESCRIBE `{table}`")
-                        tables[table] = await cursor.fetchall()
+                    # Use parameterized query where possible, but USE requires identifier
+                    if selected_db in databases:
+                        await cursor.execute(f"USE `{selected_db}`")
+                        await cursor.execute("SHOW TABLES")
+                        table_list = [row[f'Tables_in_{selected_db}'] for row in await cursor.fetchall()]
+                        for table in table_list:
+                            # Table names come from SHOW TABLES, so they're safe
+                            await cursor.execute(f"DESCRIBE `{table}`")
+                            tables[table] = await cursor.fetchall()
 
                 # Handle SQL form submission
                 if request.method == "POST":
@@ -126,25 +136,28 @@ async def admin_dashboard():
                 transactions = await cursor.fetchall()
 
                 # --- Fetch all students payment info ---
-                student_sql = f'''
-                    SELECT u.fullname, u.phone, p.class, p.gender, pay.special_food, pay.reduced_fee,
-                           pay.food, pay.due_months AS month, pay.payment_id, pay.user_id
-                    FROM global.users u
-                    JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
-                    JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
-                    JOIN global.acc_types a ON a.user_id = u.user_id
-                    WHERE a.main_type = 'students'
-                '''
-                params = []
-                if student_class and student_class != 'all':
-                    student_sql += " AND p.class = %s"
-                    params.append(student_class)
-                student_sql += " ORDER BY p.class, u.fullname"
-                await cursor.execute(student_sql, params)
-                student_payments = await cursor.fetchall()
+                # Use parameterized query with validated madrasa_name
+                if madrasa_name in MADRASA_NAMES_LIST:
+                    student_sql = f'''
+                        SELECT u.fullname, u.phone, p.class, p.gender, pay.special_food, pay.reduced_fee,
+                               pay.food, pay.due_months AS month, pay.payment_id, pay.user_id
+                        FROM global.users u
+                        JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+                        JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id
+                        JOIN global.acc_types a ON a.user_id = u.user_id
+                        WHERE a.main_type = 'students'
+                    '''
+                    params = []
+                    if student_class and student_class != 'all':
+                        student_sql += " AND p.class = %s"
+                        params.append(student_class)
+                    student_sql += " ORDER BY p.class, u.fullname"
+                    await cursor.execute(student_sql, params)
+                    student_payments = await cursor.fetchall()
 
     except Exception as e:
         query_error = str(e)
+        log.error(action="dashboard_error", trace_info="admin", message=str(e), secure=False)
 
     return await render_template(
         "admin/dashboard.html",
@@ -316,6 +329,11 @@ async def members():
 
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
+    # Validate madrasa_name to prevent SQL injection
+    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+        await flash("Invalid madrasa name configuration", "danger")
+        raise ValueError("Invalid madrasa name in members")
+    
     # Cache the base peoples/pending payload
     base_key = get_cache_key("admin:peoples", madrasa=madrasa_name)
     base_cached = await get_cached_data(base_key)
@@ -327,18 +345,24 @@ async def members():
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
                 from utils.otel.db_tracing import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
-                # Fetch all peoples with account types
-                await cursor.execute(f"""
-                    SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
-                    FROM {madrasa_name}.peoples p
-                    LEFT JOIN global.acc_types a ON a.user_id = p.user_id
-                """)
-                peoples = list(await cursor.fetchall())
+                # Fetch all peoples with account types - validated madrasa_name
+                if validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+                    await cursor.execute(f"""
+                        SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
+                        FROM {madrasa_name}.peoples p
+                        LEFT JOIN global.acc_types a ON a.user_id = p.user_id
+                    """)
+                    peoples = list(await cursor.fetchall())
+                else:
+                    peoples = []
                 
                 # Note: verify_peoples table might not exist in new schema
                 try:
-                    await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
-                    pending = await cursor.fetchall()
+                    if validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+                        await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
+                        pending = await cursor.fetchall()
+                    else:
+                        pending = []
                 except:
                     pending = []
         await set_cached_data(base_key, {"peoples": peoples, "pending": pending}, ttl=config.SHORT_CACHE_TTL)
@@ -464,9 +488,14 @@ async def routines():
         return redirect(url_for('admin_routes.login'))
 
     sort = request.args.get('sort', 'default')
+    
+    madrasa_name = get_env_var("MADRASA_NAME", "annur")
+    # Validate madrasa_name
+    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+        raise ValueError("Invalid madrasa name in routines")
 
     # cache routines list per madrasa
-    cache_key = get_cache_key("admin:routines", madrasa=get_env_var("MADRASA_NAME", "annur"))
+    cache_key = get_cache_key("admin:routines", madrasa=madrasa_name)
     cached = await get_cached_data(cache_key)
     if cached is not None:
         rows = cached
@@ -526,6 +555,10 @@ async def events():
 
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
+    # Validate madrasa_name to prevent SQL injection
+    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+        raise ValueError("Invalid madrasa name in events")
+    
     cache_key = get_cache_key("admin:events", madrasa=madrasa_name)
     cached = await get_cached_data(cache_key)
     if cached is not None:
@@ -566,15 +599,18 @@ async def events():
         #         flash("✅ Event added successfully.", "success")
 
         # ─── fetch all events ────────────────────────────────────
-        await cursor.execute(f"""
-            SELECT event_id, type, title, date, time, function_url
-              FROM {madrasa_name}.events
-             ORDER BY date  DESC,
-                      time  DESC
-        """)
-        if not config.is_testing():
-            events = await cursor.fetchall()
-            await set_cached_data(cache_key, events, ttl=config.SHORT_CACHE_TTL)
+        if validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+            await cursor.execute(f"""
+                SELECT event_id, type, title, date, time, function_url
+                  FROM {madrasa_name}.events
+                 ORDER BY date  DESC,
+                          time  DESC
+            """)
+            if not config.is_testing():
+                events = await cursor.fetchall()
+                await set_cached_data(cache_key, events, ttl=config.SHORT_CACHE_TTL)
+            else:
+                events = []
         else:
             events = []
 
@@ -877,12 +913,13 @@ async def power_management():
         
         try:
             if action == 'git_pull':
-                # Git pull
+                # Git pull - use project root from config
+                project_root = str(config.get_project_root())
                 result = subprocess.run(
                     ['git', 'pull'], 
                     capture_output=True, 
                     text=True, 
-                    cwd=os.getcwd(),
+                    cwd=project_root,
                     timeout=30
                 )
                 if result.returncode == 0:
@@ -892,12 +929,13 @@ async def power_management():
                 log.info(action="git_pull", trace_info="admin", message=f"Git pull executed: {result.stdout[:100]}...", secure=False)
                 
             elif action == 'git_push':
-                # Git push
+                # Git push - use project root from config
+                project_root = str(config.get_project_root())
                 result = subprocess.run(
                     ['git', 'push'], 
                     capture_output=True, 
                     text=True, 
-                    cwd=os.getcwd(),
+                    cwd=project_root,
                     timeout=30
                 )
                 if result.returncode == 0:

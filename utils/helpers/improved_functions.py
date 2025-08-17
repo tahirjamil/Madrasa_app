@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 from typing import Tuple, Any, Dict, Optional, Union
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_env_var(var_name: str, default: Optional[Any] = None, required: bool = True) -> Any:
     """Get an environment variable with a default value."""
@@ -9,14 +12,14 @@ def get_env_var(var_name: str, default: Optional[Any] = None, required: bool = T
         value = None
     if not value:
         if required:
-            print(f"Critical: Environment variable {var_name} is not set")
+            logger.error(f"Environment variable {var_name} is not set")
             if not default:
                 raise ValueError(f"Environment variable {var_name} is not set")
             return default
         return None
     return value
 
-def get_project_root(marker_files= ("pyproject.toml", "app.py")) -> Path:
+def get_project_root(marker_files: Tuple[str, ...] = ("pyproject.toml", "app.py")) -> Path:
     """Return project root directory by searching upwards for a marker file."""
     current = Path(__file__).resolve()
     for parent in [current] + list(current.parents):

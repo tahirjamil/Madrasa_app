@@ -1,6 +1,5 @@
 from fastapi import Request, Form, Depends, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from collections import deque
 from threading import Lock
 
@@ -19,8 +18,8 @@ import json, re, os, aiomysql, subprocess
 from functools import wraps
 from utils.helpers.helpers import require_csrf
 
-# Initialize templates
-templates = Jinja2Templates(directory="templates")
+# Use centralized templates instance
+from utils.helpers.fastapi_helpers import templates
 
 #  DIRS
 EXAM_DIR     = config.EXAM_RESULTS_UPLOAD_FOLDER

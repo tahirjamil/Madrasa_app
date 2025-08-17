@@ -1,10 +1,7 @@
 from fastapi import APIRouter
-from fastapi.templating import Jinja2Templates
+from utils.helpers.fastapi_helpers import templates
 
 admin_routes = APIRouter()
-
-# Set up templates for admin pages
-templates = Jinja2Templates(directory="templates")
 
 # Import routes from other modules to register them
 from . import auth_admin  # noqa: F401

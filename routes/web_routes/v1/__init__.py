@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from config import config
 
 web_routes = APIRouter()
 
-# Set up templates (will be configured in main app)
-templates = Jinja2Templates(directory="templates")
+# Use centralized templates instance
+from utils.helpers.fastapi_helpers import templates
 
 # Custom URL generation function for templates
 def url_for(route_name: str, **kwargs):

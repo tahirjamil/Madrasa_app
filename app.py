@@ -23,6 +23,7 @@ from utils.otel.otel_utils import init_otel
 from utils.helpers.helpers import (
     get_system_health, initialize_application, security_manager,
 )
+from utils.helpers.fastapi_helpers import templates, setup_template_globals
 from routes.admin_routes import admin_routes
 from routes.api import api
 from routes.web_routes import web_routes
@@ -112,6 +113,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Setup template globals
+setup_template_globals(app)
+
 # ─── CORS Configuration ──────────────────────────────────────────────
 if not config.is_development():
     # Allow only specific origins in production
@@ -134,7 +138,7 @@ else:
     )
 
 # ─── Templates Setup ──────────────────────────────────────────────
-templates = Jinja2Templates(directory="templates")
+# templates = Jinja2Templates(directory="templates")  # Remove this line - using centralized instance
 
 # Wrap ASGI app with tracing middleware only if OTEL is enabled
 if config.OTEL_ENABLED:
@@ -164,7 +168,14 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp
 
 # Add session middleware (needed for admin routes)
-app.add_middleware(SessionMiddleware, secret_key=MadrasaConfig.SECRET_KEY)
+# Ensure SECRET_KEY is set, especially for test mode
+secret_key = MadrasaConfig.SECRET_KEY
+if not secret_key and config.is_testing():
+    secret_key = "test-secret-key-for-development-only"
+elif not secret_key:
+    raise ValueError("SECRET_KEY must be set in environment variables")
+
+app.add_middleware(SessionMiddleware, secret_key=secret_key)
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -359,14 +370,16 @@ async def health_check():
 
         
 # ─── Register Routers ────────────────────────────────────
+# ─── Static Files ────────────────────────────────────────────
+# Mount static files BEFORE routers to ensure they're available for url_for
+app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# Now include routers
 app.include_router(admin_routes, prefix='/admin')
 app.include_router(web_routes)
 app.include_router(api)
  
-# ─── Static Files ────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-
 # ─── Template Context Processor ───────────────────────────────
 # In FastAPI, we'll handle this differently when rendering templates
 # by passing the csrf_token in the context for each template render

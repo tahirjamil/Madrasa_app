@@ -188,3 +188,29 @@ async def validate_device_dependency(client_info: ClientInfo = Depends(get_clien
         )
     
     return client_info
+<<<<<<< Current (Your changes)
+=======
+
+# ─── Centralized Templates Instance ──────────────────────────────────
+# Create a single templates instance to be imported by all modules
+from fastapi.templating import Jinja2Templates
+
+templates = Jinja2Templates(directory="templates")
+
+# Add custom globals to templates
+def setup_template_globals(app):
+    """Setup custom globals for templates"""
+    @templates.env.global_function
+    def url_for(name: str, **path_params) -> str:
+        """Custom url_for that works with static files and routes"""
+        # For static files, create the URL directly
+        if name == "static":
+            filename = path_params.get("filename", "")
+            return f"/static/{filename}"
+        elif name == "uploads":
+            filename = path_params.get("filename", "")
+            return f"/uploads/{filename}"
+        # For other routes, you'd need the request context
+        # This is a fallback - the request.url_for should be used when available
+        return f"/{name}"
+>>>>>>> Incoming (Background Agent changes)

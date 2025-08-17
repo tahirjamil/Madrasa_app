@@ -124,13 +124,20 @@ async def startup():
         )
 
     initialize_application()
-    await create_tables_async()
-    # Initialize database connection pool
-    from utils.mysql.database_utils import get_db_pool
-    # Store db_pool in app.config instead of setattr
-    app.config['db_pool'] = await get_db_pool()
-    app.keydb = await connect_to_keydb()
-    logger.info("Database connection pool established successfully")
+    
+    # Skip database initialization in test mode
+    if config.is_testing():
+        logger.warning("TEST_MODE enabled - skipping database initialization")
+        app.config['db_pool'] = None
+        app.keydb = None
+    else:
+        await create_tables_async()
+        # Initialize database connection pool
+        from utils.mysql.database_utils import get_db_pool
+        # Store db_pool in app.config instead of setattr
+        app.config['db_pool'] = await get_db_pool()
+        app.keydb = await connect_to_keydb()
+        logger.info("Database connection pool established successfully")
 
 @app.after_serving
 async def shutdown():

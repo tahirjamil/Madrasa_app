@@ -20,9 +20,10 @@ class LoginForm(BaseModel):
     password: str
     recaptcha_response: Optional[str] = None
 
-@admin_routes.get('/login', response_class=HTMLResponse)
+# ─── Login Page ─────────────────────────────────────────────────
+@admin_routes.get('/login', response_class=HTMLResponse, name="login")
 @rate_limit(max_requests=50, window=300)
-async def login_get(request: Request):
+async def login_page(request: Request):
     # See for test mode
     test = True if config.is_testing() else False
     
@@ -40,9 +41,10 @@ async def login_get(request: Request):
         "test": test
     })
 
+# ─── Login Handler ──────────────────────────────────────────────
 @admin_routes.post('/login')
 @rate_limit(max_requests=50, window=300)
-async def login_post(
+async def login(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
@@ -159,7 +161,8 @@ async def login_post(
         }
     )
 
-@admin_routes.get('/logout')
+# ─── Logout ─────────────────────────────────────────────────────
+@admin_routes.get('/logout', name="admin_logout")
 async def admin_logout(request: Request, client_info: ClientInfo = Depends(get_client_info)):
     ip_address = client_info.ip_address
     

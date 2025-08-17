@@ -188,3 +188,24 @@ If issues arise:
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Migration Guide](https://fastapi.tiangolo.com/tutorial/)
 - [Pydantic Documentation](https://pydantic-docs.helpmanual.io/)
+
+### User Sessions
+
+1. **Session Storage**: Using client-side signed cookies (itsdangerous)
+2. **No server sessions**: All session data in encrypted cookies
+3. **Session keys**: admin_logged_in, admin_username, user_id, etc.
+
+### Templates and Static Files
+
+1. **Template Engine**: Using Jinja2Templates from FastAPI
+2. **Template Functions**:
+   - `url_for()`: Custom implementation in `fastapi_helpers.py` that maps route names to URLs
+   - `get_flashed_messages()`: Returns empty list (placeholder for future implementation)
+   - `csrf_token()`: Returns empty string (CSRF handled differently in FastAPI)
+3. **Route Names**: Added explicit names to all routes for template url_for compatibility:
+   - Web routes: home, donate, contact, privacy, terms
+   - Admin routes: admin_dashboard, login, admin_logout, view_logs, members, etc.
+   - API routes: manage_account
+4. **Static Files**: Mounted at /static and /uploads using StaticFiles
+
+## Security Considerations

@@ -78,7 +78,7 @@ async def add_person(
     """Add a new person to the system with comprehensive validation and security """
     # Test mode handling
     if config.is_testing():
-        response, status = send_json_response(_("Ignored because in test mode"), 201)
+        response, status = send_json_response("Ignored because in test mode", 201)
         response.update({"info": None, "user_id": None})
         return JSONResponse(content=response, status_code=status)
     
@@ -99,7 +99,7 @@ async def add_person(
         missing_fields = [f for f in required_fields if not data.get(f)]
         if missing_fields:
             log.warning(action="add_people_missing_fields", trace_info=data.get("ip_address", ""), message=f"Missing required fields: {missing_fields}", secure=False)
-            response, status = send_json_response(_("Missing required fields: %(fields)s") % {"fields": ", ".join(missing_fields)}, 400)
+            response, status = send_json_response(f"Missing required fields: {', '.join(missing_fields)}", 400)
             return jsonify(response), status
         
         # Extract and validate basic fields with sanitization
@@ -134,7 +134,7 @@ async def add_person(
         person_id = await get_id(formatted_phone, fullname.lower())
         if not person_id:
             log.error(action="add_people_id_not_found", trace_info=formatted_phone, message="User ID not found", secure=True)
-            response, status = send_json_response(_("ID not found"), 404)
+            response, status = send_json_response("ID not found", 404)
             return jsonify(response), status
         
         # Initialize fields dictionary
@@ -212,7 +212,7 @@ async def add_person(
             
             missing_required = [field for field in required_fields if not get_field(field)]
             if missing_required:
-                response, status = send_json_response(_("All required fields must be provided for Student"), 400)
+                response, status = send_json_response("All required fields must be provided for Student", 400)
                 return jsonify(response), status
             
             fields.update({field: get_field(field) for field in required_fields})
@@ -230,8 +230,8 @@ async def add_person(
             
             missing_required = [field for field in required_fields if not get_field(field)]
             if missing_required:
-                response, status = send_json_response(_("All required fields must be provided for %(type)s") % {"type": acc_type}, 400)
-                return jsonify(response), status
+                response, status = send_json_response(f"All required fields must be provided for {acc_type}", 400)
+                return JSONResponse(content=response, status_code=status)
             
             fields.update({field: get_field(field) for field in required_fields})
             
@@ -252,8 +252,8 @@ async def add_person(
             
             missing_required = [field for field in required_fields if not get_field(field)]
             if missing_required:
-                response, status = send_json_response(_("All required fields must be provided for %(type)s") % {"type": acc_type}, 400)
-                return jsonify(response), status
+                response, status = send_json_response(f"All required fields must be provided for {acc_type}", 400)
+                return JSONResponse(content=response, status_code=status)
             
             fields.update({field: get_field(field) for field in required_fields})
             
@@ -262,8 +262,8 @@ async def add_person(
             missing_basic = [field for field in basic_required if not get_field(field)]
             
             if missing_basic:
-                response, status = send_json_response(_("Name, Phone, and Father/Spouse are required for Guest"), 400)
-                return jsonify(response), status
+                response, status = send_json_response("Name, Phone, and Father/Spouse are required for Guest", 400)
+                return JSONResponse(content=response, status_code=status)
             
             fields.update({
                 "name_en": get_field("name_en"),
@@ -309,14 +309,14 @@ async def add_person(
         # Log successful addition
         log.info(action="add_person", trace_info=formatted_phone, message=f"User {fullname} added successfully", secure=True)
         
-        response, status = send_json_response(_("%(type)s profile added successfully") % {"type": acc_type}, 201)
+        response, status = send_json_response(f"{acc_type} profile added successfully", 201)
         response.update({"user_id": person_id, "info": img_path})
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
         
     except Exception as e:
         log.critical(action="add_person_error", trace_info="system", message=f"Error adding person: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
 @api.post('/members')
 @cache_with_invalidation

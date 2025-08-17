@@ -1,4 +1,6 @@
-from quart import render_template, request, flash, session, redirect, url_for, current_app, jsonify
+from fastapi import Request, Form, Depends, HTTPException
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from collections import deque
 from threading import Lock
 
@@ -17,6 +19,9 @@ import json, re, os, aiomysql, subprocess
 from functools import wraps
 from utils.helpers.helpers import require_csrf
 
+# Initialize templates
+templates = Jinja2Templates(directory="templates")
+
 #  DIRS
 EXAM_DIR     = config.EXAM_RESULTS_UPLOAD_FOLDER
 NOTICES_DIR = config.NOTICES_UPLOAD_FOLDER
@@ -34,30 +39,31 @@ _FORBIDDEN_RE = re.compile(
 
 # ------------- Root / Dashboard ----------------
 
-@admin_routes.route('/', methods=['GET', 'POST'])
+@admin_routes.get('/', response_class=HTMLResponse)
+@admin_routes.post('/', response_class=HTMLResponse)
 @require_csrf
 @handle_async_errors
 @rate_limit(max_requests=50, window=60)
-async def admin_dashboard():
+async def admin_dashboard(request: Request):
     # 1) Ensure admin is logged in
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     # Validate madrasa_name to prevent SQL injection
-    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
-        await flash("Invalid madrasa name configuration", "danger")
-        raise ValueError("Invalid madrasa name in admin dashboard")
+    if not validate_madrasa_name(madrasa_name, request.client.host if request.client else ""):
+        # Flash message equivalent - we'll handle this differently in FastAPI
+        raise HTTPException(status_code=400, detail="Invalid madrasa name configuration")
     
     databases = []
     tables = {}
-    selected_db = request.args.get('db', 'global')  # Default to global database
+    selected_db = request.query_params.get('db', 'global')  # Default to global database
     query_result = None
     query_error = None
 
     # --- Payment Transactions Section ---
-    txn_limit = request.args.get('txn_limit', '100')
+    txn_limit = request.query_params.get('txn_limit', '100')
     txn_limit_val = 100
     if txn_limit == '200':
         txn_limit_val = 200
@@ -66,7 +72,7 @@ async def admin_dashboard():
 
     transactions = []
     student_payments = []
-    student_class = request.args.get('student_class', 'all')
+    student_class = request.query_params.get('student_class', 'all')
 
     try:
         async with get_db_connection() as conn:
@@ -96,24 +102,28 @@ async def admin_dashboard():
 
                 # Handle SQL form submission
                 if request.method == "POST":
-                    form = await request.form
-                    raw_sql = form.get('sql', '').strip() if not config.is_testing() else ''
-                    username = form.get('username', '')
-                    password = form.get('password', '')
+                    form_data = await request.form()
+                    raw_sql = form_data.get('sql', '') if not config.is_testing() else ''
+                    if isinstance(raw_sql, str):
+                        raw_sql = raw_sql.strip()
+                    username = form_data.get('username', '')
+                    password = form_data.get('password', '')
 
                     ADMIN_USER = get_env_var("ADMIN_USERNAME")
                     ADMIN_PASS = get_env_var("ADMIN_PASSWORD")
 
                     # Say test mode if in test
                     if config.is_testing():
-                        await flash("The server is in testing mode.", "danger")
+                        # Flash message equivalent - we'll handle this differently in FastAPI
+                        raise HTTPException(status_code=503, detail="The server is in testing mode.")
                     # Authenticate admin credentials
                     elif username != ADMIN_USER or password != ADMIN_PASS:
-                        await flash("Unauthorized admin login.", "danger")
+                        # Flash message equivalent - we'll handle this differently in FastAPI
+                        raise HTTPException(status_code=401, detail="Unauthorized admin login.")
                     # Forbid dangerous keywords (whole‑word match)
                     elif _FORBIDDEN_RE.search(raw_sql):
-                        await flash("🚫 Dangerous queries are not allowed (DROP, ALTER, etc).", "danger")
-                        log.warning(action="forbidden_query_attempt", trace_info=username, message=raw_sql, secure=False)
+                        # Flash message equivalent - we'll handle this differently in FastAPI
+                        raise HTTPException(status_code=400, detail="🚫 Dangerous queries are not allowed (DROP, ALTER, etc).")
                     else:
                         try:
                             await cursor.execute(raw_sql)
@@ -159,41 +169,44 @@ async def admin_dashboard():
         query_error = str(e)
         log.error(action="dashboard_error", trace_info="admin", message=str(e), secure=False)
 
-    return await render_template(
+    return templates.TemplateResponse(
         "admin/dashboard.html",
-        databases=databases,
-        tables=tables,
-        selected_db=selected_db,
-        query_result=query_result,
-        query_error=query_error,
-        transactions=transactions,
-        txn_limit=txn_limit,
-        student_payments=student_payments,
-        student_class=student_class
+        {
+            "request": request,
+            "databases": databases,
+            "tables": tables,
+            "selected_db": selected_db,
+            "query_result": query_result,
+            "query_error": query_error,
+            "transactions": transactions,
+            "txn_limit": txn_limit,
+            "student_payments": student_payments,
+            "student_class": student_class
+        }
     )
 
 
 # ------------------ Logs ---------------------
 
 
-@admin_routes.route('/logs')
+@admin_routes.get('/logs', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def view_logs():
+async def view_logs(request: Request):
     
     # Require admin login
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
     
     if config.is_testing():
-        # await flash("Server is in test mode", "danger")  # Removed hardcoded test mode message
-        return await render_template("admin/logs.html", logs=[])
+        # Flash message equivalent - we'll handle this differently in FastAPI
+        return await templates.TemplateResponse("admin/logs.html", {"request": request, "logs": []})
     
     # Try cache first
     cache_key = get_cache_key("admin:logs")
     cached_logs = await get_cached_data(cache_key)
     if cached_logs is not None:
-        return await render_template("admin/logs.html", logs=cached_logs)
+        return await templates.TemplateResponse("admin/logs.html", {"request": request, "logs": cached_logs})
 
     try:
         async with get_db_connection() as conn:
@@ -208,44 +221,44 @@ async def view_logs():
                 logs = await cursor.fetchall()
                 await set_cached_data(cache_key, logs, ttl=config.SHORT_CACHE_TTL)
     except Exception as e:
-        await flash(f"Database error: {str(e)}", "danger")
-        logs = []
+        # Flash message equivalent - we'll handle this differently in FastAPI
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    return await render_template("admin/logs.html", logs=logs)
+    return await templates.TemplateResponse("admin/logs.html", {"request": request, "logs": logs})
 
 
-@admin_routes.route('/info')
+@admin_routes.get('/info', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def info_admin():
+async def info_admin(request: Request):
 
     # require admin
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
     # Thread-safe access to request log
     if config.is_testing():
         logs = []
     else:
-        request_log = current_app.config.get('request_response_log', deque())
-        request_log_lock = current_app.config.get('request_log_lock', Lock())
+        request_log = request.app.state.request_response_log
+        request_log_lock = request.app.state.request_log_lock
         with request_log_lock:
             logs = list(request_log)[-100:]
 
-    return await render_template("admin/info.html", logs=logs)
+    return await templates.TemplateResponse("admin/info.html", {"request": request, "logs": logs})
 
 
 
 
 # ------------------ Exam Results ------------------------
 
-@admin_routes.route('/exam_results', methods=['GET'])
+@admin_routes.get('/exam_results', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def exam_results():
+async def exam_results(request: Request):
     # auth
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
     # REMINDER: Disabled for view-only mode
     # if request.method == 'POST':
@@ -287,7 +300,7 @@ async def exam_results():
 
     # GET: show all together
     results = load_results() if not config.is_testing() else []
-    return await render_template("admin/exam_results.html", results=results)
+    return await templates.TemplateResponse("admin/exam_results.html", {"request": request, "results": results})
 
 
 # REMINDER: Disabled for view-only mode
@@ -319,20 +332,21 @@ async def exam_results():
 
 # ------------------- Members --------------------------
 
-@admin_routes.route('/members', methods=['GET', 'POST'])
+@admin_routes.get('/members', response_class=HTMLResponse)
+@admin_routes.post('/members', response_class=HTMLResponse)
 @require_csrf
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def members():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+async def members(request: Request):
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     # Validate madrasa_name to prevent SQL injection
-    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
-        await flash("Invalid madrasa name configuration", "danger")
-        raise ValueError("Invalid madrasa name in members")
+    if not validate_madrasa_name(madrasa_name, request.client.host if request.client else ""):
+        # Flash message equivalent - we'll handle this differently in FastAPI
+        raise HTTPException(status_code=400, detail="Invalid madrasa name configuration")
     
     # Cache the base peoples/pending payload
     base_key = get_cache_key("admin:peoples", madrasa=madrasa_name)
@@ -346,7 +360,7 @@ async def members():
                 from utils.otel.db_tracing import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 # Fetch all peoples with account types - validated madrasa_name
-                if validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+                if validate_madrasa_name(madrasa_name, request.client.host if request.client else ""):
                     await cursor.execute(f"""
                         SELECT p.*, a.main_type as acc_type, a.teacher, a.student, a.staff, a.donor, a.badri_member, a.special_member
                         FROM {madrasa_name}.peoples p
@@ -358,7 +372,7 @@ async def members():
                 
                 # Note: verify_peoples table might not exist in new schema
                 try:
-                    if validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+                    if validate_madrasa_name(madrasa_name, request.client.host if request.client else ""):
                         await cursor.execute(f"SELECT * FROM {madrasa_name}.verify_peoples")
                         pending = await cursor.fetchall()
                     else:
@@ -369,8 +383,8 @@ async def members():
 
     # Build list of distinct account types
     types = sorted({m['acc_type'] for m in peoples if m.get('acc_type')})
-    selected_type = request.args.get('type', types[0] if types else None)
-    sort_key = request.args.get('sort', 'user_id_asc')
+    selected_type = request.query_params.get('type', types[0] if types else None)
+    sort_key = request.query_params.get('sort', 'user_id_asc')
 
     # Filter members by type (or all)
     if selected_type == 'all':
@@ -403,22 +417,28 @@ async def members():
         members = []
         pending = []
 
-    return await render_template("admin/members.html",
-                           types=types,
-                           selected_type=selected_type,
-                           members=members,
-                           pending=pending,
-                           sort=sort_key)
+    return await templates.TemplateResponse(
+        "admin/members.html",
+        {
+            "request": request,
+            "types": types,
+            "selected_type": selected_type,
+            "members": members,
+            "pending": pending,
+            "sort": sort_key
+        }
+    )
 
 
 # ------------------- Notices -----------------------
 
-@admin_routes.route('/notice', methods=['GET'])
+@admin_routes.get('/notice', response_class=HTMLResponse)
+@admin_routes.post('/notice', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def notice_page():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+async def notice_page(request: Request):
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
     
     # REMINDER: Disabled for view-only mode
     # if request.method == 'POST':
@@ -472,27 +492,34 @@ async def notice_page():
                 past.append(n)
     
 
-    return await render_template("admin/notice.html",
-                           upcoming=upcoming,
-                           ongoing=ongoing,
-                           past=past)
+    return await templates.TemplateResponse(
+        "admin/notice.html",
+        {
+            "request": request,
+            "upcoming": upcoming,
+            "ongoing": ongoing,
+            "past": past
+        }
+    )
 
 # ------------------ Routine ----------------------
 
-@admin_routes.route('/routines', methods=['GET'])
+@admin_routes.get('/routines', response_class=HTMLResponse)
+@admin_routes.post('/routines', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def routines():
+async def routines(request: Request):
     # require login
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
-    sort = request.args.get('sort', 'default')
+    sort = request.query_params.get('sort', 'default')
     
     madrasa_name = get_env_var("MADRASA_NAME", "annur")
     # Validate madrasa_name
-    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
-        raise ValueError("Invalid madrasa name in routines")
+    if not validate_madrasa_name(madrasa_name, request.client.host if request.client else ""):
+        # Flash message equivalent - we'll handle this differently in FastAPI
+        raise HTTPException(status_code=400, detail="Invalid madrasa name in routines")
 
     # cache routines list per madrasa
     cache_key = get_cache_key("admin:routines", madrasa=madrasa_name)
@@ -535,35 +562,40 @@ async def routines():
     if config.is_testing():
         routines_by_class = {}
 
-    return await render_template(
+    return await templates.TemplateResponse(
         'admin/routines.html',
-        routines_by_class=routines_by_class,
-        sort=sort
+        {
+            "request": request,
+            "routines_by_class": routines_by_class,
+            "sort": sort
+        }
     )
 
 
 
 # -------------------- Event / Function ------------------------
 
-@admin_routes.route('/events', methods=['GET'])
+@admin_routes.get('/events', response_class=HTMLResponse)
+@admin_routes.post('/events', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def events():
+async def events(request: Request):
     # ─── require login ────────────────────────────────────────────
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     # Validate madrasa_name to prevent SQL injection
-    if not validate_madrasa_name(madrasa_name, request.remote_addr or ""):
-        raise ValueError("Invalid madrasa name in events")
+    if not validate_madrasa_name(madrasa_name, request.client.host if request.client else ""):
+        # Flash message equivalent - we'll handle this differently in FastAPI
+        raise HTTPException(status_code=400, detail="Invalid madrasa name in events")
     
     cache_key = get_cache_key("admin:events", madrasa=madrasa_name)
     cached = await get_cached_data(cache_key)
     if cached is not None:
         events = cached if not config.is_testing() else []
-        return await render_template("admin/events.html", events=events)
+        return await templates.TemplateResponse("admin/events.html", {"request": request, "events": events})
 
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -599,7 +631,7 @@ async def events():
         #         flash("✅ Event added successfully.", "success")
 
         # ─── fetch all events ────────────────────────────────────
-        if validate_madrasa_name(madrasa_name, request.remote_addr or ""):
+        if validate_madrasa_name(madrasa_name, request.client.host if request.client else ""):
             await cursor.execute(f"""
                 SELECT event_id, type, title, date, time, function_url
                   FROM {madrasa_name}.events
@@ -614,20 +646,21 @@ async def events():
         else:
             events = []
 
-    return await render_template("admin/events.html", events=events)
+    return await templates.TemplateResponse("admin/events.html", {"request": request, "events": events})
 
 
 
 
 # ------------------- Madrasa Pictures ------------------------
 
-@admin_routes.route('/madrasa_pictures', methods=['GET'])
+@admin_routes.get('/madrasa_pictures', response_class=HTMLResponse)
+@admin_routes.post('/madrasa_pictures', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def madrasa_pictures():
+async def madrasa_pictures(request: Request):
     # 1) Require admin
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
     # REMINDER: Disabled for view-only mode
     # 2) Handle upload
@@ -680,21 +713,21 @@ async def madrasa_pictures():
         except (FileNotFoundError, json.JSONDecodeError):
             pictures = []
 
-    return await render_template('admin/madrasa_pictures.html', pictures=pictures)
+    return await templates.TemplateResponse('admin/madrasa_pictures.html', {"request": request, "pictures": pictures})
 
 
 
 # ---------------------- Exam -----------------------------
 
-@admin_routes.route('/admin/events/exams', methods=['GET'])
+@admin_routes.get('/admin/events/exams', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def exams():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+async def exams(request: Request):
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
     
     if not config.is_testing():
-        return await render_template('admin/exams.html', exams=[])
+        return await templates.TemplateResponse('admin/exams.html', {"request": request, "exams": []})
 
     # Fetch all exams from the database
     async with get_db_connection() as conn:
@@ -706,7 +739,7 @@ async def exams():
             await cursor.execute("SELECT * FROM exams ORDER BY date DESC, start_time ASC")
             exams = await cursor.fetchall()
 
-    return await render_template('admin/exams.html', exams=exams)
+    return await templates.TemplateResponse('admin/exams.html', {"request": request, "exams": exams})
 
 # REMINDER: Disabled for view-only mode
 # @admin_routes.route('/admin/add_exam', methods=['POST'])
@@ -846,14 +879,14 @@ async def exams():
 
 #     return render_template('admin/payment_form.html', payment=payment, mode=mode)
 
-@admin_routes.route('/interactions', methods=['GET'])
+@admin_routes.get('/interactions', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
-async def interactions():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+async def interactions(request: Request):
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
 
-    sort = request.args.get('sort', 'default')
+    sort = request.query_params.get('sort', 'default')
     
     cache_key = get_cache_key("admin:interactions")
     cached = await get_cached_data(cache_key)
@@ -880,35 +913,36 @@ async def interactions():
     if config.is_testing():
         rows = []
 
-    return await render_template('admin/interactions.html', interactions=rows, sort=sort)
+    return await templates.TemplateResponse('admin/interactions.html', {"request": request, "interactions": rows, "sort": sort})
 
 
-@admin_routes.route('/power', methods=['GET', 'POST'])
+@admin_routes.get('/power', response_class=HTMLResponse)
+@admin_routes.post('/power', response_class=HTMLResponse)
 @require_csrf
 @handle_async_errors
 @rate_limit(max_requests=100, window=60)
-async def power_management():
+async def power_management(request: Request):
     # Require admin login
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
     
     # Get power key from environment
     POWER_KEY = get_env_var("POWER_KEY")
     if not POWER_KEY:
-        return await render_template('admin/power.html', error="Power management is not configured")
+        return await templates.TemplateResponse('admin/power.html', {"request": request, "error": "Power management is not configured"})
     
     if config.is_testing():
-        return await render_template('admin/power.html', error=None)  # Removed hardcoded test mode message
+        return await templates.TemplateResponse('admin/power.html', {"request": request, "error": None})  # Removed hardcoded test mode message
     
     if request.method == 'POST':
-        form = await request.form
-        action = form.get('action')
-        power_key = form.get('power_key')
+        form_data = await request.form()
+        action = form_data.get('action')
+        power_key = form_data.get('power_key')
         
         # Verify power key
         if power_key != POWER_KEY:
-            await flash("Invalid power key", "danger")
-            return await render_template('admin/power.html')
+            # Flash message equivalent - we'll handle this differently in FastAPI
+            raise HTTPException(status_code=401, detail="Invalid power key")
         
         
         try:
@@ -923,10 +957,11 @@ async def power_management():
                     timeout=30
                 )
                 if result.returncode == 0:
-                    await flash(f"✅ Git pull successful\n{result.stdout}", "success")
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=200, detail=f"✅ Git pull successful\n{result.stdout}")
                 else:
-                    await flash(f"❌ Git pull failed\n{result.stderr}", "danger")
-                log.info(action="git_pull", trace_info="admin", message=f"Git pull executed: {result.stdout[:100]}...", secure=False)
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=500, detail=f"❌ Git pull failed\n{result.stderr}")
                 
             elif action == 'git_push':
                 # Git push - use project root from config
@@ -939,14 +974,16 @@ async def power_management():
                     timeout=30
                 )
                 if result.returncode == 0:
-                    await flash(f"✅ Git push successful\n{result.stdout}", "success")
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=200, detail=f"✅ Git push successful\n{result.stdout}")
                 else:
-                    await flash(f"❌ Git push failed\n{result.stderr}", "danger")
-                log.info(action="git_push", trace_info="admin", message=f"Git push executed: {result.stdout[:100]}...", secure=False)
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=500, detail=f"❌ Git push failed\n{result.stderr}")
                 
             elif action == 'server_stop':
                 # Enhanced server stop using advanced server runner
-                await flash("🛑 Server stop initiated. The server will stop gracefully...", "warning")
+                # Flash message equivalent - we'll handle this differently in FastAPI
+                raise HTTPException(status_code=200, detail="🛑 Server stop initiated. The server will stop gracefully...")
                 log.info(action="server_stop", trace_info="admin", message="Server stop initiated via power management", secure=False)
                 
                 # Use the advanced server runner's stop functionality
@@ -963,19 +1000,24 @@ async def power_management():
                     ], capture_output=True, text=True, timeout=10)
                     
                     if result.returncode == 0:
-                        await flash("✅ Server stop command sent successfully", "success")
+                        # Flash message equivalent - we'll handle this differently in FastAPI
+                        raise HTTPException(status_code=200, detail="✅ Server stop command sent successfully")
                     else:
-                        await flash(f"⚠️ Server stop command sent with warnings: {result.stderr}", "warning")
+                        # Flash message equivalent - we'll handle this differently in FastAPI
+                        raise HTTPException(status_code=200, detail=f"⚠️ Server stop command sent with warnings: {result.stderr}")
                         
                 except subprocess.TimeoutExpired:
-                    await flash("⚠️ Server stop command timed out, but may still be processing", "warning")
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=200, detail="⚠️ Server stop command timed out, but may still be processing")
                 except Exception as e:
-                    await flash(f"❌ Error sending stop command: {str(e)}", "danger")
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=500, detail=f"❌ Error sending stop command: {str(e)}")
                     log.error(action="server_stop_error", trace_info="admin", message=f"Error: {str(e)}", secure=False)
                 
             elif action == 'server_restart':
                 # Enhanced server restart using advanced server runner
-                await flash("🔄 Server restart initiated. The server will restart gracefully...", "warning")
+                # Flash message equivalent - we'll handle this differently in FastAPI
+                raise HTTPException(status_code=200, detail="🔄 Server restart initiated. The server will restart gracefully...")
                 log.info(action="server_restart", trace_info="admin", message="Server restart initiated via power management", secure=False)
                 
                 # Use the advanced server runner's restart functionality
@@ -993,25 +1035,32 @@ async def power_management():
                     ], capture_output=True, text=True, timeout=10)
                     
                     if stop_result.returncode == 0:
-                        await flash("✅ Server restart command sent successfully", "success")
+                        # Flash message equivalent - we'll handle this differently in FastAPI
+                        raise HTTPException(status_code=200, detail="✅ Server restart command sent successfully")
                         log.info(action="server_restart_success", trace_info="admin", message="Server restart command sent successfully", secure=False)
                     else:
-                        await flash(f"⚠️ Server restart command sent with warnings: {stop_result.stderr}", "warning")
+                        # Flash message equivalent - we'll handle this differently in FastAPI
+                        raise HTTPException(status_code=200, detail=f"⚠️ Server restart command sent with warnings: {stop_result.stderr}")
                         
                 except subprocess.TimeoutExpired:
-                    await flash("⚠️ Server restart command timed out, but may still be processing", "warning")
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=200, detail="⚠️ Server restart command timed out, but may still be processing")
                 except Exception as e:
-                    await flash(f"❌ Error sending restart command: {str(e)}", "danger")
+                    # Flash message equivalent - we'll handle this differently in FastAPI
+                    raise HTTPException(status_code=500, detail=f"❌ Error sending restart command: {str(e)}")
                     log.error(action="server_restart_error", trace_info="admin", message=f"Error: {str(e)}", secure=False)
                 
             else:
-                await flash("Invalid action", "danger")
+                # Flash message equivalent - we'll handle this differently in FastAPI
+                raise HTTPException(status_code=400, detail="Invalid action")
                 
         except subprocess.TimeoutExpired:
-            await flash("❌ Operation timed out (30 seconds)", "danger")
+            # Flash message equivalent - we'll handle this differently in FastAPI
+            raise HTTPException(status_code=408, detail="❌ Operation timed out (30 seconds)")
             log.error(action="power_timeout", trace_info="admin", message=f"Operation timed out: {action}", secure=False)
         except Exception as e:
-            await flash(f"❌ Error: {str(e)}", "danger")
+            # Flash message equivalent - we'll handle this differently in FastAPI
+            raise HTTPException(status_code=500, detail=f"❌ Error: {str(e)}")
             log.error(action="power_error", trace_info="admin", message=f"Error in {action}: {str(e)}", secure=False)
     
-    return await render_template('admin/power.html')
+    return await templates.TemplateResponse('admin/power.html', {"request": request})

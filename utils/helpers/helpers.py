@@ -947,7 +947,7 @@ async def get_system_health() -> Dict[str, Any]:
 
     return {
         "status": status,
-        "version": config.SERVER_VERSION,
+        "version": "1.0.0",
         "timestamp": datetime.now().isoformat(),
         "database": db_health,
         "keydb": keydb_health,

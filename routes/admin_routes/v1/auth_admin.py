@@ -1,6 +1,7 @@
 import asyncio
 import requests
 from datetime import datetime
+from typing import Optional
 from fastapi import Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
@@ -16,7 +17,7 @@ from utils.helpers.logger import log
 class LoginForm(BaseModel):
     username: str
     password: str
-    recaptcha_response: str = None
+    recaptcha_response: Optional[str] = None
 
 @admin_routes.get('/login', response_class=HTMLResponse)
 @rate_limit(max_requests=50, window=300)
@@ -120,7 +121,7 @@ async def login_post(
             request.session['admin_login_time'] = datetime.now().isoformat()
             request.session.pop('login_attempts', None)  # Reset
             log.info(action="admin_login_test", trace_info=ip_address, message="Admin logged in (test mode)", secure=False)
-            return RedirectResponse(url_for('admin_routes.admin_dashboard'))
+            return RedirectResponse(url='/admin/', status_code=302)
     else:
         # Production mode - strict authentication
         if username == ADMIN_USER and password == ADMIN_PASS:
@@ -128,7 +129,7 @@ async def login_post(
             request.session['admin_login_time'] = datetime.now().isoformat()
             request.session.pop('login_attempts', None)  # Reset
             log.info(action="admin_login_success", trace_info=ip_address, message=f"Admin {username} logged in", secure=False)
-            return RedirectResponse(url_for('admin_routes.admin_dashboard'))
+            return RedirectResponse(url='/admin/', status_code=302)
         
     error = "Invalid credentials"
     log.warning(action="admin_login_failed", trace_info=ip_address, message=f"Failed login attempt for: {username}", secure=False)
@@ -143,14 +144,12 @@ async def login_post(
         }
     )
 
-@admin_routes.route('/logout')
-async def admin_logout():
-    # Get client info for logging
-    client_info = await get_client_info() or {}
-    ip_address = client_info.get("ip_address", "unknown")
+@admin_routes.get('/logout')
+async def admin_logout(request: Request, client_info: ClientInfo = Depends(get_client_info)):
+    ip_address = client_info.ip_address
     
-    if session.get('admin_logged_in'):
+    if request.session.get('admin_logged_in'):
         log.info(action="admin_logout", trace_info=ip_address, message="Admin logged out", secure=False)
     
-    session.clear()
-    return redirect(url_for('admin_routes.login'))
+    request.session.clear()
+    return RedirectResponse(url='/admin/login', status_code=302)

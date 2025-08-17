@@ -2,7 +2,7 @@ import asyncio
 import os
 from typing import Any, Optional, Tuple, TypedDict, cast
 
-from quart import current_app
+# Removed Quart import - using FastAPI app state instead
 
 # Import config when needed to avoid circular imports
 # from utils.otel.db_tracing import TracedRedisPool  # Import when needed to avoid circular imports

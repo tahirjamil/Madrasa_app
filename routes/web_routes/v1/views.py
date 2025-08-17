@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import Request, Form, Depends
+from fastapi import Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr
 
@@ -85,7 +85,7 @@ async def contact_post(
         error_message = 'Please provide a valid email address or phone number.'
 
     if error_message:
-        return RedirectResponse(url=request.url, status_code=303) # Use 303 for redirect
+        return RedirectResponse(url=str(request.url) + "?error=true", status_code=303) # Use 303 for redirect
 
     try:
         # Escape HTML to prevent XSS
@@ -201,15 +201,17 @@ async def terms(request: Request):
         "current_year": datetime.now().year
     })
 
-@web_routes.route("/account/<page_type>", methods=['GET'])
-async def manage_account(page_type: str):
+@web_routes.get("/account/{page_type}", response_class=HTMLResponse)
+async def manage_account(request: Request, page_type: str):
     """Manage account (deactivate/delete) with enhanced security"""
     # Validate page type
     if page_type not in ("remove", "deactivate"):
-        response, status = send_json_response(_("Invalid page type"), 400)
-        return jsonify(response), status
+        raise HTTPException(status_code=400, detail="Invalid page type")
     
-    return await render_template(
+    return templates.TemplateResponse(
         "account_manage.html",
-        page_type=page_type.capitalize()
+        {
+            "request": request,
+            "page_type": page_type.capitalize()
+        }
     )

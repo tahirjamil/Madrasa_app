@@ -325,7 +325,7 @@ async def health_check():
         if config.is_testing():
             return JSONResponse({
                 "status": "healthy",
-                "version": config.SERVER_VERSION,
+                "version": MadrasaConfig.SERVER_VERSION,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": "test",
                 "uptime": time.time() - app_start_time if app_start_time else 0

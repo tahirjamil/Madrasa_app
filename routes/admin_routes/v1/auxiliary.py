@@ -45,19 +45,15 @@ async def logs_data(request: Request, is_admin: bool = Depends(require_admin)):
 
 
 
-@admin_routes.route('/info/data')
+@admin_routes.get('/info/data')
 @handle_async_errors
-async def info_data_admin():
-    # require admin
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_routes.login'))
-    
+async def info_data_admin(request: Request, is_admin: bool = Depends(require_admin)):
     if config.is_testing():
-        return jsonify([])
+        return JSONResponse(content=[])
 
     # Thread-safe access to request log
-    request_log = current_app.config.get('request_response_log', deque())
-    request_log_lock = current_app.config.get('request_log_lock', Lock())
+    request_log = request.app.state.request_response_log
+    request_log_lock = request.app.state.request_log_lock
     with request_log_lock:
         logs = list(request_log)[-100:]
     # serializable copy
@@ -71,7 +67,7 @@ async def info_data_admin():
             "req_json": e.get("req_json"),
             "res_json": e.get("res_json")
         })
-    return jsonify(out)
+    return JSONResponse(content=out)
 
 
 

@@ -242,7 +242,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
         endpoint = request.url.path
         # SECURITY FIX: Add CSRF check for admin routes
-        blocked = endpoint.startswith("/admin/") and not request.session.get("admin_logged_in")
+        # Safely check session - handle case where session middleware might not be available
+        try:
+            blocked = endpoint.startswith("/admin/") and not request.session.get("admin_logged_in")
+        except (AttributeError, AssertionError):
+            # Session middleware not available or session not initialized
+            blocked = endpoint.startswith("/admin/")
 
         # Get JSON payload if available
         req_json = None

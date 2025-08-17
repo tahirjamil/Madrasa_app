@@ -88,9 +88,9 @@ async def connect_to_keydb() -> Optional[redis.Redis]:
     try:
         # Create connection
         keydb_client = redis.Redis(
-            host=config.KEYDB_HOST,
-            port=config.KEYDB_PORT,
-            password=config.KEYDB_PASSWORD,
+            host=config.REDIS_HOST,
+            port=config.REDIS_PORT,
+            password=config.REDIS_PASSWORD,
             decode_responses=True,
             socket_keepalive=True,
             socket_connect_timeout=5,

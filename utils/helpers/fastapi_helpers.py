@@ -121,7 +121,12 @@ def handle_async_errors(func: Callable) -> Callable:
             # Re-raise HTTP exceptions
             raise
         except Exception as e:
-            log.error(f"Unhandled error in {func.__name__}: {str(e)}")
+            log.error(
+                action=f"unhandled_error_{func.__name__}", 
+                trace_info="system", 
+                message=f"Unhandled error in {func.__name__}: {str(e)}",
+                secure=False
+            )
             raise HTTPException(
                 status_code=500,
                 detail="Internal server error"
@@ -139,6 +144,7 @@ class BaseAuthRequest(BaseModel):
     device_model: Optional[str] = Field(default="unknown")
     device_os: Optional[str] = Field(default="unknown")
     device_brand: Optional[str] = Field(default="unknown")
+    madrasa_name: Optional[str] = Field(default=None)
     
     @field_validator('fullname', 'phone', 'device_id', 'device_model', 'device_os', 'device_brand')
     @classmethod
@@ -164,9 +170,9 @@ async def validate_device_dependency(client_info: ClientInfo = Depends(get_clien
     is_valid, error = await validate_device_info(
         device_id=client_info.device_id,
         ip_address=client_info.ip_address,
-        device_model=client_info.device_model,
-        device_os=client_info.device_os,
-        device_brand=client_info.device_brand
+        device_model=client_info.device_model or "unknown",
+        device_os=client_info.device_os or "unknown",
+        device_brand=client_info.device_brand or "unknown"
     )
     
     if not is_valid:

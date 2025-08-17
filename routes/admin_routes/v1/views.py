@@ -103,11 +103,21 @@ async def admin_dashboard(request: Request):
                 # Handle SQL form submission
                 if request.method == "POST":
                     form_data = await request.form()
-                    raw_sql = form_data.get('sql', '') if not config.is_testing() else ''
-                    if isinstance(raw_sql, str):
-                        raw_sql = raw_sql.strip()
-                    username = form_data.get('username', '')
-                    password = form_data.get('password', '')
+                    raw_sql_field = form_data.get('sql', '') if not config.is_testing() else ''
+                    # Handle both string and UploadFile
+                    if hasattr(raw_sql_field, 'read'):
+                        # It's an UploadFile, read its content
+                        raw_sql = (await raw_sql_field.read()).decode('utf-8')
+                    else:
+                        # It's a string
+                        raw_sql = str(raw_sql_field)
+                    raw_sql = raw_sql.strip()
+                    
+                    username_field = form_data.get('username', '')
+                    username = str(username_field) if username_field else ''
+                    
+                    password_field = form_data.get('password', '')
+                    password = str(password_field) if password_field else ''
 
                     ADMIN_USER = get_env_var("ADMIN_USERNAME")
                     ADMIN_PASS = get_env_var("ADMIN_PASSWORD")
@@ -200,13 +210,13 @@ async def view_logs(request: Request):
     
     if config.is_testing():
         # Flash message equivalent - we'll handle this differently in FastAPI
-        return await templates.TemplateResponse("admin/logs.html", {"request": request, "logs": []})
+        return templates.TemplateResponse("admin/logs.html", {"request": request, "logs": []})
     
     # Try cache first
     cache_key = get_cache_key("admin:logs")
     cached_logs = await get_cached_data(cache_key)
     if cached_logs is not None:
-        return await templates.TemplateResponse("admin/logs.html", {"request": request, "logs": cached_logs})
+        return templates.TemplateResponse("admin/logs.html", {"request": request, "logs": cached_logs})
 
     try:
         async with get_db_connection() as conn:
@@ -224,7 +234,7 @@ async def view_logs(request: Request):
         # Flash message equivalent - we'll handle this differently in FastAPI
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    return await templates.TemplateResponse("admin/logs.html", {"request": request, "logs": logs})
+    return templates.TemplateResponse("admin/logs.html", {"request": request, "logs": logs})
 
 
 @admin_routes.get('/info', response_class=HTMLResponse)
@@ -245,7 +255,7 @@ async def info_admin(request: Request):
         with request_log_lock:
             logs = list(request_log)[-100:]
 
-    return await templates.TemplateResponse("admin/info.html", {"request": request, "logs": logs})
+    return templates.TemplateResponse("admin/info.html", {"request": request, "logs": logs})
 
 
 
@@ -300,7 +310,7 @@ async def exam_results(request: Request):
 
     # GET: show all together
     results = load_results() if not config.is_testing() else []
-    return await templates.TemplateResponse("admin/exam_results.html", {"request": request, "results": results})
+    return templates.TemplateResponse("admin/exam_results.html", {"request": request, "results": results})
 
 
 # REMINDER: Disabled for view-only mode
@@ -417,7 +427,7 @@ async def members(request: Request):
         members = []
         pending = []
 
-    return await templates.TemplateResponse(
+    return templates.TemplateResponse(
         "admin/members.html",
         {
             "request": request,
@@ -492,7 +502,7 @@ async def notice_page(request: Request):
                 past.append(n)
     
 
-    return await templates.TemplateResponse(
+    return templates.TemplateResponse(
         "admin/notice.html",
         {
             "request": request,
@@ -562,7 +572,7 @@ async def routines(request: Request):
     if config.is_testing():
         routines_by_class = {}
 
-    return await templates.TemplateResponse(
+    return templates.TemplateResponse(
         'admin/routines.html',
         {
             "request": request,
@@ -595,7 +605,7 @@ async def events(request: Request):
     cached = await get_cached_data(cache_key)
     if cached is not None:
         events = cached if not config.is_testing() else []
-        return await templates.TemplateResponse("admin/events.html", {"request": request, "events": events})
+        return templates.TemplateResponse("admin/events.html", {"request": request, "events": events})
 
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -646,7 +656,7 @@ async def events(request: Request):
         else:
             events = []
 
-    return await templates.TemplateResponse("admin/events.html", {"request": request, "events": events})
+    return templates.TemplateResponse("admin/events.html", {"request": request, "events": events})
 
 
 
@@ -713,7 +723,7 @@ async def madrasa_pictures(request: Request):
         except (FileNotFoundError, json.JSONDecodeError):
             pictures = []
 
-    return await templates.TemplateResponse('admin/madrasa_pictures.html', {"request": request, "pictures": pictures})
+    return templates.TemplateResponse('admin/madrasa_pictures.html', {"request": request, "pictures": pictures})
 
 
 
@@ -727,7 +737,7 @@ async def exams(request: Request):
         return RedirectResponse(url='/admin/login', status_code=302)
     
     if not config.is_testing():
-        return await templates.TemplateResponse('admin/exams.html', {"request": request, "exams": []})
+        return templates.TemplateResponse('admin/exams.html', {"request": request, "exams": []})
 
     # Fetch all exams from the database
     async with get_db_connection() as conn:
@@ -739,7 +749,7 @@ async def exams(request: Request):
             await cursor.execute("SELECT * FROM exams ORDER BY date DESC, start_time ASC")
             exams = await cursor.fetchall()
 
-    return await templates.TemplateResponse('admin/exams.html', {"request": request, "exams": exams})
+    return templates.TemplateResponse('admin/exams.html', {"request": request, "exams": exams})
 
 # REMINDER: Disabled for view-only mode
 # @admin_routes.route('/admin/add_exam', methods=['POST'])
@@ -913,7 +923,7 @@ async def interactions(request: Request):
     if config.is_testing():
         rows = []
 
-    return await templates.TemplateResponse('admin/interactions.html', {"request": request, "interactions": rows, "sort": sort})
+    return templates.TemplateResponse('admin/interactions.html', {"request": request, "interactions": rows, "sort": sort})
 
 
 @admin_routes.get('/power', response_class=HTMLResponse)
@@ -929,10 +939,10 @@ async def power_management(request: Request):
     # Get power key from environment
     POWER_KEY = get_env_var("POWER_KEY")
     if not POWER_KEY:
-        return await templates.TemplateResponse('admin/power.html', {"request": request, "error": "Power management is not configured"})
+        return templates.TemplateResponse('admin/power.html', {"request": request, "error": "Power management is not configured"})
     
     if config.is_testing():
-        return await templates.TemplateResponse('admin/power.html', {"request": request, "error": None})  # Removed hardcoded test mode message
+        return templates.TemplateResponse('admin/power.html', {"request": request, "error": None})  # Removed hardcoded test mode message
     
     if request.method == 'POST':
         form_data = await request.form()
@@ -1063,4 +1073,4 @@ async def power_management(request: Request):
             raise HTTPException(status_code=500, detail=f"❌ Error: {str(e)}")
             log.error(action="power_error", trace_info="admin", message=f"Error in {action}: {str(e)}", secure=False)
     
-    return await templates.TemplateResponse('admin/power.html', {"request": request})
+    return templates.TemplateResponse('admin/power.html', {"request": request})

@@ -42,13 +42,8 @@ async def donate(request: Request):
 @rate_limit(max_requests=50, window=60)  # 50 requests per minute to prevent spam
 async def contact_get(request: Request):
     # Read raw comma‑separated strings from env
-    try:
-        raw_phones = get_env_var('BUSINESS_PHONE', '')
-        raw_emails = get_env_var('BUSINESS_EMAIL', '')
-    except Exception:
-        # Fallback if env vars are not available
-        raw_phones = ''
-        raw_emails = ''
+    raw_phones = get_env_var('BUSINESS_PHONE')
+    raw_emails = get_env_var('BUSINESS_EMAIL')
 
     # Turn into clean lists
     phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
@@ -75,13 +70,8 @@ async def contact_post(
     description: str = Form(...)
 ):
     # Read raw comma‑separated strings from env
-    try:
-        raw_phones = get_env_var('BUSINESS_PHONE', '')
-        raw_emails = get_env_var('BUSINESS_EMAIL', '')
-    except Exception:
-        # Fallback if env vars are not available
-        raw_phones = ''
-        raw_emails = ''
+    raw_phones = get_env_var('BUSINESS_PHONE')
+    raw_emails = get_env_var('BUSINESS_EMAIL')
 
     # Turn into clean lists
     phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
@@ -108,10 +98,6 @@ async def contact_post(
         safe_fullname = html.escape(fullname)
         safe_contact = html.escape(email_or_phone)
         safe_description = html.escape(description)
-        
-        # Check if we have a valid email address
-        if not emails:
-            raise Exception("No valid email addresses configured")
         
         await send_email(
             to_email=emails[0],  # primary admin address

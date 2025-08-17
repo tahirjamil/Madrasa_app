@@ -6,7 +6,7 @@ from typing import Any, Dict, Tuple
 
 import aiomysql
 from quart import (
-    jsonify, request, render_template,
+    jsonify,
     Response
 )
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -21,7 +21,7 @@ from utils.helpers.helpers import (
     check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, 
     get_client_info, record_login_attempt, secure_data, send_sms, send_email, 
     get_email, rate_limit, encrypt_sensitive_data, hash_sensitive_data,
-    handle_async_errors, validate_device_info, validate_email, validate_fullname, validate_password_strength,
+    handle_async_errors, validate_email, validate_fullname, validate_password_strength, validate_madrasa_name
 )
 from quart_babel import gettext as _
 from utils.helpers.logger import log
@@ -106,11 +106,11 @@ async def register() -> Tuple[Response, int]:
                 return jsonify(response), status
         
         # Verify code
-        validate_code_result = await check_code(user_code or "", formatted_phone)
-        if validate_code_result:
-            return validate_code_result
+        verification_result = await check_code(user_code or "", formatted_phone)
+        if verification_result:
+            return verification_result
         
-        # Hash and encrypt sensitive data
+        # Hash password with salt
         hashed_password = generate_password_hash(password or "")
         hashed_phone = hash_sensitive_data(formatted_phone)
         encrypted_phone = encrypt_sensitive_data(formatted_phone)
@@ -119,6 +119,10 @@ async def register() -> Tuple[Response, int]:
         
         # Insert user into database
         madrasa_name = get_env_var("MADRASA_NAME")
+        # SECURITY: Validate madrasa_name is in allowed list
+        if not validate_madrasa_name(madrasa_name, ip_address):
+            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+            return jsonify(response), status
         
         
         try:
@@ -256,6 +260,10 @@ async def login() -> Tuple[Response, int] | None:
     
     # Authenticate user
     madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
+    # SECURITY: Validate madrasa_name is in allowed list  
+    if not validate_madrasa_name(madrasa_name, ip_address):
+        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+        return jsonify(response), status
     
     
     try: 
@@ -787,13 +795,17 @@ async def get_account_status() -> Tuple[Response, int]:
         # Extract and validate device information
         device_id = data.get("device_id")
         device_brand = data.get("device_brand")
-        ip_address = data.get("ip_address")
+        ip_address = data.get("ip_address") or ""
         
         # Extract user information
         phone = data.get("phone")
         user_id = data.get("user_id")
         fullname = data.get("name_en")
         madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
+        # SECURITY: Validate madrasa_name is in allowed list
+        if not validate_madrasa_name(madrasa_name, ip_address):
+            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+            return jsonify(response), status
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone or "")

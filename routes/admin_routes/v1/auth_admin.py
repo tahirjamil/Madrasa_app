@@ -1,14 +1,14 @@
+import asyncio
 import requests
 from datetime import datetime
 from quart import render_template, request, redirect, url_for, session, flash
 from . import admin_routes
 from config import config
-from utils.helpers.helpers import rate_limit, require_csrf
-from threading import Lock
+from utils.helpers.helpers import rate_limit, require_csrf, get_client_info
+from utils.helpers.logger import log
 
-# Thread-safe login attempts tracking
-login_attempts = {}
-login_attempts_lock = Lock()
+# Note: Login attempt tracking moved to session-based approach
+# The global dictionary approach was removed as unused
 
 @admin_routes.route('/login', methods=['GET', 'POST'])
 @require_csrf
@@ -40,6 +40,10 @@ async def login():
         form = await request.form
         username = form.get('username')
         password = form.get('password')
+        
+        # Get client info for logging
+        client_info = await get_client_info() or {}
+        ip_address = client_info.get("ip_address", "unknown")
 
         ADMIN_USER = config.ADMIN_USERNAME
         ADMIN_PASS = config.ADMIN_PASSWORD
@@ -66,11 +70,17 @@ async def login():
                     'secret': RECAPTCHA_SECRET_KEY,
                     'response': recaptcha_response
                 }
-                r = requests.post(verify_url, data=payload)
-                result = r.json()
+                
+                # FIX: Run blocking request in thread pool to avoid blocking event loop
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: requests.post(verify_url, data=payload).json()
+                )
 
                 if not result.get('success'):
                     error = "Invalid reCAPTCHA. Please try again."
+                    log.warning(action="admin_recaptcha_failed", trace_info=ip_address, message="Failed reCAPTCHA verification", secure=False)
                     return await render_template(
                         'admin/login.html',
                         error=error,
@@ -78,13 +88,26 @@ async def login():
                         site_key=RECAPTCHA_SITE_KEY
                     )
 
-        if (username == ADMIN_USER and password == ADMIN_PASS) or test:
-            session['admin_logged_in'] = True
-            session['admin_login_time'] = datetime.now().isoformat()
-            session.pop('login_attempts', None)  # Reset
-            return redirect(url_for('admin_routes.admin_dashboard'))
+        # SECURITY: In production, don't allow test bypass
+        if test and config.is_development():
+            # Only allow test bypass in development mode
+            if username == ADMIN_USER and password == ADMIN_PASS:
+                session['admin_logged_in'] = True
+                session['admin_login_time'] = datetime.now().isoformat()
+                session.pop('login_attempts', None)  # Reset
+                log.info(action="admin_login_test", trace_info=ip_address, message="Admin logged in (test mode)", secure=False)
+                return redirect(url_for('admin_routes.admin_dashboard'))
         else:
-            error = "Invalid credentials"
+            # Production mode - strict authentication
+            if username == ADMIN_USER and password == ADMIN_PASS:
+                session['admin_logged_in'] = True
+                session['admin_login_time'] = datetime.now().isoformat()
+                session.pop('login_attempts', None)  # Reset
+                log.info(action="admin_login_success", trace_info=ip_address, message=f"Admin {username} logged in", secure=False)
+                return redirect(url_for('admin_routes.admin_dashboard'))
+            
+        error = "Invalid credentials"
+        log.warning(action="admin_login_failed", trace_info=ip_address, message=f"Failed login attempt for: {username}", secure=False)
 
     return await render_template(
         'admin/login.html',
@@ -95,5 +118,12 @@ async def login():
 
 @admin_routes.route('/logout')
 async def admin_logout():
+    # Get client info for logging
+    client_info = await get_client_info() or {}
+    ip_address = client_info.get("ip_address", "unknown")
+    
+    if session.get('admin_logged_in'):
+        log.info(action="admin_logout", trace_info=ip_address, message="Admin logged out", secure=False)
+    
     session.clear()
     return redirect(url_for('admin_routes.login'))

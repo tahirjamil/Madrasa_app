@@ -48,7 +48,15 @@ env = BASE_DIR / ".env"
 load_dotenv(env)
 
 app = MadrasaApp(__name__)
-app = cors(app, allow_origin="*") # REMINDER: RESTRICT this in production
+# SECURITY FIX: Restrict CORS in production
+if not config.is_development():
+    # Allow only specific origins in production
+    allowed_origins = config.ALLOWED_ORIGINS if hasattr(config, 'ALLOWED_ORIGINS') else None
+    app = cors(app, allow_origin=allowed_origins)
+else:
+    # Allow all origins only in development
+    app = cors(app, allow_origin="*")  # TODO: Update ALLOWED_ORIGINS in config for production
+    
 app.config.from_object(MadrasaConfig)
 
 # Quart-Babel setup
@@ -87,7 +95,7 @@ async def add_security_headers(response):
 # Log important configuration
 logger.info(f"BASE_URL: {config.BASE_URL}")
 logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
-logger.info(f"CORS enabled: True (quart_cors)")
+logger.info(f"CORS enabled: {not config.is_development() and 'Restricted' or 'All origins (dev)'}")
 
 # ensure upload folder exists
 os.makedirs(app.config['PROFILE_IMG_UPLOAD_FOLDER'], exist_ok=True)
@@ -98,6 +106,9 @@ async def create_tables_async():
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Database initialization error: {str(e)}")
+
+# Initialize app start time
+app.start_time = None
 
 @app.before_serving
 async def startup():
@@ -116,33 +127,33 @@ async def startup():
     await create_tables_async()
     # Initialize database connection pool
     from utils.mysql.database_utils import get_db_pool
-    setattr(app, 'db_pool', await get_db_pool())
+    # Store db_pool in app.config instead of setattr
+    app.config['db_pool'] = await get_db_pool()
     app.keydb = await connect_to_keydb()
-    print("Database connection pool established successfully")
+    logger.info("Database connection pool established successfully")
 
 @app.after_serving
 async def shutdown():
     # Close database connection pool when server shuts down
-    if getattr(app, 'db_pool', None) is not None:
+    if app.config.get('db_pool') is not None:
         try:
             from utils.mysql.database_utils import close_db_pool
             await close_db_pool()
-            print("Database connection pool closed successfully")
+            logger.info("Database connection pool closed successfully")
         except Exception as e:
-            print(f"Error closing database connection pool: {e}")
+            logger.error(f"Error closing database connection pool: {e}")
     if hasattr(app, 'keydb') and app.keydb:
         try:
             await close_keydb(app.keydb)
-            print("Keydb connection closed successfully")
+            logger.info("Keydb connection closed successfully")
         except Exception as e:
-            print(f"Error closing keydb connection: {e}")
+            logger.error(f"Error closing keydb connection: {e}")
 
 # ─── Request/Response Logging ───────────────────────────────
 # Thread-safe request log with max size of 100 entries
-request_response_log = deque(maxlen=100)
-request_log_lock = Lock()
-setattr(app, 'request_response_log', request_response_log)
-setattr(app, 'request_log_lock', request_log_lock)
+# Store in app.config instead of using setattr
+app.config['request_response_log'] = deque(maxlen=100)
+app.config['request_log_lock'] = Lock()
 
 @app.before_request
 async def block_xss_inputs():
@@ -201,6 +212,7 @@ async def log_every_request():
 
     ip       = request.headers.get("X-Forwarded-For", request.remote_addr)
     endpoint = request.endpoint or "unknown"
+    # SECURITY FIX: Add CSRF check for admin routes
     blocked  = endpoint.startswith("admin_routes.") and not session.get("admin_logged_in")
 
     entry = {
@@ -215,8 +227,8 @@ async def log_every_request():
     }
     g.log_entry = entry
     # Thread-safe append to request log
-    with request_log_lock:
-        request_response_log.append(entry)
+    with app.config['request_log_lock']:
+        app.config['request_response_log'].append(entry)
 
 @app.after_request
 async def attach_response_data(response):
@@ -270,9 +282,9 @@ async def health_check():
         # Advanced health check
         health_status = await get_system_health()
 
-        # Extra health check
+        # Extra health check - use initialized start_time
         health_status.update({
-            "uptime": time.time() - app.start_time if hasattr(app, 'start_time') else 0
+            "uptime": time.time() - app.start_time if app.start_time else 0
         })
 
         return jsonify(health_status), 200

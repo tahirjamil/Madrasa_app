@@ -214,8 +214,8 @@ async def info_admin():
     if config.is_testing():
         logs = []
     else:
-        request_log = getattr(current_app, 'request_response_log', deque())
-        request_log_lock = getattr(current_app, 'request_log_lock', Lock())
+        request_log = current_app.config.get('request_response_log', deque())
+        request_log_lock = current_app.config.get('request_log_lock', Lock())
         with request_log_lock:
             logs = list(request_log)[-100:]
 

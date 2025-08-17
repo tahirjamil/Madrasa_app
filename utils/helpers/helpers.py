@@ -1774,3 +1774,12 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
             await security_manager.track_suspicious_activity(ip_address, "Suspicious header detected")
     
     return True, ""
+
+# ─── MADRASA NAME VALIDATION ───────────────────────────────────────────────────
+
+def validate_madrasa_name(madrasa_name: str, ip_address: str) -> bool:
+    """Validate madrasa name"""
+    if madrasa_name not in config.MADRASA_NAMES_LIST:
+        log.critical(action="invalid_madrasa_name", trace_info=ip_address, message=f"Invalid madrasa name configured: {madrasa_name}", secure=False)
+        return False
+    return True

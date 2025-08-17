@@ -10,6 +10,7 @@ Version: 1.0.0
 """
 
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from functools import lru_cache
@@ -23,9 +24,12 @@ from utils.helpers.improved_functions import get_env_var
 # Load environment variables
 load_dotenv()
 
+# Setup logger for configuration module
+logger = logging.getLogger(__name__)
+
 
 class MadrasaApp(Quart):
-    start_time: float
+    start_time: float | None
     db: Optional[Connection]
     keydb: Optional[Union[Redis, 'TracedRedisPool']]  # type: ignore [Use string annotation to avoid import]
 
@@ -40,6 +44,9 @@ class MadrasaConfig:
     APP_NAME = "Madrasha Management System"
     SERVER_VERSION = "1.0.0"
     BASE_URL = "http://www.annurcomplex.com/"
+    
+    # CORS Configuration
+    ALLOWED_ORIGINS = get_env_var("ALLOWED_ORIGINS").split(",").strip()
     
     # ============================================================================
     # OBSERVABILITY / OPENTELEMETRY CONFIGURATION
@@ -79,7 +86,8 @@ class MadrasaConfig:
     # Session Configuration
     SESSION_COOKIE_DOMAIN = False  # Let Flask decide based on IP
     SESSION_COOKIE_SAMESITE = "Lax"
-    SESSION_COOKIE_SECURE = False # REMINDER: SET THIS TO TRUE IN PRODUCTION
+    # SECURITY: Check if in production mode and set secure cookies
+    SESSION_COOKIE_SECURE = not get_env_var("FLASK_ENV") == "development"
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1 * 3600  # 1 hour session timeout
     
@@ -143,8 +151,8 @@ class MadrasaConfig:
     MYSQL_USER = get_env_var("MYSQL_USER")
     MYSQL_PASSWORD = get_env_var("MYSQL_PASSWORD")
     MYSQL_DB = get_env_var("MYSQL_DB")
-    MYSQL_PORT = int(get_env_var("MYSQL_PORT"))
-    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None, required=False) # REMINDER: ADD THIS IN PRODUCTION
+    MYSQL_PORT = int(get_env_var("MYSQL_PORT", 3306))
+    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None, required=False)
     MYSQL_MIN_CONNECTIONS = 2
     MYSQL_MAX_CONNECTIONS = 10
     MYSQL_MAX_OVERFLOW = 5
@@ -263,7 +271,7 @@ class MadrasaConfig:
                           if not value or value in ['admin', 'default']]
         
         if missing_settings:
-            print(f"WARNING: Missing or default values for critical settings: {missing_settings}")
+            logger.warning(f"Missing or default values for critical settings: {missing_settings}")
     
     def _print_security_warnings(self) -> None:
         """Print security warnings for default or missing values."""
@@ -287,9 +295,17 @@ class MadrasaConfig:
         if not self.ENCRYPTION_KEY:
             warnings.append("ENCRYPTION_KEY not set. Data encryption may be compromised.")
         
-        # Print warnings
+        # Session security warning
+        if not self.SESSION_COOKIE_SECURE and not self.is_development():
+            warnings.append("SESSION_COOKIE_SECURE is False in non-development mode. This is a security risk!")
+            
+        # Redis password warning
+        if not self.REDIS_PASSWORD and not self.is_development():
+            warnings.append("REDIS_PASSWORD not set in non-development mode. Redis may be unsecured!")
+        
+        # Log warnings using logger instead of print
         for warning in warnings:
-            print(f"WARNING: {warning}")
+            logger.warning(warning)
 
     @lru_cache(maxsize=1)
     def get_project_root(self, marker_files: tuple[str, ...] = ("pyproject.toml", "app.py")) -> Path:
@@ -301,25 +317,31 @@ class MadrasaConfig:
         raise FileNotFoundError("Project root not found")
     
     @lru_cache(maxsize=1)
-    def get_database_url(self) -> Optional[str]:
+    def get_database_url(self, include_password: bool = False) -> Optional[str]:
         """Generate database connection URL."""
         try:
-            return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
+            if include_password:
+                return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
+            else:
+                return f"mysql://{self.MYSQL_USER}:***@{self.MYSQL_HOST}/{self.MYSQL_DB}"
         except Exception as e:
-            print(f"Error generating database connection URL: {e}")
+            logger.error(f"Error generating database connection URL: {e}")
             return None
 
     @lru_cache(maxsize=1)
-    def get_keydb_url(self) -> Optional[str]:
+    def get_keydb_url(self, include_password: bool = False) -> Optional[str]:
         """Generate keydb connection URL."""
         try:
             url = "redis://"
             if self.REDIS_PASSWORD:
-                url += f":{self.REDIS_PASSWORD}@"
+                if include_password:
+                    url += f":{self.REDIS_PASSWORD}@"
+                else:
+                    url += f":***@"
             url += f"{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
             return url
         except Exception as e:
-            print(f"Error generating keydb connection URL: {e}")
+            logger.error(f"Error generating keydb connection URL: {e}")
             return None
     
     @lru_cache(maxsize=1)
@@ -346,8 +368,8 @@ class ServerConfig:
     """Configuration for the server."""
 
     # Server Configuration
-    SERVER_HOST = get_env_var("SERVER_HOST")
-    SERVER_PORT = int(get_env_var("SERVER_PORT"))
+    SERVER_HOST = get_env_var("SERVER_HOST", "0.0.0.0")
+    SERVER_PORT = int(get_env_var("SERVER_PORT", 8000))
     SERVER_WORKERS = 1
     SERVER_TIMEOUT = 15
     SERVER_MAX_REQUESTS = 1000
@@ -368,7 +390,7 @@ class ServerConfig:
     RESTART_THRESHOLD = 3
 
     # Security Configuration
-    BIND_HOST = get_env_var("BIND_HOST")
+    BIND_HOST = get_env_var("BIND_HOST", "127.0.0.1")  # Add default
     ALLOWED_HOSTS = list(get_env_var("ALLOWED_HOSTS", "*").split(","))
     RATE_LIMIT = 100
     TIMEOUT = 30

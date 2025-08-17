@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import aiomysql
 from PIL import Image
 from quart import (
-    current_app, jsonify, request, send_from_directory, 
+    current_app, jsonify, request,
     Response, Request
 )
 from werkzeug.utils import secure_filename
@@ -19,10 +19,10 @@ from . import api
 from utils.mysql.database_utils import get_db_connection
 from config import config
 from utils.helpers.helpers import (
-    format_phone_number, get_client_info, get_id, insert_person, invalidate_cache_pattern, get_cache_key,
+    format_phone_number, get_client_info, get_id, insert_person, get_cache_key,
     rate_limit, cache_with_invalidation, secure_data, security_manager, set_cached_data, get_cached_data,
     encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
-    metrics_collector, validate_file_upload, validate_fullname, validate_request_origin,
+    validate_file_upload, validate_fullname, validate_madrasa_name, validate_request_origin
 )
 from quart_babel import gettext as _
 from utils.helpers.logger import log
@@ -59,6 +59,11 @@ async def add_person() -> Tuple[Response, int]:
         files = await request.files
         image = files.get('image')
         madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
+        
+        # SECURITY: Validate madrasa_name is in allowed list
+        if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
+            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+            return jsonify(response), status
         
         # Validate required fields using enhanced validation
         required_fields = ['name_en', 'phone', 'acc_type']
@@ -299,6 +304,11 @@ async def get_info() -> Tuple[Response, int]:
         madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get('updatedSince')
         
+        # SECURITY: Validate madrasa_name is in allowed list
+        if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
+            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+            return jsonify(response), status
+
         # Process timestamp using enhanced validation
         corrected_time = None
         if lastfetched:
@@ -383,6 +393,11 @@ async def get_routine() -> Tuple[Response, int]:
     madrasa_name = get_env_var("MADRASA_NAME")
     lastfetched = data.get("updatedSince")
     
+    # SECURITY: Validate madrasa_name is in allowed list
+    if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
+        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+        return jsonify(response), status
+
     # Process timestamp using enhanced validation
     corrected_time = None
     if lastfetched:
@@ -456,6 +471,11 @@ async def events() -> Tuple[Response, int]:
     lastfetched = data.get('updatedSince')
     DHAKA = ZoneInfo("Asia/Dhaka")
     
+    # SECURITY: Validate madrasa_name is in allowed list
+    if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
+        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+        return jsonify(response), status
+
     # Build SQL query
     sql = f"""
         SELECT 
@@ -552,6 +572,11 @@ async def get_exams() -> Tuple[Response, int]:
     madrasa_name = get_env_var("MADRASA_NAME")
     lastfetched = data.get("updatedSince")
     
+    # SECURITY: Validate madrasa_name is in allowed list
+    if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
+        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
+        return jsonify(response), status
+
     # Process timestamp using enhanced validation
     cutoff = None
     if lastfetched:

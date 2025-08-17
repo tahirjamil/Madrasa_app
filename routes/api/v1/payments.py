@@ -6,7 +6,7 @@ from . import api
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from utils.mysql.database_utils import get_db_connection
-from utils.helpers.helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation
+from utils.helpers.helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation, validate_madrasa_name
 from config import config
 from utils.helpers.logger import log
 from quart_babel import gettext as _
@@ -21,6 +21,11 @@ async def payments() -> Tuple[Response, int]:
     phone = data.get('phone') or ""
     fullname = (data.get('fullname') or 'guest').strip()
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
+    
+    # SECURITY: Validate madrasa_name is in allowed list
+    if not validate_madrasa_name(madrasa_name, phone):
+        response, status = send_json_response(_("Invalid configuration"), 500)
+        return jsonify(response), status
 
     if config.is_testing():
         fullname = config.DUMMY_FULLNAME
@@ -38,7 +43,7 @@ async def payments() -> Tuple[Response, int]:
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(f"""
             SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
-                pay.food, pay.due_months AS month, u.phone, u.fullname
+                pay.food, pay.due_months AS month, pay.tax, u.phone, u.fullname
                 FROM global.users u
                 JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
                 JOIN {madrasa_name}.payments pay ON pay.user_id = u.user_id

@@ -94,8 +94,10 @@ class ProcessManager:
         self.logger = logger
         self.process: Optional[subprocess.Popen] = None
         self.monitor_thread: Optional[threading.Thread] = None
+        self.log_stream_thread: Optional[threading.Thread] = None
         self.shutdown_event = threading.Event()
         self._lock = threading.Lock()
+        self._restart_lock = threading.Lock()  # Separate lock for restart counters
         self.restart_count = 0
         self.last_restart_time = 0
         self._last_dev_mode = False
@@ -172,7 +174,7 @@ class ProcessManager:
     def _stream_logs(self):
         """Stream server logs to console"""
         try:
-            while self.process and self.process.poll() is None:
+            while self.process and self.process.poll() is None and not self.shutdown_event.is_set():
                 if self.process.stdout:
                     line = self.process.stdout.readline()
                     if line:
@@ -208,27 +210,30 @@ class ProcessManager:
     
     def _handle_restart(self):
         """Handle server restart with backoff"""
-        current_time = time.time()
+        with self._restart_lock:
+            current_time = time.time()
+            
+            # Check restart threshold
+            if current_time - self.last_restart_time < 60:  # Within 1 minute
+                self.restart_count += 1
+            else:
+                self.restart_count = 1
+            
+            self.last_restart_time = current_time
+            
+            if self.restart_count > default_config.RESTART_THRESHOLD:
+                self.logger.critical(f"Too many restarts ({self.restart_count}). Stopping server.")
+                return
+            
+            # Exponential backoff
+            backoff_time = min(2 ** self.restart_count, 60)
+            self.logger.info(f"Restarting server in {backoff_time} seconds...")
         
-        # Check restart threshold
-        if current_time - self.last_restart_time < 60:  # Within 1 minute
-            self.restart_count += 1
-        else:
-            self.restart_count = 1
-        
-        self.last_restart_time = current_time
-        
-        if self.restart_count > default_config.RESTART_THRESHOLD:
-            self.logger.critical(f"Too many restarts ({self.restart_count}). Stopping server.")
-            return
-        
-        # Exponential backoff
-        backoff_time = min(2 ** self.restart_count, 60)
-        self.logger.info(f"Restarting server in {backoff_time} seconds...")
         time.sleep(backoff_time)
         
         if not self.shutdown_event.is_set():
-            self.start_server()
+            # FIX: Pass the dev_mode parameter
+            self.start_server(dev_mode=self._last_dev_mode)
     
     def stop_server(self, graceful: bool = True, *, for_restart: bool = False):
         """Stop the server process."""
@@ -258,9 +263,13 @@ class ProcessManager:
                     except Exception:
                         self.logger.error("Error cleaning up PID file")
             
+            # Wait for threads to finish
             if self.monitor_thread and self.monitor_thread.is_alive():
                 self.monitor_thread.join(timeout=2)
             
+            if self.log_stream_thread and self.log_stream_thread.is_alive():
+                self.log_stream_thread.join(timeout=2)
+                
             self.process = None
 
     def restart_server(self, *, graceful: bool = True) -> bool:
@@ -349,7 +358,8 @@ class AdvancedServerRunner:
                         elif pid == 0:
                             # Child process - continue
                             os.setsid()  # Create new session
-                            os.umask(0)  # Set file creation mask
+                            # SECURITY FIX: Use safer umask value (022 = owner write, group/other read)
+                            os.umask(0o022)  # Changed from 0 to 0o022
                             # Redirect standard file descriptors
                             sys.stdout.flush()
                             sys.stderr.flush()
@@ -506,9 +516,16 @@ def main():
             try:
                 with open(runner.config.pid_file, 'r') as f:
                     pid = int(f.read().strip())
-                sig = getattr(signal, 'SIGUSR1') if args.restart else getattr(signal, 'SIGUSR2')
-                os.kill(pid, sig)
-                print("Restart signal sent" + (" (graceful)" if args.restart else " (force)"))
+                # FIX: Handle Windows compatibility
+                if platform.system() == "Windows":
+                    # On Windows, use SIGTERM for both restart types
+                    os.kill(pid, signal.SIGTERM)
+                    print("Restart signal sent (Windows: using SIGTERM)")
+                else:
+                    # On Unix-like systems, use SIGUSR1/SIGUSR2
+                    sig = signal.SIGUSR1 if args.restart else signal.SIGUSR2
+                    os.kill(pid, sig)
+                    print("Restart signal sent" + (" (graceful)" if args.restart else " (force)"))
             except Exception as e:
                 print(f"Error restarting server: {e}")
         else:

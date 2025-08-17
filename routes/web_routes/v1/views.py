@@ -103,9 +103,9 @@ async def contact_post(
         from utils.helpers.logger import log
         log.error(action="contact_form_error", trace_info="web", message=str(e), secure=False)
         # Flash message is not directly available in FastAPI, so we'll redirect with a query parameter
-        return RedirectResponse(url=request.url + "?error=true", status_code=303)
+        return RedirectResponse(url=str(request.url) + "?error=true", status_code=303)
 
-    return RedirectResponse(url=request.url + "?success=true", status_code=303)
+    return RedirectResponse(url=str(request.url) + "?success=true", status_code=303)
 
 @web_routes.get('/privacy', response_class=HTMLResponse)
 @handle_async_errors

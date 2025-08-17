@@ -114,3 +114,45 @@ This PR migrates the Madrasa Management System from Quart to FastAPI while prese
 ## Related Documentation
 
 See `MIGRATION_NOTES.md` for detailed technical notes about the migration.
+<<<<<<< Current (Your changes)
+=======
+
+## Testing Recommendations
+
+1. **Unit Tests**: Update test suite to use httpx.AsyncClient
+2. **Integration Tests**: Test database connections and Redis cache
+3. **Load Testing**: Verify performance with uvicorn workers
+4. **Security Testing**: Validate authentication and authorization flows
+
+## Template Migration
+
+### Changes Made to Support FastAPI Templates
+
+1. **Route Names Added**: All routes now have explicit names for template `url_for()` compatibility
+   - Admin routes: admin_dashboard, login, admin_logout, view_logs, logs_data, info_page, info_data_admin, exam_results, members, notice_page, routines, events, madrasa_pictures, exams, interactions, power_management
+   - Web routes: home, donate, contact, privacy, terms
+   - API routes: manage_account
+
+2. **Template Helper Functions**: Implemented in `utils/helpers/fastapi_helpers.py`
+   - `url_for()`: Custom mapping function that handles static files, admin routes, API routes, and web routes
+   - `get_flashed_messages()`: Returns empty list (placeholder)
+   - `csrf_token()`: Returns empty string (CSRF handled via middleware)
+
+3. **Template Updates**:
+   - Fixed incorrect route reference: Changed `api.pay_sslcommerz` to `api.process_payment` in donate.html
+   - All templates now use the centralized Jinja2Templates instance
+   - Template context includes request object for all renders
+
+4. **No Changes Required**: Templates already use `{{ url_for(...) }}` syntax which works with our custom implementation
+
+### Template Testing Checklist
+
+- [ ] All admin pages render correctly
+- [ ] Navigation links work properly
+- [ ] Forms submit to correct endpoints
+- [ ] Static assets (CSS, JS, images) load correctly
+- [ ] Flash messages display when implemented
+- [ ] CSRF tokens are included in forms
+
+## Deployment Checklist
+>>>>>>> Incoming (Background Agent changes)

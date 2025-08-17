@@ -210,9 +210,107 @@ def setup_template_globals(app):
         elif name == "uploads":
             filename = path_params.get("filename", "")
             return f"/uploads/{filename}"
-        # For other routes, you'd need the request context
-        # This is a fallback - the request.url_for should be used when available
-        return f"/{name}"
+        
+        # Handle admin routes with prefix
+        if name.startswith("admin_routes."):
+            route_name = name.replace("admin_routes.", "")
+            # Map route names to paths
+            admin_route_map = {
+                "admin_dashboard": "/admin/",
+                "login": "/admin/login",
+                "admin_logout": "/admin/logout",
+                "view_logs": "/admin/logs",
+                "logs_data": "/admin/logs/data",
+                "info_page": "/admin/info",
+                "info_data_admin": "/admin/info/data",
+                "exam_results": "/admin/exam_results",
+                "delete_exam_result": "/admin/exam_results/delete",
+                "members": "/admin/members",
+                "manage_member": "/admin/members/manage",
+                "delete_pending_member": "/admin/members/delete",
+                "notice_page": "/admin/notice",
+                "delete_notice": "/admin/notice/delete",
+                "routines": "/admin/routines",
+                "add_routine": "/admin/routines/add",
+                "events": "/admin/events",
+                "add_exam": "/admin/events/exams/add",
+                "madrasa_pictures": "/admin/madrasa_pictures",
+                "delete_picture": "/admin/pictures/delete",
+                "exams": "/admin/admin/events/exams",
+                "interactions": "/admin/interactions",
+                "power_management": "/admin/power",
+                "modify_payment": "/admin/payment/modify",
+            }
+            
+            base_path = admin_route_map.get(route_name, f"/admin/{route_name}")
+            
+            # Handle path parameters
+            if path_params:
+                # For query parameters
+                query_params = []
+                for key, value in path_params.items():
+                    if key not in ["filename", "verify_people_id", "user_id", "modify"]:
+                        query_params.append(f"{key}={value}")
+                
+                # Special handling for specific routes
+                if route_name == "delete_exam_result" and "filename" in path_params:
+                    return f"{base_path}/{path_params['filename']}"
+                elif route_name == "delete_notice" and "filename" in path_params:
+                    return f"{base_path}/{path_params['filename']}"
+                elif route_name == "delete_picture" and "filename" in path_params:
+                    return f"{base_path}/{path_params['filename']}"
+                elif route_name == "delete_pending_member" and "verify_people_id" in path_params:
+                    return f"{base_path}/{path_params['verify_people_id']}"
+                elif route_name == "manage_member" and "modify" in path_params:
+                    base_path = f"/admin/members/{path_params['modify']}"
+                    if "user_id" in path_params:
+                        query_params.append(f"user_id={path_params['user_id']}")
+                elif route_name == "modify_payment" and "modify" in path_params:
+                    base_path = f"/admin/payment/{path_params['modify']}"
+                    if "user_id" in path_params:
+                        query_params.append(f"user_id={path_params['user_id']}")
+                
+                if query_params:
+                    return f"{base_path}?{'&'.join(query_params)}"
+            
+            return base_path
+        
+        # Handle API routes
+        elif name.startswith("api."):
+            route_name = name.replace("api.", "")
+            api_route_map = {
+                "manage_account": "/api/v1/account/manage",
+                "process_payment": "/api/v1/process_payment",
+                "due_payments": "/api/v1/due_payments",
+            }
+            base_path = api_route_map.get(route_name, f"/api/v1/{route_name}")
+            
+            # Handle query parameters
+            if path_params:
+                query_params = []
+                for key, value in path_params.items():
+                    if key == "page_type":
+                        # For manage_account, page_type is in the path
+                        base_path = base_path.replace("/manage", f"/{value}")
+                    else:
+                        query_params.append(f"{key}={value}")
+                
+                if query_params:
+                    return f"{base_path}?{'&'.join(query_params)}"
+            
+            return base_path
+        
+        # For other routes (web routes)
+        else:
+            # Direct mapping for known routes
+            route_map = {
+                "home": "/",
+                "donate": "/donate",
+                "contact": "/contact",
+                "privacy": "/privacy",
+                "terms": "/terms",
+            }
+            return route_map.get(name, f"/{name}")
     
     def get_flashed_messages(with_categories=False):
         """FastAPI compatible flash messages - returns empty list for now"""

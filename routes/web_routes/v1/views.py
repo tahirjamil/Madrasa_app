@@ -19,21 +19,25 @@ class ContactForm(BaseModel):
     email_or_phone: str
     description: str
 
-@web_routes.get("/", response_class=HTMLResponse)
+@web_routes.get("/", response_class=HTMLResponse, name="home")
 async def home(request: Request):
+    from . import url_for
     return templates.TemplateResponse("home.html", {
         "request": request,
-        "current_year": datetime.now().year
+        "current_year": datetime.now().year,
+        "url_for": url_for
     })
 
-@web_routes.get("/donate", response_class=HTMLResponse)
+@web_routes.get("/donate", response_class=HTMLResponse, name="donate")
 async def donate(request: Request):
+    from . import url_for
     return templates.TemplateResponse("donate.html", {
         "request": request,
-        "current_year": datetime.now().year
+        "current_year": datetime.now().year,
+        "url_for": url_for
     })
 
-@web_routes.get('/contact', response_class=HTMLResponse)
+@web_routes.get('/contact', response_class=HTMLResponse, name="contact")
 @handle_async_errors
 @rate_limit(max_requests=50, window=60)  # 50 requests per minute to prevent spam
 async def contact_get(request: Request):
@@ -45,13 +49,15 @@ async def contact_get(request: Request):
     phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
     emails = [e.strip() for e in raw_emails.split(',') if e.strip()]
     
+    from . import url_for
     return templates.TemplateResponse("contact.html", {
         "request": request,
         "current_year": datetime.now().year,
         "business_phones": phones,
         "business_emails": emails,
         "business_email": emails[0] if emails else '',
-        "business_phone": phones[0] if phones else ''
+        "business_phone": phones[0] if phones else '',
+        "url_for": url_for
     })
 
 @web_routes.post('/contact')
@@ -107,7 +113,7 @@ async def contact_post(
 
     return RedirectResponse(url=str(request.url) + "?success=true", status_code=303)
 
-@web_routes.get('/privacy', response_class=HTMLResponse)
+@web_routes.get('/privacy', response_class=HTMLResponse, name="privacy")
 @handle_async_errors
 async def privacy(request: Request):
     # Construct the full path to the markdown file
@@ -146,15 +152,17 @@ async def privacy(request: Request):
         from utils.helpers.logger import log
         log.error(action="privacy_policy_error", trace_info="web", message=str(e), secure=False)
     
+    from . import url_for
     return templates.TemplateResponse('privacy.html', {
         "request": request,
         "title": title,
         "content": content,
         "last_updated": last_updated,
-        "current_year": datetime.now().year
+        "current_year": datetime.now().year,
+        "url_for": url_for
     })
 
-@web_routes.get('/terms', response_class=HTMLResponse)
+@web_routes.get('/terms', response_class=HTMLResponse, name="terms")
 @handle_async_errors
 async def terms(request: Request):
     # Construct the full path to the markdown file
@@ -193,12 +201,14 @@ async def terms(request: Request):
         from utils.helpers.logger import log
         log.error(action="terms_error", trace_info="web", message=str(e), secure=False)
     
+    from . import url_for
     return templates.TemplateResponse('terms.html', {
         "request": request,
         "title": title,
         "content": content,
         "last_updated": last_updated,
-        "current_year": datetime.now().year
+        "current_year": datetime.now().year,
+        "url_for": url_for
     })
 
 @web_routes.get("/account/{page_type}", response_class=HTMLResponse)

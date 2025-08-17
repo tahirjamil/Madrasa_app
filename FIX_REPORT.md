@@ -137,7 +137,18 @@ Fixed routes that were using `request` without declaring it:
 - **Issue**: `receive` parameter in `Request` constructor expected an async function returning `Message` but was receiving a lambda returning a dictionary
 - **Fix**: 
   - Changed lambda function to proper async function in `RequestLoggingMiddleware`
-  - Updated `receive=lambda: {"type": "http.request", "body": body}` to `async def receive(): return {"type": "http.request", "body": body}`
+  - Updated line 255: `async def receive(): return {"type": "http.request", "body": body}`
+- **Status**: ✅ Complete
+
+### 9. **Fixed URL Generation in Templates (web_routes and templates)**
+- **Issue**: Templates were using `url_for('web_routes.home')` which is a Flask/Quart pattern, but FastAPI doesn't have built-in `url_for` function
+- **Error**: "No route exists for name 'web_routes.home' and params ''"
+- **Fix**: 
+  - Added route names to all web routes (`name="home"`, `name="donate"`, etc.)
+  - Created custom `url_for` function in `routes/web_routes/v1/__init__.py` that maps route names to paths
+  - Updated all template rendering functions to pass `url_for` function to templates
+  - Updated templates to use `url_for('home')` instead of `url_for('web_routes.home')`
+  - Fixed templates: `base.html`, `404.html`
 - **Status**: ✅ Complete
 
 ## Final Verification

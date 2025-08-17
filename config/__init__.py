@@ -1,3 +1,3 @@
-from .config import config, server_config, MadrasaConfig, MadrasaApp, ServerConfig
+from .config import config, server_config, MadrasaConfig, ServerConfig
 
-__all__ = ["config", "MadrasaConfig", "MadrasaApp", "server_config", "ServerConfig"]
+__all__ = ["config", "MadrasaConfig", "server_config", "ServerConfig"]

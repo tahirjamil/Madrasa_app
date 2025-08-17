@@ -1,0 +1,69 @@
+Metadata-Version: 2.4
+Name: madrasa-app
+Version: 1.0.0
+Summary: A comprehensive Madrasa management system with admin dashboard, member management, and payment tracking
+Author-email: Tahir Jamil <tahirjamil@example.com>, Tareq Jamil <tareqjamil@example.com>
+Maintainer-email: Tahir Jamil <tahirjamil@example.com>, Tareq Jamil <tareqjamil@example.com>
+License: MIT
+Project-URL: Homepage, https://github.com/tahirjamil/madrasa-app
+Project-URL: Documentation, https://madrasa-app.readthedocs.io/
+Project-URL: Repository, https://github.com/tahirjamil/madrasa-app.git
+Project-URL: Bug Tracker, https://github.com/tahirjamil/madrasa-app/issues
+Project-URL: Changelog, https://github.com/tahirjamil/madrasa-app/blob/main/CHANGELOG.md
+Keywords: madrasa,education,management,islamic,school,admin,dashboard
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Education
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Education
+Classifier: Topic :: Internet :: WWW/HTTP :: Dynamic Content
+Classifier: Topic :: Internet :: WWW/HTTP :: WSGI :: Application
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi[all]>=0.109.0
+Requires-Dist: uvicorn[standard]>=0.25.0
+Requires-Dist: pydantic>=2.5.0
+Requires-Dist: pydantic-settings>=2.1.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: aiomysql
+Requires-Dist: redis[hiredis]>=5.0.0
+Requires-Dist: Babel
+Requires-Dist: werkzeug
+Requires-Dist: requests
+Requires-Dist: python-dotenv
+Requires-Dist: bcrypt
+Requires-Dist: phonenumbers
+Requires-Dist: Pillow
+Requires-Dist: markdown
+Requires-Dist: cryptography
+Requires-Dist: psutil
+Requires-Dist: watchfiles
+Requires-Dist: opentelemetry-sdk
+Requires-Dist: opentelemetry-exporter-otlp
+Requires-Dist: opentelemetry-instrumentation-asgi
+Requires-Dist: opentelemetry-instrumentation-fastapi
+Requires-Dist: docker
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: flake8>=6.0.0; extra == "dev"
+Requires-Dist: mypy>=1.5.0; extra == "dev"
+Requires-Dist: pre-commit>=3.3.0; extra == "dev"
+Provides-Extra: test
+Requires-Dist: pytest>=7.4.0; extra == "test"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "test"
+Requires-Dist: pytest-cov>=4.1.0; extra == "test"
+Requires-Dist: httpx>=0.24.0; extra == "test"
+Provides-Extra: docs
+Requires-Dist: sphinx>=7.0.0; extra == "docs"
+Requires-Dist: sphinx-rtd-theme>=1.3.0; extra == "docs"
+Requires-Dist: myst-parser>=2.0.0; extra == "docs"

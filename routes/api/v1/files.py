@@ -1,27 +1,24 @@
 # ─── Enhanced File Serving Routes ───────────────────────────────────────────
-from quart import Response, jsonify, send_from_directory, current_app
-from typing import Tuple
+from fastapi import Request, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
+from typing import Optional, Tuple
 import os
 import re
-from werkzeug.utils import secure_filename
 
 from utils.helpers.improved_functions import send_json_response
+from utils.helpers.fastapi_helpers import ClientInfo, validate_device_dependency, handle_async_errors
 from . import api
-from utils.helpers.helpers import (
-    get_client_info, handle_async_errors
-)
 from utils.helpers.logger import log
 from config import config
-from quart_babel import gettext as _
 
 ERROR_MESSAGES = {
-        'file_not_found': _("File not found"),
-        'invalid_folder': _("Invalid folder name"),
-        'invalid_gender': _("Invalid gender parameter"),
-        'file_too_large': _("File size exceeds maximum allowed size"),
-        'invalid_file_type': _("Invalid file type"),
-        'unauthorized': _("Unauthorized access"),
-        'internal_error': _("An internal error occurred"),
+        'file_not_found': "File not found",
+        'invalid_folder': "Invalid folder name",
+        'invalid_gender': "Invalid gender parameter",
+        'file_too_large': "File size exceeds maximum allowed size",
+        'invalid_file_type': "Invalid file type",
+        'unauthorized': "Unauthorized access",
+        'internal_error': "An internal error occurred",
     }
 
 # ─── Security and Validation Functions ───────────────────────────────────────
@@ -41,7 +38,12 @@ def sanitize_filename(filename: str) -> str:
     if not filename.strip():
         return "default"
     
-    return secure_filename(filename)
+    # Use a simple secure filename implementation
+    # Remove non-alphanumeric characters except dots, hyphens, and underscores
+    filename = re.sub(r'[^\w\s.-]', '', filename).strip()
+    filename = re.sub(r'[-\s]+', '-', filename)
+    
+    return filename
 
 def validate_folder_access(folder: str, allowed_folders: list) -> bool:
     """Validate folder access against allowed folders list"""

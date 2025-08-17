@@ -24,7 +24,6 @@ class ServerConfig:
         self.pid_file = self.base_dir / "server.pid"
         self.log_dir = self.base_dir / "logs"
         self.temp_dir = self.base_dir / "temp"
-        self.hypercorn_config = self.config_dir / "hosting/hypercorn.toml"
         
         # Ensure directories exist
         self.log_dir.mkdir(exist_ok=True)
@@ -110,11 +109,33 @@ class ProcessManager:
             current_os = platform.system()
             self.logger.info(f"Starting server on {current_os}")
             
-            # Use Hypercorn for all platforms
+            # Use Uvicorn for FastAPI
+            host = getattr(default_config, 'SERVER_HOST', '0.0.0.0')
+            port = getattr(default_config, 'SERVER_PORT', 8000)
+            workers = getattr(default_config, 'WORKER_COUNT', 1)
+            
             if dev_mode:
-                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", self.config.hypercorn_config, "--log-level", "debug", "--access-logformat", "%(h)s %(l)s %(u)s %(t)s \"%(r)s\" %(s)s %(b)s \"%(f)s\" \"%(a)s\""]
+                # Development mode - single worker with reload
+                cmd = [
+                    sys.executable, "-m", "uvicorn", 
+                    "app:app",
+                    "--host", host,
+                    "--port", str(port),
+                    "--reload",
+                    "--log-level", "debug",
+                    "--access-log"
+                ]
             else:
-                cmd = [sys.executable, "-m", "hypercorn", "app:app", "--config", self.config.hypercorn_config]
+                # Production mode - multiple workers
+                cmd = [
+                    sys.executable, "-m", "uvicorn", 
+                    "app:app",
+                    "--host", host,
+                    "--port", str(port),
+                    "--workers", str(workers),
+                    "--log-level", getattr(default_config, 'LOGGING_LEVEL', 'info').lower(),
+                    "--access-log"
+                ]
             
             # Set environment variables
             env = os.environ.copy()
@@ -442,7 +463,7 @@ class AdvancedServerRunner:
                 return False
             
             # Check required files
-            required_files = ["app.py", self.config.hypercorn_config]
+            required_files = ["app.py"]  # Removed hypercorn config check
             for file in required_files:
                 if not (self.config.base_dir / file).exists():
                     self.logger.error(f"Required file not found: {file}")

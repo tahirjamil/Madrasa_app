@@ -1,31 +1,51 @@
-from typing import Tuple
-from quart import Response, request, jsonify
+from typing import Optional
+from fastapi import Request, Depends
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from utils.helpers.improved_functions import get_env_var, send_json_response
+from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors
 from . import api
 import aiomysql, os, time, requests
 from datetime import datetime, timezone
 from utils.mysql.database_utils import get_db_connection
-from utils.helpers.helpers import calculate_fees, format_phone_number, handle_async_errors, cache_with_invalidation, validate_madrasa_name
+from utils.helpers.helpers import calculate_fees, format_phone_number, cache_with_invalidation, validate_madrasa_name
 from config import config
 from utils.helpers.logger import log
-from quart_babel import gettext as _
+
+# ─── Pydantic Models ───────────────────────────────────────────
+class PaymentRequest(BaseAuthRequest):
+    """Payment request model"""
+    pass
+
+class PaymentData(BaseModel):
+    """Payment data model for payment processing"""
+    full_name: str
+    phone: str
+    total_amount: float
+    bank_ac: str
+    bank_name: str
+    description: str
+    transaction_id: str
 
 # ====== Payment Fee Info ======
-@api.route('/due_payments', methods=['POST']) # type: ignore
+@api.post('/due_payments')
 @cache_with_invalidation
 @handle_async_errors
-async def payments() -> Tuple[Response, int]:
+async def payments(
+    request: Request,
+    data: PaymentRequest,
+    client_info: ClientInfo = Depends(validate_device_dependency)
+) -> JSONResponse:
 
-    data = await request.get_json()
-    phone = data.get('phone') or ""
-    fullname = (data.get('fullname') or 'guest').strip()
+    phone = data.phone
+    fullname = data.fullname.strip()
     madrasa_name = get_env_var("MADRASA_NAME", "annur")  # Default to annur if not set
     
     # SECURITY: Validate madrasa_name is in allowed list
     if not validate_madrasa_name(madrasa_name, phone):
-        response, status = send_json_response(_("Invalid configuration"), 500)
-        return jsonify(response), status
+        response, status = send_json_response("Invalid configuration", 500)
+        return JSONResponse(content=response, status_code=status)
 
     if config.is_testing():
         fullname = config.DUMMY_FULLNAME
@@ -34,13 +54,11 @@ async def payments() -> Tuple[Response, int]:
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
         response, status = send_json_response(msg, 400)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
 
     async with get_db_connection() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute(f"""
             SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
                 pay.food, pay.due_months AS month, pay.tax, u.phone, u.fullname
@@ -53,8 +71,8 @@ async def payments() -> Tuple[Response, int]:
 
             if not result:
                 log.error(action="payments_user_not_found", trace_info=formatted_phone, message=f"User {fullname} not found", secure=True)
-                response, status = send_json_response(_("User not found for payments"), 404)
-                return jsonify(response), status
+                response, status = send_json_response("User not found for payments", 404)
+                return JSONResponse(content=response, status_code=status)
 
 
     # Extract data
@@ -69,265 +87,202 @@ async def payments() -> Tuple[Response, int]:
     # Calculate fees
     fees: float = calculate_fees(class_name, gender, special_food, reduced_fee, food, tax)
 
-    return jsonify({"amount": fees, "month": due_months}), 200
+    return JSONResponse(content={"amount": fees, "month": due_months}, status_code=200)
 
 
 # ====== Get Transaction History ======
-@api.route('/get_transactions', methods=['POST']) # type: ignore
+@api.post('/transaction_history')
 @cache_with_invalidation
 @handle_async_errors
-async def get_transactions():
-    data = await request.get_json() or {}
-    phone            = data.get('phone')
-    fullname         = data.get('fullname')
-    transaction_type = data.get('type')
-    lastfetched      = data.get('updatedSince')
+async def transaction_history(
+    request: Request,
+    data: PaymentRequest,
+    client_info: ClientInfo = Depends(validate_device_dependency)
+) -> JSONResponse:
+
+    phone = data.phone
+    fullname = data.fullname
+    madrasa_name = get_env_var("MADRASA_NAME", "annur")
     
+    # SECURITY: Validate madrasa_name is in allowed list
+    if not validate_madrasa_name(madrasa_name, phone):
+        response, status = send_json_response("Invalid configuration", 500)
+        return JSONResponse(content=response, status_code=status)
+
     if config.is_testing():
         fullname = config.DUMMY_FULLNAME
         phone = config.DUMMY_PHONE
 
-    if not phone or not fullname or not transaction_type:
-        log.error(action="payment_missing_fields", trace_info=phone or "", message="Phone, fullname or transaction type missing", secure=True)
-        response, status = send_json_response(_("Phone, fullname and payment type required"), 400)
-        return jsonify(response), status
-
-    fullname = fullname.strip().lower()
-    formatted_phone, msg = format_phone_number(phone)
-    if not formatted_phone:
-        log.error(action="payment_invalid_phone", trace_info=phone, message="Invalid phone format", secure=True)
-        response, status = send_json_response(_("Invalid phone number"), 400)
-        return jsonify(response), status
-
-    # Build base query and params
-    sql = """
-      SELECT
-        t.type,
-        t.month     AS details,
-        t.amount,
-        t.date
-      FROM global.transactions t
-      JOIN global.users        u ON t.user_id = u.user_id
-      WHERE u.phone = %s
-        AND LOWER(u.fullname) = LOWER(%s)
-        AND t.type = %s
-    """
-    params = [formatted_phone, fullname, transaction_type]
-
-    # If updatedSince provided, parse & add to WHERE
-    if lastfetched:
-        try:
-            cutoff = datetime.fromisoformat(
-                lastfetched.replace("Z", "+00:00")
-            )
-            sql += " AND t.updated_at > %s"
-            params.append(cutoff)
-        except ValueError:
-            log.error(action="payment_invalid_timestamp", trace_info=formatted_phone, message=lastfetched, secure=True)
-            response, status = send_json_response(_("Invalid updatedSince format"), 400)
-            return jsonify(response), status
-
-    # Final ordering
-    sql += " ORDER BY t.date DESC"
-
-    # Execute
-    async with get_db_connection() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute(sql, params)
-            transactions = await cursor.fetchall()
-
-    # Handle no‐results
-    if not transactions:
-        response, status = send_json_response(_("No transactions found"), 404)
-        return jsonify(response), status
-
-    # Normalize dates to ISO-8601 Z format
-    for tx in transactions:
-        d = tx.get("date")
-        if isinstance(d, datetime):
-            tx["date"] = d.astimezone(timezone.utc) \
-                         .isoformat().replace("+00:00","Z")
-                         
-    # Return payload
-    return jsonify({
-        "transactions": transactions,
-        "lastSyncedAt": datetime.now(timezone.utc)
-                              .isoformat().replace("+00:00","Z")
-    }), 200
-
-@api.route('/pay_sslcommerz', methods=['POST'])
-@handle_async_errors
-async def pay_sslcommerz():
-    data = await request.get_json() or {}
-    phone: str        = data.get('phone') or "01XXXXXXXXX"
-    fullname: str     = (data.get('fullname') or 'guest').strip()
-    amount: float     = float(data.get('amount') or 0.0)
-    months: int       = int(data.get('months') or 0)
-    transaction_type: str = data.get('type') or ""
-    email: str        = (data.get('email') or '').strip()
-
-    # fallback dummy email .
-    if not email:
-       email = config.DUMMY_EMAIL
-
-    if not transaction_type or amount == 0.0:
-        log.error(action="payment_missing_fields", trace_info=phone, message="Missing payment info", secure=True)
-        response, status = send_json_response(_("Amount and payment type are required"), 400)
-        return jsonify(response), status
-
-    tran_id    = f"ssl_{int(time.time())}"
-    store_id   = get_env_var("SSLCOMMERZ_STORE_ID")
-    store_pass = get_env_var("SSLCOMMERZ_STORE_PASS")
-    if not store_id or not store_pass:
-        log.warning(action="sslcommerz_config_missing", trace_info=phone, message="SSLCommerz credentials not set", secure=True)
-        response, status = send_json_response(_("Payment gateway is not properly configured"), 500)
-        return jsonify(response), status
-
-    payload = {
-        # merchant + txn
-        "store_id":      store_id,
-        "store_passwd":  store_pass,
-        "total_amount":  amount,
-        "currency":      "BDT",
-        "tran_id":       tran_id,
-        "success_url":   f"{config.BASE_URL}payments/payment_success_ssl",
-        "fail_url":      f"{config.BASE_URL}payments/payment_fail_ssl",
-        "cancel_url":    f"{config.BASE_URL}payments/payment_cancel_ssl",   # new
-        "ipn_url":       f"{config.BASE_URL}payments/payment_ipn",          # optional
-
-        # product
-        "product_name":      transaction_type.capitalize(),
-        "product_category":  transaction_type.capitalize(),
-        "product_profile":   "non-physical-goods",
-
-        # customer (Mirpur defaults)
-        "cus_name":    fullname,
-        "cus_email":   email,
-        "cus_add1":    "Mirpur 10",
-        "cus_add2":    "", 
-        "cus_city":    "Dhaka",
-        "cus_postcode":"1216",
-        "cus_country": "Bangladesh",
-        "cus_phone":   phone,
-
-        # passthrough fields
-        "value_a": phone,
-        "value_b": fullname,
-        "value_c": months or '',
-        "value_d": transaction_type,
-        "value_e": tran_id,
-
-        # others
-        "emi_option": 0,
-        "shipping_method": "NO",
-        "num_of_item": 1,
-        "weight_of_items": 0.5,
-        "logistic_pickup_id": "madrasaid123",
-        "logistic_delivery_type": "madrasadilevery_by_air"
-    }
-
-    try:
-        log.info(action="sslcommerz_request", trace_info=phone, message=f"Initiating {tran_id} for {amount}", secure=True)
-        r   = requests.post(
-            'https://sandbox.sslcommerz.com/gwprocess/v4/api.php',
-            data=payload,
-            timeout=10
-        )
-        res = r.json()
-    except Exception as e:
-        log.critical(action="sslcommerz_request_error", trace_info=phone, message=str(e), secure=True)
-        response, status = send_json_response(_("Payment gateway is currently unreachable"), 502)
-        return jsonify(response), status
-
-    if res.get('status') == 'SUCCESS':
-        response, status = send_json_response(res.get('GatewayPageURL'), 200)
-        return jsonify(response), status
-    else:
-        log.critical(action="sslcommerz_initiation_failed", trace_info=phone, message=f"{res.get('status')} – {res.get('failedreason')}", secure=True)
-        response, status = send_json_response(_("Payment initiation failed"), 400)
-        response.update({"reason": res.get('failedreason')})
-        return jsonify(response), status
-
-
-@api.route('/payments/<return_type>', methods=['POST'])
-@handle_async_errors
-async def payments_success_ssl(return_type):
-    valid_types = ['payment_success_ssl', 'payment_fail_ssl', 'payment_cancel_ssl', 'payment_ipn_ssl']
-    if return_type not in valid_types:
-        response, status = send_json_response(_("Invalid return type"), 400)
-        return jsonify(response), status
-    if return_type == 'payment_fail_ssl':
-        response, status = send_json_response(_("Payment failed"), 400)
-        return jsonify(response), status
-    elif return_type == 'payment_cancel_ssl':
-        response, status = send_json_response(_("Payment cancelled"), 400)
-        return jsonify(response), status
-    
-    data: dict     = (await request.form).to_dict() or {}
-    phone: str      = str(data.get('value_a'))
-    fullname: str   = str(data.get('value_b'))
-    amount: float   = float(data.get('amount') or 0.0)
-    months: int     = int(data.get('value_c') or 0)
-    transaction_type: str = data.get('value_d') or ""
-    tran_id: str    = data.get('value_e') or ""
-
-    # Ensure we received our transaction identifier back
-    if not tran_id:
-        log.error(action="sslcommerz_callback_no_tranid", trace_info=phone, message="Missing value_e", secure=True)
-        response, status = send_json_response(_("Missing transaction identifier"), 400)
-        return jsonify(response), status
-        
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
         response, status = send_json_response(msg, 400)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
-    # 1️⃣ Validate callback with SSLCommerz
-    store_id   = get_env_var("SSLCOMMERZ_STORE_ID")
-    store_pass = get_env_var("SSLCOMMERZ_STORE_PASS")
-    try:
-        validation = requests.get(
-            'https://sandbox.sslcommerz.com/validator/api/validationserverAPI',
-            params={
-                'tran_id':      tran_id,
-                'store_id':     store_id,
-                'store_passwd': store_pass
-            },
-            timeout=10
-        ).json()
-        if validation.get('status') != 'VALID':
-            log.warning(action="sslcommerz_validation_failed", trace_info=formatted_phone, message=validation.get('status'), secure=True)
-            response, status = send_json_response(_("Payment validation failed"), 400)
-            return jsonify(response), status
-    except Exception as e:
-        log.critical(action="sslcommerz_validation_error", trace_info=formatted_phone, message=str(e), secure=True)
-        response, status = send_json_response(_("Error during payments validation"), 502)
-        return jsonify(response), status
-
-        
-    # 2️⃣ Record transaction directly in the database
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             
-            # Fetch the user's internal ID
+            # Get user_id first
             await cursor.execute(
-                "SELECT user_id FROM global.users WHERE phone=%s AND LOWER(fullname)=LOWER(%s)",
+                "SELECT user_id FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                 (formatted_phone, fullname)
             )
-            user = await cursor.fetchone()
-            if not user:
-                log.error(action="transaction_user_not_found", trace_info=formatted_phone, message=fullname, secure=True)
-                response, status = send_json_response(_("User not found for payments"), 404)
-                return jsonify(response), status
-                
-            # Insert the new transaction
-            await cursor.execute(
-                "INSERT INTO global.transactions (user_id, type, month, amount, date) "
-                "VALUES (%s, %s, %s, %s, CURDATE())",
-                (user['user_id'], transaction_type, months or '', amount)
-            )
+            user_result = await cursor.fetchone()
             
-    response, status = send_json_response(_("Payment recorded successfully"), 200)
-    return jsonify(response), status
+            if not user_result:
+                response, status = send_json_response("User not found", 404)
+                return JSONResponse(content=response, status_code=status)
+            
+            # Get transaction history
+            await cursor.execute(f"""
+                SELECT 
+                    pt.transaction_id,
+                    pt.amount,
+                    pt.bank_ac,
+                    pt.bank_name,
+                    pt.payment_date,
+                    pt.description,
+                    pt.created_at,
+                    p.class,
+                    p.gender,
+                    u.fullname,
+                    u.phone
+                FROM {madrasa_name}.payments_transaction pt
+                JOIN global.users u ON pt.user_id = u.user_id
+                JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+                WHERE pt.user_id = %s
+                ORDER BY pt.created_at DESC
+                LIMIT 50
+            """, (user_result['user_id'],))
+            
+            transactions = await cursor.fetchall()
+            
+            # Format dates in transactions
+            for trans in transactions:
+                if trans.get('payment_date'):
+                    trans['payment_date'] = trans['payment_date'].isoformat() if hasattr(trans['payment_date'], 'isoformat') else str(trans['payment_date'])
+                if trans.get('created_at'):
+                    trans['created_at'] = trans['created_at'].isoformat() if hasattr(trans['created_at'], 'isoformat') else str(trans['created_at'])
+    
+    return JSONResponse(content={
+        "transactions": transactions,
+        "count": len(transactions)
+    }, status_code=200)
+
+
+# ====== Process Payment ======
+@api.post('/process_payment')
+@handle_async_errors
+async def process_payment(
+    request: Request,
+    payment_data: PaymentData,
+    client_info: ClientInfo = Depends(validate_device_dependency)
+) -> JSONResponse:
+    """Process a payment transaction"""
+    
+    try:
+        madrasa_name = get_env_var("MADRASA_NAME", "annur")
+        
+
+        # SECURITY: Validate madrasa_name is in allowed list
+        if not validate_madrasa_name(madrasa_name, payment_data.phone):
+            response, status = send_json_response("Invalid configuration", 500)
+            return JSONResponse(content=response, status_code=status)
+        
+        # Validate phone
+        formatted_phone, msg = format_phone_number(payment_data.phone)
+        if not formatted_phone:
+            response, status = send_json_response(msg, 400)
+            return JSONResponse(content=response, status_code=status)
+        
+        # Start database transaction
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                try:
+                    # Begin transaction
+                    await conn.begin()
+                    
+                    # Get user_id
+                    await cursor.execute(
+                        "SELECT user_id FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                        (formatted_phone, payment_data.full_name)
+                    )
+                    user_result = await cursor.fetchone()
+                    
+                    if not user_result:
+                        await conn.rollback()
+                        response, status = send_json_response("User not found", 404)
+                        return JSONResponse(content=response, status_code=status)
+                    
+                    user_id = user_result['user_id']
+                    
+                    # Check if transaction_id already exists
+                    await cursor.execute(f"""
+                        SELECT transaction_id FROM {madrasa_name}.payments_transaction 
+                        WHERE transaction_id = %s
+                    """, (payment_data.transaction_id,))
+                    
+                    if await cursor.fetchone():
+                        await conn.rollback()
+                        response, status = send_json_response("Transaction ID already exists", 409)
+                        return JSONResponse(content=response, status_code=status)
+                    
+                    # Insert payment transaction
+                    await cursor.execute(f"""
+                        INSERT INTO {madrasa_name}.payments_transaction 
+                        (user_id, transaction_id, amount, bank_ac, bank_name, description, payment_date, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        user_id,
+                        payment_data.transaction_id,
+                        payment_data.total_amount,
+                        payment_data.bank_ac,
+                        payment_data.bank_name,
+                        payment_data.description,
+                        datetime.now(timezone.utc),
+                        datetime.now(timezone.utc)
+                    ))
+                    
+                    # Update payment status if needed
+                    await cursor.execute(f"""
+                        UPDATE {madrasa_name}.payments 
+                        SET last_payment_date = %s, 
+                            total_paid = total_paid + %s
+                        WHERE user_id = %s
+                    """, (datetime.now(timezone.utc), payment_data.total_amount, user_id))
+                    
+                    # Commit transaction
+                    await conn.commit()
+                    
+                    log.info(
+                        action="payment_processed_successfully",
+                        trace_info=client_info.ip_address,
+                        message=f"Payment processed for user {payment_data.full_name}, amount: {payment_data.total_amount}",
+                        secure=False
+                    )
+                    
+                    response, status = send_json_response("Payment processed successfully", 200)
+                    response.update({
+                        "transaction_id": payment_data.transaction_id,
+                        "amount": payment_data.total_amount
+                    })
+                    return JSONResponse(content=response, status_code=status)
+                    
+                except Exception as e:
+                    await conn.rollback()
+                    log.error(
+                        action="payment_processing_failed",
+                        trace_info=client_info.ip_address,
+                        message=f"Payment processing failed: {str(e)}",
+                        secure=False
+                    )
+                    raise
+                    
+    except Exception as e:
+        log.critical(
+            action="process_payment_error",
+            trace_info="system",
+            message=f"Payment processing error: {str(e)}",
+            secure=False
+        )
+        response, status = send_json_response("Payment processing failed", 500, str(e))
+        return JSONResponse(content=response, status_code=status)

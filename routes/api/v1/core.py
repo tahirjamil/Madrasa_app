@@ -1,57 +1,86 @@
 import os
 import re
 from datetime import datetime, date, timezone
-from typing import Any, Dict, Tuple, List
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import aiomysql
 from PIL import Image
-from quart import (
-    current_app, jsonify, request,
-    Response, Request
-)
+from fastapi import Request, HTTPException, Depends, UploadFile, File, Form
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field, validator
 from werkzeug.utils import secure_filename
 
 from utils.helpers.improved_functions import get_env_var, send_json_response
+from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors, rate_limit
 
 # Local imports
 from . import api
 from utils.mysql.database_utils import get_db_connection
 from config import config
 from utils.helpers.helpers import (
-    format_phone_number, get_client_info, get_id, insert_person, get_cache_key,
-    rate_limit, cache_with_invalidation, secure_data, security_manager, set_cached_data, get_cached_data,
-    encrypt_sensitive_data, hash_sensitive_data, handle_async_errors,
+    format_phone_number, get_client_info as get_client_info_helper, get_id, insert_person, get_cache_key,
+    cache_with_invalidation, security_manager, set_cached_data, get_cached_data,
+    encrypt_sensitive_data, hash_sensitive_data,
     validate_file_upload, validate_fullname, validate_madrasa_name, validate_request_origin
 )
-from quart_babel import gettext as _
 from utils.helpers.logger import log
+
+# ─── Pydantic Models ───────────────────────────────────────────────
+class PersonData(BaseAuthRequest):
+    """Person data model for adding/updating people"""
+    student_id: Optional[str] = None
+    name: str
+    email: Optional[str] = None
+    birth_date: Optional[str] = None
+    blood_group: Optional[str] = None
+    gender: str
+    address: Optional[str] = None
+    guardian_number: Optional[str] = None
+    class_name: Optional[str] = None
+    monthly_fee: Optional[float] = None
+    
+    @validator('name')
+    def validate_name_field(cls, v):
+        is_valid, error = validate_fullname(v)
+        if not is_valid:
+            raise ValueError(error)
+        return v
+
+class ProfileUpdateRequest(BaseAuthRequest):
+    """Profile update request model"""
+    field: str
+    value: str
 
 # ─── Configuration and Constants ───────────────────────────────────────────────
 
 ERROR_MESSAGES = {
-        'invalid_phone': _("Invalid phone number format"),
-        'invalid_name': _("Invalid name format"),
-        'rate_limit_exceeded': _("Rate limit exceeded. Please try again later."),
-        'maintenance_mode': _("Application is currently in maintenance mode"),
-        'unauthorized': _("Unauthorized access"),
-        'internal_error': _("An internal error occurred"),
-        'validation_error': _("Validation error"),
-        'database_error': _("Database operation failed")
+        'invalid_phone': "Invalid phone number format",
+        'invalid_name': "Invalid name format",
+        'rate_limit_exceeded': "Rate limit exceeded. Please try again later.",
+        'maintenance_mode': "Application is currently in maintenance mode",
+        'unauthorized': "Unauthorized access",
+        'internal_error': "An internal error occurred",
+        'validation_error': "Validation error",
+        'database_error': "Database operation failed"
     }
 
 # ─── Data Management Routes ─────────────────────────────────────────────────
 
-@api.route('/add_people', methods=['POST'])
+@api.post('/add_people')
 @rate_limit(max_requests=config.STRICT_RATE_LIMIT, window=3600)
 @handle_async_errors
-async def add_person() -> Tuple[Response, int]:
+async def add_person(
+    request: Request,
+    data: PersonData,
+    client_info: ClientInfo = Depends(validate_device_dependency)
+) -> JSONResponse:
     """Add a new person to the system with comprehensive validation and security """
     # Test mode handling
     if config.is_testing():
         response, status = send_json_response(_("Ignored because in test mode"), 201)
         response.update({"info": None, "user_id": None})
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     try:
         # Get form data
@@ -63,7 +92,7 @@ async def add_person() -> Tuple[Response, int]:
         # SECURITY: Validate madrasa_name is in allowed list
         if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
             response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate required fields using enhanced validation
         required_fields = ['name_en', 'phone', 'acc_type']
@@ -289,17 +318,17 @@ async def add_person() -> Tuple[Response, int]:
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
         return jsonify(response), status
 
-@api.route('/members', methods=['POST']) # type: ignore
+@api.post('/members')
 @cache_with_invalidation
 @handle_async_errors
-async def get_info() -> Tuple[Response, int]:
+async def get_info() -> JSONResponse:
     """Get member information with caching and incremental updates"""
     async with get_db_connection() as conn:
-        # Get request data
-        data, error = await secure_data()
-        if not data:
-            response, status = send_json_response(error, 400)
-            return jsonify(response), status
+        # Get request data from request body
+        try:
+            data = await request.json()
+        except:
+            data = {}
         
         madrasa_name = get_env_var("MADRASA_NAME")
         lastfetched = data.get('updatedSince')
@@ -307,7 +336,7 @@ async def get_info() -> Tuple[Response, int]:
         # SECURITY: Validate madrasa_name is in allowed list
         if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
             response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
 
         # Process timestamp using enhanced validation
         corrected_time = None
@@ -317,7 +346,7 @@ async def get_info() -> Tuple[Response, int]:
             except Exception as e:
                 log.warning(action="timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
                 response, status = send_json_response("Invalid timestamp format", 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         
         # Build SQL query with proper joins
         sql = f"""
@@ -357,7 +386,7 @@ async def get_info() -> Tuple[Response, int]:
         cached_members = await get_cached_data(cache_key)
         
         if cached_members is not None:
-            return jsonify(cached_members), 200
+            return JSONResponse(content=cached_members, status_code=200)
         
         
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -376,19 +405,19 @@ async def get_info() -> Tuple[Response, int]:
         # Log successful retrieval
         log.info(action="get_members", trace_info=data.get("ip_address", ""), message=f"Members retrieved successfully", secure=False)
         
-        return jsonify(result_data), 200
+        return JSONResponse(content=result_data, status_code=200)
         
 
-@api.route("/routines", methods=["POST"]) # type: ignore
+@api.post("/routines")
 @cache_with_invalidation
 @handle_async_errors
-async def get_routine() -> Tuple[Response, int]:
+async def get_routine() -> JSONResponse:
     """Get routine information with caching and incremental updates"""
-    # Get request data
-    data, error = await secure_data()
-    if not data:
-        response, status = send_json_response(error, 400)
-        return jsonify(response), status
+    # Get request data from request body
+    try:
+        data = await request.json()
+    except:
+        data = {}
     
     madrasa_name = get_env_var("MADRASA_NAME")
     lastfetched = data.get("updatedSince")
@@ -404,13 +433,13 @@ async def get_routine() -> Tuple[Response, int]:
         if not validate_timestamp_format(lastfetched):
             log.warning(action="invalid_routine_timestamp", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp format: {lastfetched}", secure=False)
             response, status = send_json_response("Invalid timestamp format", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         try:
             corrected_time = lastfetched.replace("T", " ").replace("Z", "")
         except Exception as e:
             log.warning(action="routine_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
             response, status = send_json_response("Invalid timestamp format", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
     
     # Build SQL query
     sql = f"""
@@ -439,7 +468,7 @@ async def get_routine() -> Tuple[Response, int]:
     cached_routines = await get_cached_data(cache_key)
     
     if cached_routines is not None:
-        return jsonify(cached_routines), 200
+        return JSONResponse(content=cached_routines, status_code=200)
     
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -458,15 +487,18 @@ async def get_routine() -> Tuple[Response, int]:
         # Log successful retrieval
         log.info(action="get_routines", trace_info=data.get("ip_address", ""), message=f"Routines retrieved successfully", secure=False)
         
-        return jsonify(result_data), 200
+        return JSONResponse(content=result_data, status_code=200)
 
-@api.route('/events', methods=['POST']) # type: ignore
+@api.post('/events')
 @cache_with_invalidation
 @handle_async_errors
-async def events() -> Tuple[Response, int]:
+async def events() -> JSONResponse:
     """Get events with enhanced date processing and status classification"""
-    # Get request data
-    data = await request.get_json() or {}
+    # Get request data from request body
+    try:
+        data = await request.json()
+    except:
+        data = {}
     madrasa_name = get_env_var("MADRASA_NAME")
     lastfetched = data.get('updatedSince')
     DHAKA = ZoneInfo("Asia/Dhaka")
@@ -474,7 +506,7 @@ async def events() -> Tuple[Response, int]:
     # SECURITY: Validate madrasa_name is in allowed list
     if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
         response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
     # Build SQL query
     sql = f"""
@@ -492,7 +524,7 @@ async def events() -> Tuple[Response, int]:
         if not validate_timestamp_format(lastfetched):
             log.error(action="get_events_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
             response, status = send_json_response("Invalid updatedSince format", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         try:
             cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
             sql += " WHERE e.created_at > %s"
@@ -500,7 +532,7 @@ async def events() -> Tuple[Response, int]:
         except ValueError as e:
             log.error(action="events_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
             response, status = send_json_response("Invalid updatedSince format", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
     
     sql += " ORDER BY e.event_id DESC"
     
@@ -509,7 +541,7 @@ async def events() -> Tuple[Response, int]:
     cached_events = await get_cached_data(cache_key)
     
     if cached_events is not None:
-        return jsonify(cached_events), 200
+        return JSONResponse(content=cached_events, status_code=200)
     
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -556,18 +588,18 @@ async def events() -> Tuple[Response, int]:
         # Log successful retrieval
         log.info(action="get_events", trace_info=data.get("ip_address", ""), message=f"Events retrieved successfully", secure=False)
         
-        return jsonify(result_data), 200
+        return JSONResponse(content=result_data, status_code=200)
 
-@api.route('/exams', methods=['POST']) # type: ignore
+@api.post('/exams')
 @cache_with_invalidation
 @handle_async_errors
-async def get_exams() -> Tuple[Response, int]:
+async def get_exams() -> JSONResponse:
     """Get exam information with enhanced validation and error handling"""
-    # Get request data
-    data, error = await secure_data()
-    if not data:
-        response, status = send_json_response(error, 400)
-        return jsonify(response), status
+    # Get request data from request body
+    try:
+        data = await request.json()
+    except:
+        data = {}
     
     madrasa_name = get_env_var("MADRASA_NAME")
     lastfetched = data.get("updatedSince")
@@ -575,7 +607,7 @@ async def get_exams() -> Tuple[Response, int]:
     # SECURITY: Validate madrasa_name is in allowed list
     if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
         response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
     # Process timestamp using enhanced validation
     cutoff = None
@@ -583,13 +615,13 @@ async def get_exams() -> Tuple[Response, int]:
         if not validate_timestamp_format(lastfetched):
             log.error(action="get_exams_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
             response, status = send_json_response("Invalid updatedSince format", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         try:
             cutoff = lastfetched.replace("T", " ").replace("Z", "")
         except Exception as e:
             log.error(action="exams_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
             response, status = send_json_response("Invalid updatedSince format", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
     
     # Build SQL query
     sql = f"""
@@ -615,7 +647,7 @@ async def get_exams() -> Tuple[Response, int]:
     cached_exams = await get_cached_data(cache_key)
     
     if cached_exams is not None:
-        return jsonify(cached_exams), 200
+        return JSONResponse(content=cached_exams, status_code=200)
     
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -634,7 +666,7 @@ async def get_exams() -> Tuple[Response, int]:
         # Log successful retrieval
         log.info(action="get_exams", trace_info=data.get("ip_address", ""), message=f"Exams retrieved successfully", secure=False)
         
-        return jsonify(result_data), 200
+        return JSONResponse(content=result_data, status_code=200)
 
 
 
@@ -647,7 +679,7 @@ async def process_request_middleware(request: Request) -> Tuple[bool, str]:
         return False, "Invalid request origin"
     
     # Check for suspicious activity
-    client_info = await get_client_info() or {}
+    client_info = await get_client_info_helper() or {}
     if security_manager.detect_sql_injection(str(request.url)):
         await security_manager.track_suspicious_activity(
             client_info["ip_address"], 

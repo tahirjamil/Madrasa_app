@@ -1,28 +1,68 @@
-from typing import Tuple
+from typing import Optional
+from fastapi import Request, Form, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, EmailStr
+
 from utils.helpers.improved_functions import get_env_var, send_json_response
-from . import web_routes
-from quart import Response, jsonify, render_template, request, redirect, url_for, flash
-from quart_babel import gettext as _
-from utils.helpers.helpers import send_email, rate_limit, handle_async_errors
+from utils.helpers.fastapi_helpers import rate_limit, handle_async_errors
+from . import web_routes, templates
+from utils.helpers.helpers import send_email
 import os
 import markdown
 import re
 from datetime import datetime
-from quart_babel import gettext as _
 import html  # For escaping HTML
 
-@web_routes.route("/")
-async def home():
-    return await render_template("home.html", current_year=datetime.now().year)
+# Pydantic models for form data
+class ContactForm(BaseModel):
+    fullname: str
+    email_or_phone: str
+    description: str
 
-@web_routes.route("/donate")
-async def donate():
-    return await render_template("donate.html", current_year=datetime.now().year)
+@web_routes.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("home.html", {
+        "request": request,
+        "current_year": datetime.now().year
+    })
 
-@web_routes.route('/contact', methods=['GET', 'POST'])
+@web_routes.get("/donate", response_class=HTMLResponse)
+async def donate(request: Request):
+    return templates.TemplateResponse("donate.html", {
+        "request": request,
+        "current_year": datetime.now().year
+    })
+
+@web_routes.get('/contact', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=50, window=60)  # 50 requests per minute to prevent spam
-async def contact():
+async def contact_get(request: Request):
+    # Read raw comma‑separated strings from env
+    raw_phones = get_env_var('BUSINESS_PHONE')
+    raw_emails = get_env_var('BUSINESS_EMAIL')
+
+    # Turn into clean lists
+    phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
+    emails = [e.strip() for e in raw_emails.split(',') if e.strip()]
+    
+    return templates.TemplateResponse("contact.html", {
+        "request": request,
+        "current_year": datetime.now().year,
+        "business_phones": phones,
+        "business_emails": emails,
+        "business_email": emails[0] if emails else '',
+        "business_phone": phones[0] if phones else ''
+    })
+
+@web_routes.post('/contact')
+@handle_async_errors
+@rate_limit(max_requests=50, window=60)
+async def contact_post(
+    request: Request,
+    fullname: str = Form(...),
+    email_or_phone: str = Form(...),
+    description: str = Form(...)
+):
     # Read raw comma‑separated strings from env
     raw_phones = get_env_var('BUSINESS_PHONE')
     raw_emails = get_env_var('BUSINESS_EMAIL')
@@ -31,178 +71,135 @@ async def contact():
     phones = [p.strip() for p in raw_phones.split(',') if p.strip()]
     emails = [e.strip() for e in raw_emails.split(',') if e.strip()]
 
-    if request.method == 'POST':
-        form = await request.form
-        fullname       = form.get('fullname', '').strip()
-        email_or_phone = form.get('email_or_phone', '').strip()
-        description    = form.get('description', '').strip()
+    # Validate required fields
+    error_message = None
+    if not fullname or not email_or_phone or not description:
+        error_message = 'All fields are required.'
+    
+    # Validate field lengths
+    elif len(fullname) > 100 or len(email_or_phone) > 100 or len(description) > 1000:
+        error_message = 'Please keep your input within reasonable length limits.'
+    
+    # Basic email/phone validation
+    if '@' not in email_or_phone and not re.match(r'^[\d\s\+\-\(\)]+$', email_or_phone):
+        error_message = 'Please provide a valid email address or phone number.'
 
-        # Validate required fields
-        if not fullname or not email_or_phone or not description:
-            await flash('All fields are required.', 'danger')
-            return redirect(url_for('web_routes.contact'))
-        
-        # Validate field lengths
-        if len(fullname) > 100 or len(email_or_phone) > 100 or len(description) > 1000:
-            await flash('Please keep your input within reasonable length limits.', 'danger')
-            return redirect(url_for('web_routes.contact'))
-        
-        # Basic email/phone validation
-        if '@' not in email_or_phone and not re.match(r'^[\d\s\+\-\(\)]+$', email_or_phone):
-            await flash('Please provide a valid email address or phone number.', 'danger')
-            return redirect(url_for('web_routes.contact'))
+    if error_message:
+        return RedirectResponse(url=request.url, status_code=303) # Use 303 for redirect
 
-        try:
-            # Escape HTML to prevent XSS
-            safe_fullname = html.escape(fullname)
-            safe_contact = html.escape(email_or_phone)
-            safe_description = html.escape(description)
+    try:
+        # Escape HTML to prevent XSS
+        safe_fullname = html.escape(fullname)
+        safe_contact = html.escape(email_or_phone)
+        safe_description = html.escape(description)
+        
+        await send_email(
+            to_email=emails[0],  # primary admin address
+            subject="Contact Form Submission",
+            body=f"Name: {safe_fullname}\nContact: {safe_contact}\n\nDescription: {safe_description}"
+        )
+    except Exception as e:
+        # Log the error but don't expose details to user
+        from utils.helpers.logger import log
+        log.error(action="contact_form_error", trace_info="web", message=str(e), secure=False)
+        # Flash message is not directly available in FastAPI, so we'll redirect with a query parameter
+        return RedirectResponse(url=request.url + "?error=true", status_code=303)
+
+    return RedirectResponse(url=request.url + "?success=true", status_code=303)
+
+@web_routes.get('/privacy', response_class=HTMLResponse)
+@handle_async_errors
+async def privacy(request: Request):
+    # Construct the full path to the markdown file
+    content_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'content')
+    md_path = os.path.join(content_dir, 'privacy_policy.md')
+    
+    # Default content in case file doesn't exist
+    title = "Privacy Policy"
+    content = "<p>Privacy policy content is not available at the moment.</p>"
+    last_updated = "Not available"
+    
+    try:
+        # Read and parse the markdown file
+        with open(md_path, 'r', encoding='utf-8') as f:
+            md_content = f.read()
             
-            await send_email(
-                to_email=emails[0],  # primary admin address
-                subject="Contact Form Submission",
-                body=f"Name: {safe_fullname}\nContact: {safe_contact}\n\nDescription: {safe_description}"
-            )
-        except Exception as e:
-            # Log the error but don't expose details to user
-            from utils.helpers.logger import log
-            log.error(action="contact_form_error", trace_info="web", message=str(e), secure=False)
-            await flash('An error occurred while sending your message. Please try again later.', 'danger')
-            return redirect(url_for('web_routes.contact'))
-
-        await flash('Your message has been sent successfully!', 'success')
-        return redirect(url_for('web_routes.contact'))
-
-    # GET: render with lists
-    return await render_template('contact.html', phones=phones, emails=emails)
-
-@web_routes.route('/privacy')
-@handle_async_errors
-async def privacy():
-    from config import config
-    # Load contact info from environment variables
-    contact_email = get_env_var('BUSINESS_EMAIL', '')
-    contact_phone = get_env_var('BUSINESS_PHONE', '')
-    effective_date = get_env_var('PRIVACY_POLICY_EFFECTIVE_DATE', '')
-
-    try:
-        # Use safe path join
-        policy_path = os.path.join(config.get_project_root(), 'content', 'privacy_policy.md')
-        with open(policy_path, 'r', encoding='utf-8') as f:
-            policy_md = f.read()
+        # Extract title if it's in the first line as # Title
+        lines = md_content.split('\n')
+        if lines and lines[0].startswith('# '):
+            title = lines[0][2:].strip()
+            md_content = '\n'.join(lines[1:])
+        
+        # Convert markdown to HTML
+        content = markdown.markdown(md_content, extensions=['extra', 'nl2br'])
+        
+        # Get last modified date
+        last_modified = os.path.getmtime(md_path)
+        last_updated = datetime.fromtimestamp(last_modified).strftime('%B %d, %Y')
+        
     except FileNotFoundError:
-        # Log the error and return a user-friendly error page
+        # Log the error but continue with default content
         from utils.helpers.logger import log
-        log.critical(action="privacy_policy_file_not_found", trace_info="system", message=f"Privacy policy file not found", secure=False)
-        return await render_template('error.html', 
-                                   error_title="Privacy Policy Unavailable",
-                                   error_message="The privacy policy is currently unavailable. Please try again later or contact support.",
-                                   contact_email=contact_email), 503
+        log.warning(action="privacy_policy_not_found", trace_info="web", message=f"Privacy policy file not found at {md_path}", secure=False)
     except Exception as e:
-        # Log the error and return a user-friendly error page
+        # Log any other errors
         from utils.helpers.logger import log
-        log.critical(action="privacy_policy_file_error", trace_info="system", message=f"Error reading privacy policy file: {type(e).__name__}", secure=False)
-        return await render_template('error.html', 
-                                   error_title="Privacy Policy Error",
-                                   error_message="There was an error loading the privacy policy. Please try again later or contact support.",
-                                   contact_email=contact_email), 500
+        log.error(action="privacy_policy_error", trace_info="web", message=str(e), secure=False)
+    
+    return templates.TemplateResponse('privacy.html', {
+        "request": request,
+        "title": title,
+        "content": content,
+        "last_updated": last_updated,
+        "current_year": datetime.now().year
+    })
 
-    # Replace placeholders with actual contact info
-    policy_md = policy_md.replace('{{ contact_email }}', contact_email)
-    policy_md = policy_md.replace('{{ phone }}', contact_phone)
-
-    # Split content into sections based on '## ' headings
-    sections_md = re.split(r'\n## ', policy_md.strip())
-
-    # The first element is the introduction
-    introduction_md = sections_md.pop(0) if sections_md else ""
-    introduction_html = markdown.markdown(introduction_md, extensions=['extra'])
-
-    # The rest are the collapsible sections
-    parsed_sections = []
-    for section_md in sections_md:
-        if not section_md.strip():
-            continue
-        
-        lines = section_md.strip().split('\n', 1)
-        title = lines[0].strip()
-        content_md = lines[1] if len(lines) > 1 else ''
-        
-        parsed_sections.append({
-            'title': title,
-            'content_html': markdown.markdown(content_md, extensions=['extra']),
-            'user_id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
-        })
-
-    return await render_template(
-        'privacy.html',
-        introduction_html=introduction_html,
-        sections=parsed_sections,
-        effective_date=effective_date
-    )
-
-@web_routes.route('/terms')
+@web_routes.get('/terms', response_class=HTMLResponse)
 @handle_async_errors
-async def terms():
-    from config import config
-    # Load contact info from environment variables
-    contact_email = get_env_var('BUSINESS_EMAIL', '')
-    effective_date = get_env_var('TERMS_EFFECTIVE_DATE', '')
-
+async def terms(request: Request):
+    # Construct the full path to the markdown file
+    content_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'content')
+    md_path = os.path.join(content_dir, 'terms.md')
+    
+    # Default content in case file doesn't exist
+    title = "Terms of Service"
+    content = "<p>Terms of service content is not available at the moment.</p>"
+    last_updated = "Not available"
+    
     try:
-        # Use safe path join
-        terms_path = os.path.join(config.get_project_root(), 'content', 'terms.md')
-        with open(terms_path, 'r', encoding='utf-8') as f:
-            terms_md = f.read()
+        # Read and parse the markdown file
+        with open(md_path, 'r', encoding='utf-8') as f:
+            md_content = f.read()
+            
+        # Extract title if it's in the first line as # Title
+        lines = md_content.split('\n')
+        if lines and lines[0].startswith('# '):
+            title = lines[0][2:].strip()
+            md_content = '\n'.join(lines[1:])
+        
+        # Convert markdown to HTML
+        content = markdown.markdown(md_content, extensions=['extra', 'nl2br'])
+        
+        # Get last modified date
+        last_modified = os.path.getmtime(md_path)
+        last_updated = datetime.fromtimestamp(last_modified).strftime('%B %d, %Y')
+        
     except FileNotFoundError:
-        # Log the error and return a user-friendly error page
+        # Log the error but continue with default content
         from utils.helpers.logger import log
-        log.critical(action="terms_file_not_found", trace_info="system", message=f"Terms file not found", secure=False)
-        return await render_template('error.html', 
-                                   error_title="Terms of Service Unavailable",
-                                   error_message="The terms of service are currently unavailable. Please try again later or contact support.",
-                                   contact_email=contact_email), 503
+        log.warning(action="terms_not_found", trace_info="web", message=f"Terms file not found at {md_path}", secure=False)
     except Exception as e:
-        # Log the error and return a user-friendly error page
+        # Log any other errors
         from utils.helpers.logger import log
-        log.critical(action="terms_file_error", trace_info="system", message=f"Error reading terms file: {type(e).__name__}", secure=False)
-        return await render_template('error.html', 
-                                   error_title="Terms of Service Error",
-                                   error_message="There was an error loading the terms of service. Please try again later or contact support.",
-                                   contact_email=contact_email), 500
-
-    # Replace placeholders with actual contact info
-    terms_md = terms_md.replace('{{ contact_email }}', contact_email)
-
-    # Split content into sections based on '## ' headings
-    sections_md = re.split(r'\n## ', terms_md.strip())
-
-    # The first element is the introduction
-    introduction_md = sections_md.pop(0) if sections_md else ""
-    introduction_html = markdown.markdown(introduction_md, extensions=['extra'])
-
-    # The rest are the collapsible sections
-    parsed_sections = []
-    for section_md in sections_md:
-        if not section_md.strip():
-            continue
-        
-        lines = section_md.strip().split('\n', 1)
-        title = lines[0].strip()
-        content_md = lines[1] if len(lines) > 1 else ''
-        
-        parsed_sections.append({
-            'title': title,
-            'content_html': markdown.markdown(content_md, extensions=['extra']),
-            'user_id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
-        })
-
-    return await render_template(
-        'terms.html',
-        introduction_html=introduction_html,
-        sections=parsed_sections,
-        effective_date=effective_date
-    )
+        log.error(action="terms_error", trace_info="web", message=str(e), secure=False)
+    
+    return templates.TemplateResponse('terms.html', {
+        "request": request,
+        "title": title,
+        "content": content,
+        "last_updated": last_updated,
+        "current_year": datetime.now().year
+    })
 
 @web_routes.route("/account/<page_type>", methods=['GET'])
 async def manage_account(page_type: str):

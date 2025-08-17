@@ -1,21 +1,33 @@
-from . import admin_routes
+import os
+import json
+from datetime import datetime
+from fastapi import Request, HTTPException, Depends
+from fastapi.responses import JSONResponse, RedirectResponse
+
+from . import admin_routes, templates
 from utils.mysql.database_utils import get_db_connection
-from utils.helpers.helpers import handle_async_errors
-from quart import jsonify, session, redirect, url_for, current_app
+from utils.helpers.fastapi_helpers import handle_async_errors
 from collections import deque
 from threading import Lock
 import aiomysql
 from config import config
+from utils.helpers.logger import log
 
-@admin_routes.route('/logs/data')
+# Helper to check admin authentication
+async def require_admin(request: Request):
+    """Dependency to check if admin is logged in"""
+    if not request.session.get('admin_logged_in'):
+        raise HTTPException(status_code=401, detail="Admin login required")
+    return True
+
+@admin_routes.get('/logs/data')
 @handle_async_errors
-async def logs_data():
-    # Require admin login - SECURITY FIX
-    if not session.get('admin_logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
+async def logs_data(request: Request, is_admin: bool = Depends(require_admin)):
+    # Get requested log file
+    log_type = request.query_params.get('type', 'main')
     
     if config.is_testing():
-        return jsonify([])
+        return JSONResponse(content=[])
     
     try:
         async with get_db_connection() as conn:
@@ -27,9 +39,9 @@ async def logs_data():
             # Convert datetime to string
             for l in logs:
                 l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-            return jsonify(logs)
+            return JSONResponse(content=logs)
     except Exception as e:
-        return jsonify([])
+        return JSONResponse(content=[])
 
 
 

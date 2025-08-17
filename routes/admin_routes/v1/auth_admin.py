@@ -1,33 +1,58 @@
 import asyncio
 import requests
 from datetime import datetime
-from quart import render_template, request, redirect, url_for, session, flash
-from . import admin_routes
+from fastapi import Request, Form, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel
+
+from . import admin_routes, templates
 from config import config
-from utils.helpers.helpers import rate_limit, require_csrf, get_client_info
+from utils.helpers.fastapi_helpers import rate_limit, ClientInfo, get_client_info
 from utils.helpers.logger import log
 
 # Note: Login attempt tracking moved to session-based approach
 # The global dictionary approach was removed as unused
 
-@admin_routes.route('/login', methods=['GET', 'POST'])
-@require_csrf
-@rate_limit(max_requests=50, window=300)
-async def login():
+class LoginForm(BaseModel):
+    username: str
+    password: str
+    recaptcha_response: str = None
 
+@admin_routes.get('/login', response_class=HTMLResponse)
+@rate_limit(max_requests=50, window=300)
+async def login_get(request: Request):
     # See for test mode
     test = True if config.is_testing() else False
-
-    # Set session to expire after configured time
-    session.permanent = True
     
     # Clear session on GET
-    if request.method == 'GET':
-        session.clear()
+    request.session.clear()
+    
+    # Load keys safely
+    RECAPTCHA_SITE_KEY = config.RECAPTCHA_SITE_KEY
+    
+    return templates.TemplateResponse('admin/login.html', {
+        "request": request,
+        "error": None,
+        "show_captcha": False,
+        "site_key": RECAPTCHA_SITE_KEY,
+        "test": test
+    })
 
+@admin_routes.post('/login')
+@rate_limit(max_requests=50, window=300)
+async def login_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    recaptcha_response: str = Form(None, alias='g-recaptcha-response'),
+    client_info: ClientInfo = Depends(get_client_info)
+):
+    # See for test mode
+    test = True if config.is_testing() else False
+    
     # Initialize attempt counter
-    if 'login_attempts' not in session:
-        session['login_attempts'] = 0
+    if 'login_attempts' not in request.session:
+        request.session['login_attempts'] = 0
 
     error = None
     show_captcha = False
@@ -35,85 +60,87 @@ async def login():
     # Load keys safely
     RECAPTCHA_SITE_KEY = config.RECAPTCHA_SITE_KEY
     RECAPTCHA_SECRET_KEY = config.RECAPTCHA_SECRET_KEY
+    
+    # Get client info for logging
+    ip_address = client_info.ip_address
 
-    if request.method == 'POST':
-        form = await request.form
-        username = form.get('username')
-        password = form.get('password')
-        
-        # Get client info for logging
-        client_info = await get_client_info() or {}
-        ip_address = client_info.get("ip_address", "unknown")
+    ADMIN_USER = config.ADMIN_USERNAME
+    ADMIN_PASS = config.ADMIN_PASSWORD
 
-        ADMIN_USER = config.ADMIN_USERNAME
-        ADMIN_PASS = config.ADMIN_PASSWORD
+    request.session['login_attempts'] += 1
 
-        session['login_attempts'] += 1
+    # Only require captcha if keys exist
+    if RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY:
+        if request.session['login_attempts'] >= 4:
+            show_captcha = True
 
-        # Only require captcha if keys exist
-        if RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY:
-            if session['login_attempts'] >= 4:
-                show_captcha = True
-
-                recaptcha_response = form.get('g-recaptcha-response')
-                if not recaptcha_response:
-                    error = "Please complete the reCAPTCHA."
-                    return await render_template(
-                        'admin/login.html',
-                        error=error,
-                        show_captcha=show_captcha,
-                        site_key=RECAPTCHA_SITE_KEY
-                    )
-
-                verify_url = "https://www.google.com/recaptcha/api/siteverify"
-                payload = {
-                    'secret': RECAPTCHA_SECRET_KEY,
-                    'response': recaptcha_response
-                }
-                
-                # FIX: Run blocking request in thread pool to avoid blocking event loop
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(
-                    None,
-                    lambda: requests.post(verify_url, data=payload).json()
+            if not recaptcha_response:
+                error = "Please complete the reCAPTCHA."
+                return templates.TemplateResponse(
+                    'admin/login.html',
+                    {
+                        "request": request,
+                        "error": error,
+                        "show_captcha": show_captcha,
+                        "site_key": RECAPTCHA_SITE_KEY
+                    }
                 )
 
-                if not result.get('success'):
-                    error = "Invalid reCAPTCHA. Please try again."
-                    log.warning(action="admin_recaptcha_failed", trace_info=ip_address, message="Failed reCAPTCHA verification", secure=False)
-                    return await render_template(
-                        'admin/login.html',
-                        error=error,
-                        show_captcha=show_captcha,
-                        site_key=RECAPTCHA_SITE_KEY
-                    )
-
-        # SECURITY: In production, don't allow test bypass
-        if test and config.is_development():
-            # Only allow test bypass in development mode
-            if username == ADMIN_USER and password == ADMIN_PASS:
-                session['admin_logged_in'] = True
-                session['admin_login_time'] = datetime.now().isoformat()
-                session.pop('login_attempts', None)  # Reset
-                log.info(action="admin_login_test", trace_info=ip_address, message="Admin logged in (test mode)", secure=False)
-                return redirect(url_for('admin_routes.admin_dashboard'))
-        else:
-            # Production mode - strict authentication
-            if username == ADMIN_USER and password == ADMIN_PASS:
-                session['admin_logged_in'] = True
-                session['admin_login_time'] = datetime.now().isoformat()
-                session.pop('login_attempts', None)  # Reset
-                log.info(action="admin_login_success", trace_info=ip_address, message=f"Admin {username} logged in", secure=False)
-                return redirect(url_for('admin_routes.admin_dashboard'))
+            verify_url = "https://www.google.com/recaptcha/api/siteverify"
+            payload = {
+                'secret': RECAPTCHA_SECRET_KEY,
+                'response': recaptcha_response
+            }
             
-        error = "Invalid credentials"
-        log.warning(action="admin_login_failed", trace_info=ip_address, message=f"Failed login attempt for: {username}", secure=False)
+            # FIX: Run blocking request in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: requests.post(verify_url, data=payload).json()
+            )
 
-    return await render_template(
+            if not result.get('success'):
+                error = "Invalid reCAPTCHA. Please try again."
+                log.warning(action="admin_recaptcha_failed", trace_info=ip_address, message="Failed reCAPTCHA verification", secure=False)
+                return templates.TemplateResponse(
+                    'admin/login.html',
+                    {
+                        "request": request,
+                        "error": error,
+                        "show_captcha": show_captcha,
+                        "site_key": RECAPTCHA_SITE_KEY
+                    }
+                )
+
+    # SECURITY: In production, don't allow test bypass
+    if test and config.is_development():
+        # Only allow test bypass in development mode
+        if username == ADMIN_USER and password == ADMIN_PASS:
+            request.session['admin_logged_in'] = True
+            request.session['admin_login_time'] = datetime.now().isoformat()
+            request.session.pop('login_attempts', None)  # Reset
+            log.info(action="admin_login_test", trace_info=ip_address, message="Admin logged in (test mode)", secure=False)
+            return RedirectResponse(url_for('admin_routes.admin_dashboard'))
+    else:
+        # Production mode - strict authentication
+        if username == ADMIN_USER and password == ADMIN_PASS:
+            request.session['admin_logged_in'] = True
+            request.session['admin_login_time'] = datetime.now().isoformat()
+            request.session.pop('login_attempts', None)  # Reset
+            log.info(action="admin_login_success", trace_info=ip_address, message=f"Admin {username} logged in", secure=False)
+            return RedirectResponse(url_for('admin_routes.admin_dashboard'))
+        
+    error = "Invalid credentials"
+    log.warning(action="admin_login_failed", trace_info=ip_address, message=f"Failed login attempt for: {username}", secure=False)
+
+    return templates.TemplateResponse(
         'admin/login.html',
-        error=error,
-        show_captcha=(RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY and session.get('login_attempts', 0) >= 4),
-        site_key=RECAPTCHA_SITE_KEY
+        {
+            "request": request,
+            "error": error,
+            "show_captcha": (RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY and request.session.get('login_attempts', 0) >= 4),
+            "site_key": RECAPTCHA_SITE_KEY
+        }
     )
 
 @admin_routes.route('/logout')

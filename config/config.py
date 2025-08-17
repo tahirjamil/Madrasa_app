@@ -14,7 +14,6 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from functools import lru_cache
-from quart import Quart
 from typing import Optional, Union
 from aiomysql import Connection
 from redis.asyncio import Redis
@@ -27,11 +26,6 @@ load_dotenv()
 # Setup logger for configuration module
 logger = logging.getLogger(__name__)
 
-
-class MadrasaApp(Quart):
-    start_time: float | None
-    db: Optional[Connection]
-    keydb: Optional[Union[Redis, 'TracedRedisPool']]  # type: ignore [Use string annotation to avoid import]
 
 class MadrasaConfig:
     """ Configuration class for the Madrasha application. """

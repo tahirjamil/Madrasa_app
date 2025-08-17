@@ -166,6 +166,14 @@ Fixed routes that were using `request` without declaring it:
   - Fixed line 108: `str(request.url) + "?success=true"`
 - **Status**: ✅ Complete
 
+### 6. **Fixed Type Errors in core.py (routes/api/v1/core.py)**
+- **Issue**: Multiple type errors related to madrasa_name validation and UploadFile handling
+- **Fix**: 
+  - Added null check for `madrasa_name` before passing to `validate_madrasa_name()` (line 127)
+  - Fixed UploadFile stream access - changed `image.stream` to `image.file` (lines 209, 211, 212)
+  - Ensured `madrasa_name` is not None before calling `insert_person()` (line 365)
+- **Status**: ✅ Complete
+
 ## Final Verification
 
 All modified files pass Python syntax checks:

@@ -1,7 +1,7 @@
 from typing import Tuple
 from quart import Response, request, jsonify
 
-from utils.helpers.improved_funtions import get_env_var, send_json_response
+from utils.helpers.improved_functions import get_env_var, send_json_response
 from . import api
 import aiomysql, os, time, requests
 from datetime import datetime, timezone

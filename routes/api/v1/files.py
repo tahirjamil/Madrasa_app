@@ -5,7 +5,7 @@ import os
 import re
 from werkzeug.utils import secure_filename
 
-from utils.helpers.improved_funtions import send_json_response
+from utils.helpers.improved_functions import send_json_response
 from . import api
 from utils.helpers.helpers import (
     get_client_info, handle_async_errors

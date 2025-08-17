@@ -12,7 +12,7 @@ import socket
 
 from config import config, MadrasaConfig, MadrasaApp
 from utils import create_tables
-from utils.helpers.improved_funtions import send_json_response
+from utils.helpers.improved_functions import send_json_response
 from utils.mysql.database_utils import connect_to_db
 from utils.keydb.keydb_utils import connect_to_keydb, close_keydb
 from utils.otel.otel_utils import init_otel

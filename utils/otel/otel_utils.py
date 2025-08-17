@@ -10,7 +10,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 # OTLP gRPC exporters (defaults to http://localhost:4317)
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_functions import get_env_var
 
 
 def init_otel(service_name: str, environment: Optional[str] = None, service_version: Optional[str] = None) -> None:

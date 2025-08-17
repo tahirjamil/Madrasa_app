@@ -18,7 +18,7 @@ from typing import Optional, Union
 from aiomysql import Connection
 from redis.asyncio import Redis
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_functions import get_env_var
 
 # Load environment variables
 load_dotenv()
@@ -183,7 +183,7 @@ class MadrasaConfig:
     PROFILE_IMG_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'profile_pics')
     EXAM_RESULTS_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'exam_results')
     NOTICES_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, 'notices')
-    GALLERY_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'gallery')\
+    GALLERY_DIR = os.path.join(BASE_UPLOAD_FOLDER, 'gallery')
     
     # Index Files
     EXAM_RESULTS_INDEX_FILE = os.path.join(EXAM_RESULTS_UPLOAD_FOLDER, 'index.json')
@@ -300,7 +300,7 @@ class MadrasaConfig:
         raise FileNotFoundError("Project root not found")
     
     @lru_cache(maxsize=1)
-    def get_database_url(self) -> str | None:
+    def get_database_url(self) -> Optional[str]:
         """Generate database connection URL."""
         try:
             return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
@@ -309,7 +309,7 @@ class MadrasaConfig:
             return None
 
     @lru_cache(maxsize=1)
-    def get_keydb_url(self) -> str | None:
+    def get_keydb_url(self) -> Optional[str]:
         """Generate keydb connection URL."""
         try:
             url = "redis://"

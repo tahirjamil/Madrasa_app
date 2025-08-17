@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
-from typing import Tuple, Any, Dict
+from typing import Tuple, Any, Dict, Optional, Union
 
-def get_env_var(var_name: str, default: Any | None = None, required: bool = True) -> Any:
+def get_env_var(var_name: str, default: Optional[Any] = None, required: bool = True) -> Any:
     """Get an environment variable with a default value."""
     value = os.getenv(var_name)
     if value and value.lower() in ("none", "null", ""):
@@ -24,7 +24,7 @@ def get_project_root(marker_files= ("pyproject.toml", "app.py")) -> Path:
             return parent
     raise FileNotFoundError("Project root not found")
 
-def send_json_response(message: str, status_code: int, details: str | None = None) -> Tuple[Dict[str, Any], int]:
+def send_json_response(message: str, status_code: int, details: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
     """Send a JSON response with a status code."""
     success: bool = 200 <= status_code < 300
     error: bool = not success

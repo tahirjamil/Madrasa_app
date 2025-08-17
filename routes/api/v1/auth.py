@@ -18,7 +18,7 @@ from utils.mysql.database_utils import get_db_connection
 from config import config
 from utils.helpers.helpers import (
     check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, 
-    get_client_info, record_login_attempt, secure_data, send_sms, send_email, 
+    get_client_info as get_client_info_from_helpers, record_login_attempt, secure_data, send_sms, send_email, 
     get_email, rate_limit, encrypt_sensitive_data, hash_sensitive_data,
     handle_async_errors, validate_email, validate_fullname, validate_password_strength, validate_madrasa_name
 )
@@ -253,7 +253,7 @@ async def register(
                 # Log successful registration
                 log.info(action="user_registered_successfully", trace_info=ip_address, message=f"User registered successfully: {fullname}", secure=False)
                 
-                response, status = send_json_response(_("Registration successful"), 201)
+                response, status = send_json_response("Registration successful", 201)
                 response.update({"info": people_result})
                 return JSONResponse(content=response, status_code=status)
                 
@@ -378,7 +378,7 @@ async def login(
                     return JSONResponse(content=response, status_code=status)
                 
                 # Process profile data
-                info = get_client_info(full_record=profile)
+                info = await get_client_info_from_helpers(request=None, full_record=profile)
                 
                 # Check if profile is incomplete
                 incomplete_fields = []
@@ -407,7 +407,6 @@ async def login(
                 await conn.commit()
                 
                 # Track device
-                device_info = await get_client_info()
                 await cursor.execute("""
                     INSERT INTO device_interactions (user_id, device_id, interaction_type, ip_address)
                     VALUES (%s, %s, 'login', %s)
@@ -523,7 +522,7 @@ async def send_verification_code(
                 if count < config.SMS_LIMIT_PER_HOUR:
                     sms_sent = await send_sms(
                         phone=formatted_phone,
-                        message=f"Your verification code is: {code}"
+                        msg=f"Your verification code is: {code}"
                     )
                     
                     if sms_sent:
@@ -749,11 +748,11 @@ async def manage_account(
                 
                 # Send confirmation via SMS
                 errors = 0
-                if not await send_sms(phone=formatted_phone, message=msg):
+                if not await send_sms(phone=formatted_phone, msg=msg):
                     errors += 1
                 
                 # Send confirmation via email if available
-                email = await get_email(user_id=user["user_id"])
+                email = await get_email(fullname=fullname, phone=formatted_phone)
                 if email:
                     is_valid_email, email_error = validate_email(email)
                     if not is_valid_email:
@@ -1058,7 +1057,7 @@ async def track_user_activity(user_id: int, activity_type: str, details: Dict[st
             'user_id': user_id,
             'activity_type': activity_type,
             'timestamp': datetime.now(timezone.utc).isoformat(),
-            'ip_address': (await get_client_info() or {}).get("ip_address"),
+            'ip_address': None,  # No request context available in this helper function
             'details': details or {}
         }
         

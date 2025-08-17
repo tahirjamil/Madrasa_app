@@ -117,14 +117,26 @@ def cache_with_invalidation(func: Optional[Callable] = None, *, ttl: int = 3600)
         @wraps(f)
         async def wrapper(*args, **kwargs):
             try:
+                # In FastAPI, the request is typically the first argument of the endpoint
+                from fastapi import Request
+                request = None
+                for arg in args:
+                    if isinstance(arg, Request):
+                        request = arg
+                        break
+                
+                if request is None:
+                    # No request found, skip caching
+                    return await f(*args, **kwargs)
+                
                 method = request.method
-                path = request.path
+                path = request.url.path
                 try:
-                    query = dict(sorted(request.args.items()))
+                    query = dict(sorted(request.query_params.items()))
                 except Exception:
                     query = {}
                 try:
-                    body = await request.get_json()
+                    body = await request.json() if request.method in ["POST", "PUT", "PATCH"] else None
                 except Exception:
                     body = None
                 fingerprint = json.dumps({"m": method, "p": path, "q": query, "b": body},
@@ -1635,7 +1647,7 @@ async def get_client_info(request: Optional[Request] = None, full_record: Option
         # Process full record if provided
         return process_client_info_record(full_record)
     
-    logger.warning("get_client_info is deprecated. Use FastAPI dependency instead.")
+    log.warning(action="deprecated_function", trace_info="system", message="get_client_info is deprecated. Use FastAPI dependency instead.", secure=False)
     return None
 
 def process_client_info_record(record: Dict) -> Dict[str, Any]:
@@ -1683,8 +1695,10 @@ async def validate_device_fingerprint(device_data: Dict[str, Any]) -> bool:
             await security_manager.track_suspicious_activity(device_data['ip_address'], "Suspicious device identifier detected")
             return False
     
-    if not await validate_request_origin(request):
-        print("Suspicious referer")
+    # Note: validate_request_origin requires request object which is not available in this context
+    # This check has been removed. Consider passing request as parameter if needed.
+    # if not await validate_request_origin(request):
+    #     print("Suspicious referer")
     
     return True
 

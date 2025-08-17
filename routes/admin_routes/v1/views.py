@@ -105,8 +105,8 @@ async def admin_dashboard(request: Request):
                     form_data = await request.form()
                     raw_sql_field = form_data.get('sql', '') if not config.is_testing() else ''
                     # Handle both string and UploadFile
-                    if hasattr(raw_sql_field, 'read'):
-                        # It's an UploadFile, read its content
+                    from fastapi import UploadFile
+                    if isinstance(raw_sql_field, UploadFile):                        # It's an UploadFile, read its content
                         raw_sql = (await raw_sql_field.read()).decode('utf-8')
                     else:
                         # It's a string

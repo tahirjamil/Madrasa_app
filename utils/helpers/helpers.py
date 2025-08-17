@@ -1730,7 +1730,7 @@ async def secure_data(required_fields: list[str] | None= None) -> tuple[dict[str
     """
     # Note: This function won't work properly in FastAPI context
     # It's replaced by Pydantic models with automatic validation
-    logger.warning("secure_data is deprecated. Use Pydantic models instead.")
+    log.warning(action="deprecated_function", trace_info="system", message="secure_data is deprecated. Use Pydantic models instead.", secure=False)
     return None, "Function deprecated - use Pydantic models"
 
 async def validate_request_headers(request: Request) -> Tuple[bool, str]:

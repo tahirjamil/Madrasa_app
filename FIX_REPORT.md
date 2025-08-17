@@ -125,6 +125,14 @@ Fixed routes that were using `request` without declaring it:
   - Ensured `madrasa_name` is not None before calling `insert_person()` (line 365)
 - **Status**: ✅ Complete
 
+### 7. **Fixed Missing Password Field in auth.py (routes/api/v1/auth.py)**
+- **Issue**: `BaseAuthRequest` model doesn't have a `password` field but `manage_account` function was trying to access `data.password`
+- **Fix**: 
+  - Created new `ManageAccountRequest` model that extends `BaseAuthRequest` and includes `password: str` field
+  - Updated `manage_account` function to use `ManageAccountRequest` instead of `BaseAuthRequest`
+  - Removed unnecessary `hasattr` check since password field is now properly defined
+- **Status**: ✅ Complete
+
 ## Final Verification
 
 All modified files pass Python syntax checks:

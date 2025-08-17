@@ -77,3 +77,36 @@ A basic import test was created to verify all fixed modules can be imported with
 ## Conclusion
 
 All reported linter errors have been successfully resolved. The fixes maintain backward compatibility while properly adapting the code to work with FastAPI patterns and requirements.
+
+---
+
+# Additional Linter Errors Fixed
+
+After the initial fixes, three more linter errors were discovered and fixed:
+
+## Additional Fixes
+
+### 1. routes/admin_routes/v1/views.py (Line 110)
+
+**Issue:** Cannot access attribute "read" for class "str"
+
+**Fix:** Changed from `hasattr(raw_sql_field, 'read')` to `isinstance(raw_sql_field, UploadFile)` for proper type checking.
+
+### 2. routes/api/v1/auth.py (Line 717)
+
+**Issue:** Cannot access attribute "password" for class "BaseAuthRequest"
+
+**Fix:** 
+- Created new `AccountManageRequest` model with password field
+- Updated `manage_account` endpoint to use the new model
+- Removed conditional password access
+
+### 3. utils/helpers/helpers.py (Line 1733)
+
+**Issue:** "logger" is not defined
+
+**Fix:** Changed `logger.warning()` to `log.warning()` with proper parameters.
+
+## Final Status
+
+All linter errors have been successfully resolved. The codebase now properly follows FastAPI patterns with correct type annotations and error handling.

@@ -73,6 +73,10 @@ class AccountCheckRequest(BaseAuthRequest):
     join_date: Optional[str] = None
     madrasa_name: Optional[str] = None
 
+class AccountManageRequest(BaseAuthRequest):
+    """Account management (deactivate/delete) request"""
+    password: str
+
 # ─── Errors ───────────────────────────────────────────────
 ERROR_MESSAGES = {
         'missing_fields': "All required fields are missing",
@@ -700,7 +704,7 @@ async def reset_password(
 async def manage_account(
     page_type: str,
     request: Request,
-    data: BaseAuthRequest,
+    data: AccountManageRequest,
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Manage account (deactivate/delete) with enhanced security"""
@@ -714,7 +718,7 @@ async def manage_account(
         # Extract and sanitize data
         phone = data.phone
         fullname = data.fullname
-        password = data.password if hasattr(data, 'password') else None
+        password = data.password
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone)

@@ -11,7 +11,7 @@ from quart import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from utils.helpers.improved_funtions import get_env_var, send_json_response
+from utils.helpers.improved_functions import get_env_var, send_json_response
 
 # Local imports
 from . import api

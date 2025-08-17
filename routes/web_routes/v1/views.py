@@ -1,4 +1,4 @@
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_functions import get_env_var
 from . import web_routes
 from quart import render_template, request, redirect, url_for, flash
 from utils.helpers.helpers import send_email

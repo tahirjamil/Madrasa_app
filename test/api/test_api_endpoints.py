@@ -13,7 +13,7 @@ import string
 import asyncio
 import aiohttp
 from typing import Dict, Any, List, Optional
-from utils.helpers.improved_funtions import get_project_root
+from utils.helpers.improved_functions import get_project_root
 
 # Add project root to path to import modules
 sys.path.append(str(get_project_root()))

@@ -1,6 +1,6 @@
 from quart import render_template, request, flash, session, redirect, url_for, current_app, jsonify
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_functions import get_env_var
 from . import admin_routes
 from utils.mysql.database_utils import connect_to_db
 from datetime import datetime, date

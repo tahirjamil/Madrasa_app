@@ -16,7 +16,7 @@ from pathlib import Path
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from utils.helpers.improved_funtions import get_env_var
+from utils.helpers.improved_functions import get_env_var
 from config import config
 
 def test_config_loading():

@@ -5,7 +5,7 @@ import datetime as dt
 from typing import Any, Dict, Tuple, Optional
 
 import aiomysql
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -23,29 +23,31 @@ from utils.helpers.helpers import (
     handle_async_errors, validate_email, validate_fullname, validate_password_strength, validate_madrasa_name
 )
 from utils.helpers.logger import log
+from utils.helpers.fastapi_helpers import (
+    BaseAuthRequest, ClientInfo, get_client_info, validate_device_dependency,
+    rate_limit, handle_async_errors
+)
 
 # ─── Pydantic Models ───────────────────────────────────────────
-class RegisterRequest(BaseModel):
-    fullname: str
-    phone: str
+class RegisterRequest(BaseAuthRequest):
+    """Registration request model extending base auth request"""
     password: str
     code: str
-    ip_address: str
-    device_id: str
     email: Optional[str] = None
-    
-    @validator('fullname')
-    def validate_fullname_field(cls, v):
-        is_valid, error = validate_fullname(v)
-        if not is_valid:
-            raise ValueError(error)
-        return v
     
     @validator('password')
     def validate_password_field(cls, v):
         is_valid, error = validate_password_strength(v)
         if not is_valid:
             raise ValueError(error)
+        return v
+    
+    @validator('email')
+    def validate_email_field(cls, v):
+        if v:
+            is_valid, error = validate_email(v)
+            if not is_valid:
+                raise ValueError(error)
         return v
 
 # ─── Errors ───────────────────────────────────────────────
@@ -74,10 +76,21 @@ ERROR_MESSAGES = {
 
 # ─── Enhanced Authentication Routes ───────────────────────────────────────────
 
-@api.post("/register")
-# @rate_limit(max_requests=10, window=60)  # TODO: Convert rate_limit to FastAPI dependency
-# @handle_async_errors  # TODO: Convert error handler to FastAPI
-async def register(request: Request, data: RegisterRequest) -> JSONResponse:
+@api.post("/register", 
+         response_model=None,
+         responses={
+             201: {"description": "Registration successful"},
+             400: {"description": "Bad request"},
+             409: {"description": "User already exists"},
+             500: {"description": "Internal server error"}
+         })
+@rate_limit(max_requests=10, window=60)
+@handle_async_errors
+async def register(
+    request: Request,
+    data: RegisterRequest,
+    client_info: ClientInfo = Depends(validate_device_dependency)
+) -> JSONResponse:
     """Register a new user with comprehensive validation and security"""
     
     # Test mode handling
@@ -87,25 +100,25 @@ async def register(request: Request, data: RegisterRequest) -> JSONResponse:
         return JSONResponse(content=response, status_code=status)
     
     try:
-        # Extract and sanitize data from Pydantic model
+        # Data is already validated by Pydantic, client info by dependency
         fullname = data.fullname
         email = data.email
         phone = data.phone
         password = data.password
         user_code = data.code
-        device_id = data.device_id or ""
-        ip_address = data.ip_address or ""
+        device_id = client_info.device_id
+        ip_address = client_info.ip_address
+        
+        # Validate and format phone number
+        formatted_phone, phone_error = format_phone_number(phone)
+        if not formatted_phone:
+            response, status = send_json_response(phone_error, 400)
+            return JSONResponse(content=response, status_code=status)
         
         # Validate fullname
         is_valid_name, name_error = validate_fullname(fullname or "")
         if not is_valid_name:
             response, status = send_json_response(name_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone or "")
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
             return JSONResponse(content=response, status_code=status)
         
         # Validate password strength

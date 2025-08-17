@@ -115,7 +115,6 @@ async def create_db_pool() -> Any:
             maxsize=config.MYSQL_MAX_CONNECTIONS,  # Maximum connections in pool
             pool_recycle=3600,  # Recycle connections after 1 hour
             echo=False,  # Don't echo SQL queries
-            autocommit=True,  # Auto-commit transactions
         )
         
         log.info(action="db_pool_created", trace_info="system", message="Database connection pool created successfully", secure=False)

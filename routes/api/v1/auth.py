@@ -698,7 +698,7 @@ async def reset_password(
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
         return JSONResponse(content=response, status_code=status)
 
-@api.post("/account/{page_type}")
+@api.post("/account/{page_type}", name="manage_account")
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def manage_account(

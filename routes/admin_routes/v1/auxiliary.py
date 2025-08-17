@@ -23,7 +23,8 @@ async def require_admin(request: Request):
 # Import session utilities for enhanced session management
 from utils.helpers.session_utils import require_admin_session, update_session_activity
 
-@admin_routes.get('/logs/data')
+# ─── Logs Data Endpoint ─────────────────────────────────────────
+@admin_routes.get('/logs/data', name="logs_data")
 @handle_async_errors
 async def logs_data(request: Request, is_admin: bool = Depends(require_admin)):
     # Get requested log file
@@ -48,7 +49,8 @@ async def logs_data(request: Request, is_admin: bool = Depends(require_admin)):
 
 
 
-@admin_routes.get('/info/data')
+# ─── Info Data Endpoint ─────────────────────────────────────────
+@admin_routes.get('/info/data', name="info_data_admin")
 @handle_async_errors
 async def info_data_admin(request: Request, is_admin: bool = Depends(require_admin)):
     if config.is_testing():

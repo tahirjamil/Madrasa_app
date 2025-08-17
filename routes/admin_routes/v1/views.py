@@ -17,6 +17,7 @@ from config import config
 import json, re, os, aiomysql, subprocess
 from functools import wraps
 from utils.helpers.helpers import require_csrf
+from typing import Optional
 
 # Use centralized templates instance
 from utils.helpers.fastapi_helpers import templates
@@ -38,7 +39,7 @@ _FORBIDDEN_RE = re.compile(
 
 # ------------- Root / Dashboard ----------------
 
-@admin_routes.get('/', response_class=HTMLResponse)
+@admin_routes.get('/', response_class=HTMLResponse, name="admin_dashboard")
 @admin_routes.post('/', response_class=HTMLResponse)
 @require_csrf
 @handle_async_errors
@@ -198,7 +199,7 @@ async def admin_dashboard(request: Request):
 # ------------------ Logs ---------------------
 
 
-@admin_routes.get('/logs', response_class=HTMLResponse)
+@admin_routes.get('/logs', response_class=HTMLResponse, name="view_logs")
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
 async def view_logs(request: Request):
@@ -236,7 +237,7 @@ async def view_logs(request: Request):
     return templates.TemplateResponse("admin/logs.html", {"request": request, "logs": logs})
 
 
-@admin_routes.get('/info', response_class=HTMLResponse)
+@admin_routes.get('/info', response_class=HTMLResponse, name="info_page")
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
 async def info_admin(request: Request):
@@ -261,7 +262,7 @@ async def info_admin(request: Request):
 
 # ------------------ Exam Results ------------------------
 
-@admin_routes.get('/exam_results', response_class=HTMLResponse)
+@admin_routes.get('/exam_results', response_class=HTMLResponse, name="exam_results")
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
 async def exam_results(request: Request):
@@ -341,7 +342,7 @@ async def exam_results(request: Request):
 
 # ------------------- Members --------------------------
 
-@admin_routes.get('/members', response_class=HTMLResponse)
+@admin_routes.get('/members', response_class=HTMLResponse, name="members")
 @admin_routes.post('/members', response_class=HTMLResponse)
 @require_csrf
 @handle_async_errors
@@ -441,7 +442,7 @@ async def members(request: Request):
 
 # ------------------- Notices -----------------------
 
-@admin_routes.get('/notice', response_class=HTMLResponse)
+@admin_routes.get('/notice', response_class=HTMLResponse, name="notice_page")
 @admin_routes.post('/notice', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
@@ -513,7 +514,7 @@ async def notice_page(request: Request):
 
 # ------------------ Routine ----------------------
 
-@admin_routes.get('/routines', response_class=HTMLResponse)
+@admin_routes.get('/routines', response_class=HTMLResponse, name="routines")
 @admin_routes.post('/routines', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
@@ -584,7 +585,7 @@ async def routines(request: Request):
 
 # -------------------- Event / Function ------------------------
 
-@admin_routes.get('/events', response_class=HTMLResponse)
+@admin_routes.get('/events', response_class=HTMLResponse, name="events")
 @admin_routes.post('/events', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
@@ -662,7 +663,7 @@ async def events(request: Request):
 
 # ------------------- Madrasa Pictures ------------------------
 
-@admin_routes.get('/madrasa_pictures', response_class=HTMLResponse)
+@admin_routes.get('/madrasa_pictures', response_class=HTMLResponse, name="madrasa_pictures")
 @admin_routes.post('/madrasa_pictures', response_class=HTMLResponse)
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
@@ -728,7 +729,7 @@ async def madrasa_pictures(request: Request):
 
 # ---------------------- Exam -----------------------------
 
-@admin_routes.get('/admin/events/exams', response_class=HTMLResponse)
+@admin_routes.get('/admin/events/exams', response_class=HTMLResponse, name="exams")
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
 async def exams(request: Request):
@@ -888,7 +889,7 @@ async def exams(request: Request):
 
 #     return render_template('admin/payment_form.html', payment=payment, mode=mode)
 
-@admin_routes.get('/interactions', response_class=HTMLResponse)
+@admin_routes.get('/interactions', response_class=HTMLResponse, name="interactions")
 @handle_async_errors
 @rate_limit(max_requests=500, window=60)
 async def interactions(request: Request):
@@ -925,7 +926,7 @@ async def interactions(request: Request):
     return templates.TemplateResponse('admin/interactions.html', {"request": request, "interactions": rows, "sort": sort})
 
 
-@admin_routes.get('/power', response_class=HTMLResponse)
+@admin_routes.get('/power', response_class=HTMLResponse, name="power_management")
 @admin_routes.post('/power', response_class=HTMLResponse)
 @require_csrf
 @handle_async_errors

@@ -1,19 +1,30 @@
-from quart import Blueprint, jsonify, request
+from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from utils.helpers.helpers import require_api_key
-from quart_babel import gettext as _
 from config import config
 from utils.helpers.improved_functions import send_json_response
 
-api = Blueprint("api", __name__)
+api = APIRouter(prefix="/api/v1")
 
-@api.before_request
-@require_api_key
-async def check():
-    lang = request.accept_languages.best_match(["en", "bn", "ar"])
+# Create a dependency for API key check
+async def check_api_key(request: Request):
+    """Check API key and maintenance mode"""
+    # This will be replaced by the actual require_api_key logic
+    # For now, we'll implement a basic version
+    pass
+
+@api.middleware("http")
+async def check_middleware(request: Request, call_next):
+    """Check API key and maintenance mode for all API routes"""
+    # TODO: Implement API key check from require_api_key
+    
     if config.is_maintenance():
-        response, status = send_json_response(_("System is under maintenance. Please try again later."), 503)
+        response, status = send_json_response("System is under maintenance. Please try again later.", 503)
         response.update({"action": "maintenance"})
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
+    
+    response = await call_next(request)
+    return response
 
 
 

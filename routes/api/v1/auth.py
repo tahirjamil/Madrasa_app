@@ -2,13 +2,12 @@ import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 import datetime as dt
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 import aiomysql
-from quart import (
-    jsonify,
-    Response
-)
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, validator
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from utils.helpers.improved_functions import get_env_var, send_json_response
@@ -23,87 +22,104 @@ from utils.helpers.helpers import (
     get_email, rate_limit, encrypt_sensitive_data, hash_sensitive_data,
     handle_async_errors, validate_email, validate_fullname, validate_password_strength, validate_madrasa_name
 )
-from quart_babel import gettext as _
 from utils.helpers.logger import log
+
+# ─── Pydantic Models ───────────────────────────────────────────
+class RegisterRequest(BaseModel):
+    fullname: str
+    phone: str
+    password: str
+    code: str
+    ip_address: str
+    device_id: str
+    email: Optional[str] = None
+    
+    @validator('fullname')
+    def validate_fullname_field(cls, v):
+        is_valid, error = validate_fullname(v)
+        if not is_valid:
+            raise ValueError(error)
+        return v
+    
+    @validator('password')
+    def validate_password_field(cls, v):
+        is_valid, error = validate_password_strength(v)
+        if not is_valid:
+            raise ValueError(error)
+        return v
 
 # ─── Errors ───────────────────────────────────────────────
 ERROR_MESSAGES = {
-        'missing_fields': _("All required fields are missing"),
-        'invalid_credentials': _("Invalid login credentials"),
-        'account_deactivated': _("Account is deactivated"),
-        'account_not_found': _("Account not found"),
-        'device_unsafe': _("Unknown device detected"),
-        'device_limit_exceeded': _("Maximum devices reached. Please remove an existing device to add this one."),
-        'rate_limit_exceeded': _("Too many attempts. Please try again later."),
-        'verification_failed': _("Verification code is invalid or expired"),
-        'password_mismatch': _("Passwords do not match"),
-        'weak_password': _("Password is too weak"),
-        'invalid_email': _("Invalid email format"),
-        'invalid_phone': _("Invalid phone number format"),
-        'user_already_exists': _("User already exists"),
-        'session_expired': _("Session has expired"),
-        'maintenance_mode': _("Application is currently in maintenance mode"),
-        'unauthorized': _("Unauthorized access"),
-        'internal_error': _("An internal error occurred"),
-        'validation_error': _("Validation error"),
-        'database_error': _("Database operation failed")
+        'missing_fields': "All required fields are missing",
+        'invalid_credentials': "Invalid login credentials",
+        'account_deactivated': "Account is deactivated",
+        'account_not_found': "Account not found",
+        'device_unsafe': "Unknown device detected",
+        'device_limit_exceeded': "Maximum devices reached. Please remove an existing device to add this one.",
+        'rate_limit_exceeded': "Too many attempts. Please try again later.",
+        'verification_failed': "Verification code is invalid or expired",
+        'password_mismatch': "Passwords do not match",
+        'weak_password': "Password is too weak",
+        'invalid_email': "Invalid email format",
+        'invalid_phone': "Invalid phone number format",
+        'user_already_exists': "User already exists",
+        'session_expired': "Session has expired",
+        'maintenance_mode': "Application is currently in maintenance mode",
+        'unauthorized': "Unauthorized access",
+        'internal_error': "An internal error occurred",
+        'validation_error': "Validation error",
+        'database_error': "Database operation failed"
     }
 
 
 # ─── Enhanced Authentication Routes ───────────────────────────────────────────
 
-@api.route("/register", methods=["POST"])
-@rate_limit(max_requests=10, window=60)
-@handle_async_errors
-async def register() -> Tuple[Response, int]:
+@api.post("/register")
+# @rate_limit(max_requests=10, window=60)  # TODO: Convert rate_limit to FastAPI dependency
+# @handle_async_errors  # TODO: Convert error handler to FastAPI
+async def register(request: Request, data: RegisterRequest) -> JSONResponse:
     """Register a new user with comprehensive validation and security"""
     
     # Test mode handling
     if config.is_testing():
-        response, status = send_json_response(_("Ignored because in test mode"), 201)
+        response, status = send_json_response("Ignored because in test mode", 201)
         response.update({"info": None})
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     try:
-        # Get and validate request data
-        data, error = await secure_data(required_fields=['fullname', 'phone', 'password', 'code', 'ip_address', 'device_id'])
-        if not data:
-            response, status = send_json_response(error, 400)
-            return jsonify(response), status
-        
-        # Extract and sanitize data
-        fullname = data.get("fullname")
-        email = data.get("email") if data.get("email") else None
-        phone = data.get("phone")
-        password = data.get("password")
-        user_code = data.get("code")
-        device_id = data.get("device_id") or ""
-        ip_address = data.get("ip_address") or ""
+        # Extract and sanitize data from Pydantic model
+        fullname = data.fullname
+        email = data.email
+        phone = data.phone
+        password = data.password
+        user_code = data.code
+        device_id = data.device_id or ""
+        ip_address = data.ip_address or ""
         
         # Validate fullname
         is_valid_name, name_error = validate_fullname(fullname or "")
         if not is_valid_name:
             response, status = send_json_response(name_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone or "")
         if not formatted_phone:
             response, status = send_json_response(phone_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate password strength
         is_valid_password, password_error = validate_password_strength(password or "")
         if not is_valid_password:
             response, status = send_json_response(password_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate email if provided
         if email:
             is_valid_email, email_error = validate_email(email)
             if not is_valid_email:
                 response, status = send_json_response(email_error, 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         
         # Verify code
         verification_result = await check_code(user_code or "", formatted_phone)
@@ -122,7 +138,7 @@ async def register() -> Tuple[Response, int]:
         # SECURITY: Validate madrasa_name is in allowed list
         if not validate_madrasa_name(madrasa_name, ip_address):
             response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         
         try:
@@ -140,7 +156,7 @@ async def register() -> Tuple[Response, int]:
                 if existing_user:
                     log.warning(action="register_user_exists", trace_info=ip_address, message=f"User already exists: {fullname}", secure=False)
                     response, status = send_json_response(ERROR_MESSAGES['user_already_exists'], 409)
-                    return jsonify(response), status
+                    return JSONResponse(content=response, status_code=status)
                 
                 # Insert new user
                 await cursor.execute(
@@ -167,7 +183,7 @@ async def register() -> Tuple[Response, int]:
                     if not is_device_allowed:
                         log.warning(action="register_device_limit_exceeded", trace_info=ip_address, message=f"Device limit exceeded during registration for: {fullname}", secure=False)
                         response, status = send_json_response(device_limit_error, 403)
-                        return jsonify(response), status
+                        return JSONResponse(content=response, status_code=status)
                 
                 # Get user profile information
                 await cursor.execute(
@@ -203,38 +219,38 @@ async def register() -> Tuple[Response, int]:
                 
                 response, status = send_json_response(_("Registration successful"), 201)
                 response.update({"info": people_result})
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
                 
         except aiomysql.IntegrityError as e:
             log.critical(action="register_integrity_error", trace_info=ip_address, message=f"Database integrity error: {str(e)}", secure=False)
             response, status = send_json_response(ERROR_MESSAGES['user_already_exists'], 409)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
             
         except Exception as e:
             log.critical(action="register_database_error", trace_info=ip_address, message=f"Database error during registration: {str(e)}", secure=False)
             response, status = send_json_response(ERROR_MESSAGES['database_error'], 500)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
             
     except Exception as e:
         log.critical(action="register_error", trace_info="system", message=f"Registration error: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
-@api.route("/login", methods=["POST"])
+@api.post("/login")
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
-async def login() -> Tuple[Response, int] | None:
+async def login(request: Request) -> Tuple[JSONResponse, int] | None:
     """Authenticate user login with enhanced security and validation"""
     # Get and validate request data
     data, error = await secure_data(required_fields=['fullname', 'phone', 'password', 'ip_address', 'device_id'])
     if not data:
         response, status = send_json_response(error, 400)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     if config.is_testing():
         response, status = send_json_response(_("Ignored because in test mode"), 201)
         response.update({"info": None})
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
         
     # Extract and sanitize data
     fullname = data.get("fullname")
@@ -247,7 +263,7 @@ async def login() -> Tuple[Response, int] | None:
     formatted_phone, phone_error = format_phone_number(phone or "")
     if not formatted_phone:
         response, status = send_json_response(phone_error, 400)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
         
     # Check login attempts
     identifier = f"{formatted_phone}:{fullname}"
@@ -256,14 +272,14 @@ async def login() -> Tuple[Response, int] | None:
     if not is_allowed:
         log.warning(action="login_rate_limited", trace_info=ip_address, message=f"Login rate limited for: {fullname} remaining attempts: {remaining_attempts}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['rate_limit_exceeded'], 429)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     # Authenticate user
     madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
     # SECURITY: Validate madrasa_name is in allowed list  
     if not validate_madrasa_name(madrasa_name, ip_address):
         response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     
     try: 
@@ -282,28 +298,28 @@ async def login() -> Tuple[Response, int] | None:
                 await record_login_attempt(identifier, False)
                 log.error(action="login_user_not_found", trace_info=formatted_phone, message=f"User not found: {fullname}", secure=True)
                 response, status = send_json_response(ERROR_MESSAGES['account_not_found'], 404)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Check password
             if not check_password_hash(user["password_hash"], password or ""):
                 await record_login_attempt(identifier, False)
                 log.warning(action="login_incorrect_password", trace_info=formatted_phone, message="Incorrect password", secure=True)
                 response, status = send_json_response(ERROR_MESSAGES['invalid_credentials'], 401)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Check if account is deactivated
             if user["deactivated_at"] is not None:
                 log.warning(action="login_account_deactivated", trace_info=formatted_phone, message="Account is deactivated", secure=True)
                 response, status = send_json_response(ERROR_MESSAGES['account_deactivated'], 403)
                 response.update({"action": "deactivate"})
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Check device limit
             is_device_allowed, device_limit_error = await check_device_limit(user["user_id"], device_id)
             if not is_device_allowed:
                 log.warning(action="login_device_limit_exceeded", trace_info=formatted_phone, message=f"Device limit exceeded for user: {fullname}", secure=True)
                 response, status = send_json_response(device_limit_error, 403)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Record successful login
             await record_login_attempt(identifier, True)
@@ -333,7 +349,7 @@ async def login() -> Tuple[Response, int] | None:
                 log.warning(action="login_incomplete_profile", trace_info=formatted_phone, message="Missing profile info", secure=True)
                 response, status = send_json_response(_("Additional info required"), 422)
                 response.update({"error": "incomplete_profile", "info" : info})
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Remove sensitive information
             info.pop("password", None)
@@ -349,29 +365,29 @@ async def login() -> Tuple[Response, int] | None:
             
             response, status = send_json_response(_("Login successful"), 200)
             response.update({"info": info})
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
             
     except Exception as e:
         log.critical(action="login_error", trace_info=ip_address, message=f"Login error: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
-@api.route("/send_code", methods=["POST"])
+@api.post("/send_code")
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
-async def send_verification_code() -> Tuple[Response, int]:
+async def send_verification_code(request: Request) -> Tuple[JSONResponse, int]:
     """Send verification code via SMS or email with enhanced security"""
     # Test mode handling
     if config.is_testing():
         response, status = send_json_response(_("Verification code sent to %(target)s") % {"target": config.DUMMY_EMAIL}, 200)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     try:
         # Get and validate request data
         data, error = await secure_data(required_fields=['phone', 'fullname', 'ip_address'])
         if not data:
             response, status = send_json_response(error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
 
         # Extract and sanitize data
         phone = data.get("phone")
@@ -385,27 +401,27 @@ async def send_verification_code() -> Tuple[Response, int]:
         formatted_phone, phone_error = format_phone_number(phone or "")
         if not formatted_phone:
             response, status = send_json_response(phone_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate fullname if provided
         is_valid_name, name_error = validate_fullname(fullname or "")
         if not is_valid_name:
             response, status = send_json_response(name_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate password if provided
         if password:
             is_valid_password, password_error = validate_password_strength(password or "")
             if not is_valid_password:
                 response, status = send_json_response(password_error, 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         
         # Validate email if provided
         if email:
             is_valid_email, email_error = validate_email(email or "")
             if not is_valid_email:
                 response, status = send_json_response(email_error, 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         else:
             email = await get_email(phone=formatted_phone, fullname=fullname or "")
         
@@ -426,7 +442,7 @@ async def send_verification_code() -> Tuple[Response, int]:
                 if existing_user:
                     log.warning(action="send_code_user_exists", trace_info=ip_address, message=f"User already exists: {fullname}", secure=False)
                     response, status = send_json_response(ERROR_MESSAGES['user_already_exists'], 409)
-                    return jsonify(response), status
+                    return JSONResponse(content=response, status_code=status)
             
             # Check rate limit for verification codes
             await cursor.execute("""
@@ -442,7 +458,7 @@ async def send_verification_code() -> Tuple[Response, int]:
             if count >= max_limit:
                 log.warning(action="send_code_rate_limited", trace_info=ip_address, message=f"Rate limit exceeded for phone: {formatted_phone}", secure=False)
                 response, status = send_json_response(ERROR_MESSAGES['rate_limit_exceeded'], 429)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Generate and send verification code
             code = generate_code()
@@ -461,7 +477,7 @@ async def send_verification_code() -> Tuple[Response, int]:
                     log.info(action="verification_code_sent_sms", trace_info=ip_address, message=f"Verification code sent via SMS to: {formatted_phone}", secure=False)
                     
                     response, status = send_json_response(_("Verification code sent to %(target)s") % {"target": formatted_phone}, 200)
-                    return jsonify(response), status
+                    return JSONResponse(content=response, status_code=status)
             
             # Try email if SMS failed or limit reached
             if email and count < config.EMAIL_LIMIT_PER_HOUR:
@@ -475,21 +491,21 @@ async def send_verification_code() -> Tuple[Response, int]:
                     log.info(action="verification_code_sent_email", trace_info=ip_address, message=f"Verification code sent via email to: {email}", secure=False)
                     
                     response, status = send_json_response(_("Verification code sent to %(target)s") % {"target": email}, 200)
-                    return jsonify(response), status
+                    return JSONResponse(content=response, status_code=status)
             
             # If both methods failed
             log.critical(action="verification_code_failed", trace_info=ip_address, message="Failed to send verification code via any method", secure=False)
             response, status = send_json_response("Failed to send verification code", 500)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
             
     except Exception as e:
         log.critical(action="send_code_error", trace_info="system", message=f"Error sending verification code: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
-@api.route("/reset_password", methods=["POST"])
+@api.post("/reset_password")
 @handle_async_errors
-async def reset_password() -> Tuple[Response, int]:
+async def reset_password(request: Request) -> Tuple[JSONResponse, int]:
     """Reset user password with enhanced security validation"""
     
     try:
@@ -497,7 +513,7 @@ async def reset_password() -> Tuple[Response, int]:
         data, error = await secure_data(required_fields=['phone', 'fullname', 'ip_address', 'device_id'])
         if not data:
             response, status = send_json_response(error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Extract and sanitize data
         phone = data.get("phone")
@@ -512,16 +528,16 @@ async def reset_password() -> Tuple[Response, int]:
         if config.is_testing():
             if not new_password:
                 response, status = send_json_response("App in test mode", 200)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             else:
                 response, status = send_json_response("App in test mode", 201)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone or "")
         if not formatted_phone:
             response, status = send_json_response(phone_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # If old password is not provided, use code verification
         if not old_password:
@@ -530,14 +546,14 @@ async def reset_password() -> Tuple[Response, int]:
                 return validate_code_result
             elif not new_password:
                 response, status = send_json_response(_("Code successfully matched"), 200)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         
         # Validate new password if provided
         if new_password:
             is_valid_password, password_error = validate_password_strength(new_password)
             if not is_valid_password:
                 response, status = send_json_response(password_error, 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         
         # Authenticate user and update password
         
@@ -555,32 +571,32 @@ async def reset_password() -> Tuple[Response, int]:
             if not user:
                 log.error(action="reset_password_user_not_found", trace_info=formatted_phone, message=f"User not found: {fullname}", secure=True)
                 response, status = send_json_response(ERROR_MESSAGES['account_not_found'], 404)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Check device limit
             is_device_allowed, device_limit_error = await check_device_limit(user["user_id"], device_id)
             if not is_device_allowed:
                 log.warning(action="reset_password_device_limit_exceeded", trace_info=formatted_phone, message=f"Device limit exceeded during password reset for user: {fullname}", secure=True)
                 response, status = send_json_response(device_limit_error, 403)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # If old password is provided, verify it
             if old_password:
                 if not check_password_hash(user['password_hash'], old_password):
                     log.warning(action="reset_password_incorrect_old_password", trace_info=formatted_phone, message="Incorrect old password", secure=True)
                     response, status = send_json_response(_("Incorrect old password"), 401)
-                    return jsonify(response), status
+                    return JSONResponse(content=response, status_code=status)
             
             # Hash new password
             if not new_password:
                 response, status = send_json_response(_("New password is required"), 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             hashed_password = generate_password_hash(new_password)
             
             # Check if new password is same as current
             if check_password_hash(user['password_hash'], new_password):
                 response, status = send_json_response(_("New password cannot be the same as the current password."), 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Update password
             await cursor.execute(
@@ -592,22 +608,22 @@ async def reset_password() -> Tuple[Response, int]:
             log.info(action="password_reset_successful", trace_info=ip_address, message=f"Password reset successful for: {fullname}", secure=False)
             
             response, status = send_json_response(_("Password Reset Successful"), 201)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
             
     except Exception as e:
         log.critical(action="reset_password_error", trace_info="system", message=f"Password reset error: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
-@api.route("/account/<page_type>", methods=["POST"])
+@api.post("/account/{page_type}")
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
-async def manage_account(page_type: str) -> Tuple[Response, int]:
+async def manage_account(page_type: str, request: Request) -> Tuple[JSONResponse, int]:
     """Manage account (deactivate/delete) with enhanced security"""
     # Validate page type
     if page_type not in ("remove", "deactivate", "delete"):
         response, status = send_json_response(_("Invalid page type"), 400)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     # Handle POST request
     try:
@@ -615,7 +631,7 @@ async def manage_account(page_type: str) -> Tuple[Response, int]:
         data, error = await secure_data(required_fields=['phone', 'fullname', 'password'])
         if not data:
             response, status = send_json_response(error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
 
         # Extract and sanitize data
         phone = data.get("phone")
@@ -627,7 +643,7 @@ async def manage_account(page_type: str) -> Tuple[Response, int]:
         formatted_phone, phone_error = format_phone_number(phone or "")
         if not formatted_phone:
             response, status = send_json_response(phone_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Authenticate user
         async with get_db_connection() as conn:
@@ -643,7 +659,7 @@ async def manage_account(page_type: str) -> Tuple[Response, int]:
                 if not user or not check_password_hash(user["password_hash"], password or ""):
                     log.error(action="manage_account_invalid_credentials", trace_info=formatted_phone, message="Invalid credentials for account management", secure=True)
                     response, status = send_json_response(_("Invalid login details"), 401)
-                    return jsonify(response), status
+                    return JSONResponse(content=response, status_code=status)
                 
                 # Prepare confirmation message
                 deletion_days = config.ACCOUNT_DELETION_DAYS
@@ -660,7 +676,7 @@ async def manage_account(page_type: str) -> Tuple[Response, int]:
                 is_valid_email, email_error = validate_email(email)
                 if not is_valid_email:
                     response, status = send_json_response(email_error, 400)
-                    return jsonify(response), status
+                    return JSONResponse(content=response, status_code=status)
                 if not await send_email(to_email=email, subject=subject, body=msg):
                     errors += 1
             else:
@@ -672,7 +688,7 @@ async def manage_account(page_type: str) -> Tuple[Response, int]:
             if errors > 1:
                 log.critical(action="manage_account_notification_failed", trace_info=formatted_phone, message="Could not send confirmation notifications", secure=True)
                 response, status = send_json_response(_("Could not send confirmation. Try again later."), 500)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Schedule deactivation/deletion
             now = datetime.now(timezone.utc)
@@ -695,34 +711,34 @@ async def manage_account(page_type: str) -> Tuple[Response, int]:
             if page_type in ["remove", "delete"]:
                 log.warning(action="account_deletion_scheduled", trace_info=formatted_phone, message=f"User {hash_sensitive_data(fullname or "")} scheduled for deletion", secure=True)
                 response, status = send_json_response(_("Account deletion initiated. Check your messages."), 200)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             else:
                 log.warning(action="account_deactivated", trace_info=formatted_phone, message=f"User {hash_sensitive_data(fullname or "")} deactivated", secure=True)
                 response, status = send_json_response(_("Account deactivated successfully."), 200)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
                 
     except Exception as e:
         log.critical(action="manage_account_error", trace_info="system", message=f"Account management error: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
-@api.route("/account/reactivate", methods=['POST'])
+@api.post("/account/reactivate")
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
-async def undo_remove() -> Tuple[Response, int]:
+async def undo_remove(request: Request) -> Tuple[JSONResponse, int]:
     """Reactivate a deactivated account with enhanced validation"""
     
     # Test mode handling
     if config.is_testing():
         response, status = send_json_response("App in test mode", 200)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     try:
         # Get and validate request data
         data, error = await secure_data(required_fields=['phone', 'fullname'])
         if not data:
             response, status = send_json_response(error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Extract and sanitize data
         phone = data.get("phone")
@@ -732,7 +748,7 @@ async def undo_remove() -> Tuple[Response, int]:
         formatted_phone, phone_error = format_phone_number(phone or "")
         if not formatted_phone:
             response, status = send_json_response(phone_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Reactivate account
         
@@ -749,14 +765,14 @@ async def undo_remove() -> Tuple[Response, int]:
             if not user or not user["deactivated_at"]:
                 log.warning(action="reactivate_no_deactivated_account", trace_info=data.get("ip_address", ""), message=f"No deactivated account found for: {fullname}", secure=False)
                 response, status = send_json_response("No deactivated account found", 404)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Check if reactivation period has expired
             deactivated_at = user["deactivated_at"]
             if (datetime.now(timezone.utc) - deactivated_at).days > config.ACCOUNT_REACTIVATION_DAYS and user["scheduled_deletion_at"]:
                 log.warning(action="reactivate_period_expired", trace_info=data.get("ip_address", ""), message=f"Reactivation period expired for: {fullname}", secure=False)
                 response, status = send_json_response("Undo period expired", 403)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Reactivate account
             await cursor.execute(
@@ -768,21 +784,21 @@ async def undo_remove() -> Tuple[Response, int]:
             log.info(action="account_reactivated_successfully", trace_info=data.get("ip_address", ""), message=f"Account reactivated successfully for: {fullname}", secure=False)
             
             response, status = send_json_response(_("Account reactivated."), 200)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
             
     except Exception as e:
         log.critical(action="reactivate_error", trace_info="system", message=f"Account reactivation error: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
-@api.route("/account/check", methods=['POST'])
+@api.post("/account/check")
 @handle_async_errors
-async def get_account_status() -> Tuple[Response, int]:
+async def get_account_status(request: Request) -> Tuple[JSONResponse, int]:
     """Check account status and validate session with enhanced security"""
     # Test mode handling
     if config.is_testing():
         response, status = send_json_response("App in test mode", 200)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
     
     try:
         # Get and validate request data
@@ -790,7 +806,7 @@ async def get_account_status() -> Tuple[Response, int]:
         if not data:
             response, status = send_json_response(error, 400)
             response.update({"action": "logout"})
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Extract and validate device information
         device_id = data.get("device_id")
@@ -805,14 +821,14 @@ async def get_account_status() -> Tuple[Response, int]:
         # SECURITY: Validate madrasa_name is in allowed list
         if not validate_madrasa_name(madrasa_name, ip_address):
             response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone or "")
         if not formatted_phone:
             response, status = send_json_response(phone_error, 400)
             response.update({"action": "logout"})
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Define fields to check
         checks = {
@@ -854,7 +870,7 @@ async def get_account_status() -> Tuple[Response, int]:
                 log.info(action="account_check_missing_field", trace_info=ip_address or "", message=f"Field {field_name} is missing", secure=False)
                 response, status = send_json_response(_("Session invalidated. Please log in again."), 400)
                 response.update({"action": "logout"})
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         
         # Validate account in database
         
@@ -882,14 +898,14 @@ async def get_account_status() -> Tuple[Response, int]:
                 log.error(action="account_check_not_found", trace_info=ip_address or "", message="No matching user found", secure=False)
                 response, status = send_json_response(_("Session invalidated. Please log in again."), 401)
                 response.update({"action": "logout"})
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Check if account is deactivated
             if record.get("deactivated_at"):
                 log.warning(action="account_check_deactivated", trace_info=record["user_id"], message="Account is deactivated", secure=False)
                 response, status = send_json_response(_("Account is deactivated"), 401)
                 response.update({"action": "deactivate"})
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Compare provided fields with database values
             for col, provided in checks.items():
@@ -906,7 +922,7 @@ async def get_account_status() -> Tuple[Response, int]:
                         log.error(action="account_check_bad_date", trace_info=record["user_id"], message=f"Bad date format: {provided}", secure=False)
                         response, status = send_json_response(_("Session invalidated. Please log in again."), 401)
                         response.update({"action": "logout"})
-                        return jsonify(response), status
+                        return JSONResponse(content=response, status_code=status)
                     
                     if db_val:
                         db_date = db_val.date() if isinstance(db_val, dt.datetime) else db_val
@@ -914,14 +930,14 @@ async def get_account_status() -> Tuple[Response, int]:
                             log.warning(action="account_check_date_mismatch", trace_info=record["user_id"], message=f"Date mismatch: {col}: {provided_date} != {db_date}", secure=False)
                             response, status = send_json_response(_("Session invalidated. Please log in again."), 401)
                             response.update({"action": "logout"})
-                            return jsonify(response), status
+                            return JSONResponse(content=response, status_code=status)
                 else:
                     # Compare string values
                     if str(provided).strip() != str(db_val).strip():
                         log.warning(action="account_check_field_mismatch", trace_info=record["user_id"], message=f"Field mismatch: {col}: {hash_sensitive_data(str(provided))} != {hash_sensitive_data(str(db_val))}", secure=False)
                         response, status = send_json_response(_("Session invalidated. Please log in again."), 401)
                         response.update({"action": "logout"})
-                        return jsonify(response), status
+                        return JSONResponse(content=response, status_code=status)
             
             # Check device limit
             is_device_allowed, device_limit_error = await check_device_limit(record["user_id"], device_id or "")
@@ -929,7 +945,7 @@ async def get_account_status() -> Tuple[Response, int]:
                 log.warning(action="account_check_device_limit_exceeded", trace_info=record["user_id"], message=f"Device limit exceeded during account check for user: {record['user_id']}", secure=False)
                 response, status = send_json_response(device_limit_error, 403)
                 response.update({"action": "logout"})
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Track device interaction
             await cursor.execute(
@@ -960,12 +976,12 @@ async def get_account_status() -> Tuple[Response, int]:
             
             response, status = send_json_response(_("Account is valid"), 200)
             response.update({"user_id": record["user_id"]})
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
             
     except Exception as e:
         log.critical(action="account_check_error", trace_info="system", message=f"Account check error: {str(e)}", secure=False)
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
 # ─── Advanced Security and Monitoring Functions ─────────────────────────────────
 

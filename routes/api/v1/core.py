@@ -72,7 +72,44 @@ ERROR_MESSAGES = {
 @handle_async_errors
 async def add_person(
     request: Request,
-    data: PersonData,
+    # Form fields
+    name_en: str = Form(...),
+    phone: str = Form(...),
+    acc_type: str = Form(...),
+    madrasa_name: Optional[str] = Form(None),
+    # Optional form fields based on acc_type
+    name_bn: Optional[str] = Form(None),
+    name_ar: Optional[str] = Form(None),
+    date_of_birth: Optional[str] = Form(None),
+    birth_certificate: Optional[str] = Form(None),
+    national_id: Optional[str] = Form(None),
+    blood_group: Optional[str] = Form(None),
+    gender: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    present_address: Optional[str] = Form(None),
+    permanent_address: Optional[str] = Form(None),
+    father_en: Optional[str] = Form(None),
+    father_bn: Optional[str] = Form(None),
+    father_ar: Optional[str] = Form(None),
+    mother_en: Optional[str] = Form(None),
+    mother_bn: Optional[str] = Form(None),
+    mother_ar: Optional[str] = Form(None),
+    student_id: Optional[str] = Form(None),
+    guardian_number: Optional[str] = Form(None),
+    class_field: Optional[str] = Form(None, alias="class"),
+    title1: Optional[str] = Form(None),
+    title2: Optional[str] = Form(None),
+    degree: Optional[str] = Form(None),
+    father_or_spouse: Optional[str] = Form(None),
+    teacher: Optional[str] = Form("0"),
+    student: Optional[str] = Form("0"),
+    staff: Optional[str] = Form("0"),
+    donor: Optional[str] = Form("0"),
+    badri_member: Optional[str] = Form("0"),
+    special_member: Optional[str] = Form("0"),
+    # File upload
+    image: Optional[UploadFile] = File(None),
+    # Dependencies
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Add a new person to the system with comprehensive validation and security """
@@ -83,71 +120,75 @@ async def add_person(
         return JSONResponse(content=response, status_code=status)
     
     try:
-        # Get form data
-        data = await request.form
-        files = await request.files
-        image = files.get('image')
-        madrasa_name = data.get("madrasa_name") or get_env_var("MADRASA_NAME")
+        # Use the provided madrasa_name or get from env
+        madrasa_name = madrasa_name or get_env_var("MADRASA_NAME")
+        
+        # Ensure madrasa_name is not None before validation
+        if not madrasa_name:
+            response, status = send_json_response("Madrasa name is required", 400)
+            return JSONResponse(content=response, status_code=status)
         
         # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
+        if not validate_madrasa_name(madrasa_name, client_info.ip_address):
             response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
             return JSONResponse(content=response, status_code=status)
         
         # Validate required fields using enhanced validation
-        required_fields = ['name_en', 'phone', 'acc_type']
-        missing_fields = [f for f in required_fields if not data.get(f)]
-        if missing_fields:
-            log.warning(action="add_people_missing_fields", trace_info=data.get("ip_address", ""), message=f"Missing required fields: {missing_fields}", secure=False)
+        if not name_en or not phone or not acc_type:
+            missing_fields = []
+            if not name_en: missing_fields.append('name_en')
+            if not phone: missing_fields.append('phone')
+            if not acc_type: missing_fields.append('acc_type')
+            log.warning(action="add_people_missing_fields", trace_info=client_info.ip_address, message=f"Missing required fields: {missing_fields}", secure=False)
             response, status = send_json_response(f"Missing required fields: {', '.join(missing_fields)}", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Extract and validate basic fields with sanitization
-        fullname = data.get('name_en') or ""
-        phone = data.get('phone') or ""
-        acc_type = data.get('acc_type') or ""
+        fullname = name_en
+        phone_input = phone
+        acc_type_input = acc_type
         
         # Validate fullname
         is_valid_name, name_error = validate_fullname(fullname)
         if not is_valid_name:
             response, status = send_json_response(name_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone)
+        formatted_phone, phone_error = format_phone_number(phone_input)
         if not formatted_phone:
             response, status = send_json_response(phone_error, 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Normalize account type
-        if not acc_type or not acc_type.endswith('s'):
-            acc_type = f"{acc_type}s"
+        if not acc_type_input or not acc_type_input.endswith('s'):
+            acc_type_input = f"{acc_type_input}s"
         
         VALID_ACCOUNT_TYPES = [
             'admins', 'students', 'teachers', 'staffs', 
             'others', 'badri_members', 'donors'
         ]
-        if acc_type not in VALID_ACCOUNT_TYPES:
-            acc_type = 'others'
+        if acc_type_input not in VALID_ACCOUNT_TYPES:
+            acc_type_input = 'others'
         
         # Get user ID
         person_id = await get_id(formatted_phone, fullname.lower())
         if not person_id:
             log.error(action="add_people_id_not_found", trace_info=formatted_phone, message="User ID not found", secure=True)
             response, status = send_json_response("ID not found", 404)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
         
         # Initialize fields dictionary
         fields: Dict[str, Any] = {"user_id": person_id}
         
         # Set account type boolean fields
         fields.update({
-            "teacher": data.get('teacher', '0') == '1' or acc_type == 'teachers',
-            "student": data.get('student', '0') == '1' or acc_type == 'students',
-            "staff": data.get('staff', '0') == '1' or acc_type == 'staffs',
-            "donor": data.get('donor', '0') == '1' or acc_type == 'donors',
-            "badri_member": data.get('badri_member', '0') == '1' or acc_type == 'badri_members',
-            "special_member": data.get('special_member', '0') == '1'
+            "teacher": teacher == '1' or acc_type_input == 'teachers',
+            "student": student == '1' or acc_type_input == 'students',
+            "staff": staff == '1' or acc_type_input == 'staffs',
+            "donor": donor == '1' or acc_type_input == 'donors',
+            "badri_member": badri_member == '1' or acc_type_input == 'badri_members',
+            "special_member": special_member == '1'
         })
         
         # Handle image upload with enhanced security
@@ -160,7 +201,7 @@ async def add_person(
             
             if not is_valid_file:
                 response, status = send_json_response(file_error, 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             # Generate secure filename
             filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
@@ -170,10 +211,10 @@ async def add_person(
             
             try:
                 # Process and save image
-                img = Image.open(image.stream)
+                img = Image.open(image.file)
                 img.verify()  # Verify image integrity
-                image.stream.seek(0)
-                img = Image.open(image.stream)
+                image.file.seek(0)
+                img = Image.open(image.file)
                 
                 # Convert to RGB if necessary
                 if img.mode in ('RGBA', 'LA', 'P'):
@@ -183,23 +224,57 @@ async def add_person(
                 img.save(image_path, "WEBP", quality=85)
                 
                 # Set image path
-                BASE_URL = current_app.config['BASE_URL']
+                BASE_URL = config.BASE_URL
                 fields["image_path"] = f"{BASE_URL}/uploads/profile_pics/{filename}"
                 
             except Exception as e:
-                log.critical(action="image_processing_error", trace_info=data.get("ip_address", ""), message=f"Failed to process image: {str(e)}", secure=False)
+                log.critical(action="image_processing_error", trace_info=client_info.ip_address, message=f"Failed to process image: {str(e)}", secure=False)
                 response, status = send_json_response("Failed to process image", 500)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
         else:
             response, status = send_json_response("Image file is required", 400)
-            return jsonify(response), status
+            return JSONResponse(content=response, status_code=status)
+        
+        # Create a dictionary from form fields for easier processing
+        form_data = {
+            'name_en': name_en,
+            'name_bn': name_bn,
+            'name_ar': name_ar,
+            'date_of_birth': date_of_birth,
+            'birth_certificate': birth_certificate,
+            'national_id': national_id,
+            'blood_group': blood_group,
+            'gender': gender,
+            'source': source,
+            'present_address': present_address,
+            'present_address_hash': present_address,  # Will be hashed later
+            'present_address_encrypted': present_address,  # Will be encrypted later
+            'permanent_address': permanent_address,
+            'permanent_address_hash': permanent_address,  # Will be hashed later
+            'permanent_address_encrypted': permanent_address,  # Will be encrypted later
+            'father_en': father_en,
+            'father_bn': father_bn,
+            'father_ar': father_ar,
+            'mother_en': mother_en,
+            'mother_bn': mother_bn,
+            'mother_ar': mother_ar,
+            'student_id': student_id,
+            'guardian_number': guardian_number,
+            'class': class_field,
+            'title1': title1,
+            'title2': title2,
+            'degree': degree,
+            'father_or_spouse': father_or_spouse,
+            'phone': phone_input
+        }
         
         # Helper function to get form data
         def get_field(key: str, default: str = '') -> str:
-            return data.get(key, default).strip()
+            value = form_data.get(key, default)
+            return value.strip() if value else default
         
         # Validate and fill fields based on account type
-        if acc_type == 'students':
+        if acc_type_input == 'students':
             required_fields = [
                 'name_en', 'name_bn', 'name_ar', 'date_of_birth',
                 'birth_certificate', 'blood_group', 'gender',
@@ -213,11 +288,11 @@ async def add_person(
             missing_required = [field for field in required_fields if not get_field(field)]
             if missing_required:
                 response, status = send_json_response("All required fields must be provided for Student", 400)
-                return jsonify(response), status
+                return JSONResponse(content=response, status_code=status)
             
             fields.update({field: get_field(field) for field in required_fields})
             
-        elif acc_type in ['teachers', 'admins']:
+        elif acc_type_input in ['teachers', 'admins']:
             required_fields = [
                 'name_en', 'name_bn', 'name_ar', 'date_of_birth',
                 'national_id', 'blood_group', 'gender',
@@ -239,7 +314,7 @@ async def add_person(
             optional_fields = ["degree"]
             fields.update({field: get_field(field) for field in optional_fields if get_field(field)})
             
-        elif acc_type == 'staffs':
+        elif acc_type_input == 'staffs':
             required_fields = [
                 'name_en', 'name_bn', 'name_ar', 'date_of_birth',
                 'national_id', 'blood_group',
@@ -291,8 +366,8 @@ async def add_person(
             if field in fields and fields[field]:
                 fields[field] = hash_sensitive_data(str(fields[field]))
         
-        # Insert into database
-        await insert_person(madrasa_name, fields, acc_type, formatted_phone)
+        # Insert into database (madrasa_name is guaranteed to be not None at this point)
+        await insert_person(madrasa_name, fields, acc_type_input, formatted_phone)
         
         # Get image path for response
         async with get_db_connection() as conn:
@@ -321,7 +396,7 @@ async def add_person(
 @api.post('/members')
 @cache_with_invalidation
 @handle_async_errors
-async def get_info() -> JSONResponse:
+async def get_info(request: Request) -> JSONResponse:
     """Get member information with caching and incremental updates"""
     async with get_db_connection() as conn:
         # Get request data from request body
@@ -411,7 +486,7 @@ async def get_info() -> JSONResponse:
 @api.post("/routines")
 @cache_with_invalidation
 @handle_async_errors
-async def get_routine() -> JSONResponse:
+async def get_routine(request: Request) -> JSONResponse:
     """Get routine information with caching and incremental updates"""
     # Get request data from request body
     try:
@@ -425,7 +500,7 @@ async def get_routine() -> JSONResponse:
     # SECURITY: Validate madrasa_name is in allowed list
     if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
         response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return jsonify(response), status
+        return JSONResponse(content=response, status_code=status)
 
     # Process timestamp using enhanced validation
     corrected_time = None
@@ -492,7 +567,7 @@ async def get_routine() -> JSONResponse:
 @api.post('/events')
 @cache_with_invalidation
 @handle_async_errors
-async def events() -> JSONResponse:
+async def events(request: Request) -> JSONResponse:
     """Get events with enhanced date processing and status classification"""
     # Get request data from request body
     try:
@@ -593,7 +668,7 @@ async def events() -> JSONResponse:
 @api.post('/exams')
 @cache_with_invalidation
 @handle_async_errors
-async def get_exams() -> JSONResponse:
+async def get_exams(request: Request) -> JSONResponse:
     """Get exam information with enhanced validation and error handling"""
     # Get request data from request body
     try:

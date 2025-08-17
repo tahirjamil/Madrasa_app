@@ -20,6 +20,9 @@ async def require_admin(request: Request):
         raise HTTPException(status_code=401, detail="Admin login required")
     return True
 
+# Import session utilities for enhanced session management
+from utils.helpers.session_utils import require_admin_session, update_session_activity
+
 @admin_routes.get('/logs/data')
 @handle_async_errors
 async def logs_data(request: Request, is_admin: bool = Depends(require_admin)):

@@ -92,20 +92,16 @@
         <h4>Admin Login</h4>
       </div>
 
-      <!-- Flash Messages -->
-      {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for cat, msg in messages %}
-          <div class="alert alert-{{ cat }} alert-dismissible fade show mb-4" role="alert">
-            {{ msg }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-          </div>
-        {% endfor %}
+      <!-- Flash Messages - FastAPI compatible -->
+      {% if error %}
+        <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+          {{ error }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
       {% endif %}
-      {% endwith %}
 
       <form id="login-form" method="POST" action="{{ url_for('admin_routes.login') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <!-- CSRF protection handled by FastAPI middleware -->
         
         <div class="mb-4">
           <div class="input-group">

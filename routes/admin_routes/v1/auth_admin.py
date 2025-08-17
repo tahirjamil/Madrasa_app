@@ -10,6 +10,7 @@ from . import admin_routes, templates
 from config import config
 from utils.helpers.fastapi_helpers import rate_limit, ClientInfo, get_client_info
 from utils.helpers.logger import log
+from utils.helpers.session_utils import create_user_session, update_session_activity, clear_user_session
 
 # Note: Login attempt tracking moved to session-based approach
 # The global dictionary approach was removed as unused
@@ -117,16 +118,30 @@ async def login_post(
     if test and config.is_development():
         # Only allow test bypass in development mode
         if username == ADMIN_USER and password == ADMIN_PASS:
-            request.session['admin_logged_in'] = True
-            request.session['admin_login_time'] = datetime.now().isoformat()
+            # Create enhanced admin session
+            create_user_session(
+                request=request,
+                user_id=1,  # Admin user ID
+                device_id=client_info.device_id,
+                ip_address=ip_address,
+                admin_logged_in=True,
+                admin_login_time=datetime.now().isoformat()
+            )
             request.session.pop('login_attempts', None)  # Reset
             log.info(action="admin_login_test", trace_info=ip_address, message="Admin logged in (test mode)", secure=False)
             return RedirectResponse(url='/admin/', status_code=302)
     else:
         # Production mode - strict authentication
         if username == ADMIN_USER and password == ADMIN_PASS:
-            request.session['admin_logged_in'] = True
-            request.session['admin_login_time'] = datetime.now().isoformat()
+            # Create enhanced admin session
+            create_user_session(
+                request=request,
+                user_id=1,  # Admin user ID
+                device_id=client_info.device_id,
+                ip_address=ip_address,
+                admin_logged_in=True,
+                admin_login_time=datetime.now().isoformat()
+            )
             request.session.pop('login_attempts', None)  # Reset
             log.info(action="admin_login_success", trace_info=ip_address, message=f"Admin {username} logged in", secure=False)
             return RedirectResponse(url='/admin/', status_code=302)
@@ -151,5 +166,6 @@ async def admin_logout(request: Request, client_info: ClientInfo = Depends(get_c
     if request.session.get('admin_logged_in'):
         log.info(action="admin_logout", trace_info=ip_address, message="Admin logged out", secure=False)
     
-    request.session.clear()
+    # Use enhanced session clearing
+    clear_user_session(request)
     return RedirectResponse(url='/admin/login', status_code=302)

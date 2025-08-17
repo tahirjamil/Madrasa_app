@@ -23,7 +23,7 @@ from utils.otel.otel_utils import init_otel
 from utils.helpers.helpers import (
     get_system_health, initialize_application, security_manager,
 )
-from utils.helpers.fastapi_helpers import templates, setup_template_globals
+from utils.helpers.fastapi_helpers import templates, setup_template_globals, SessionSecurityMiddleware
 from routes.admin_routes import admin_routes
 from routes.api import api
 from routes.web_routes import web_routes
@@ -177,6 +177,9 @@ elif not secret_key:
 
 app.add_middleware(SessionMiddleware, secret_key=secret_key)
 
+# Add session security middleware
+app.add_middleware(SessionSecurityMiddleware)
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -252,8 +255,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
         endpoint = request.url.path
-        # SECURITY FIX: Add CSRF check for admin routes
-        blocked = endpoint.startswith("/admin/") and not request.session.get("admin_logged_in")
+        # SECURITY FIX: Add CSRF check for admin routes - safely check session
+        blocked = False
+        try:
+            if endpoint.startswith("/admin/"):
+                # Check if session is available and admin is logged in
+                if hasattr(request, 'session') and request.session:
+                    blocked = not request.session.get("admin_logged_in", False)
+                else:
+                    # Session not available, block admin routes
+                    blocked = True
+        except Exception:
+            # Session access failed, block admin routes
+            blocked = True
 
         # Get JSON payload if available
         req_json = None

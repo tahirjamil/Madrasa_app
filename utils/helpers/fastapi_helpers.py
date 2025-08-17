@@ -3,15 +3,17 @@ FastAPI helper functions and dependencies
 Replaces Quart-specific helpers with FastAPI patterns
 """
 
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, Tuple
 from functools import wraps
 import time
 from collections import defaultdict
+from datetime import datetime
 
 from fastapi import Request, HTTPException, Depends, Header
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, field_validator
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_429_TOO_MANY_REQUESTS
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import config
 from .helpers import security_manager
@@ -188,8 +190,7 @@ async def validate_device_dependency(client_info: ClientInfo = Depends(get_clien
         )
     
     return client_info
-<<<<<<< Current (Your changes)
-=======
+
 
 # ─── Centralized Templates Instance ──────────────────────────────────
 # Create a single templates instance to be imported by all modules
@@ -200,7 +201,6 @@ templates = Jinja2Templates(directory="templates")
 # Add custom globals to templates
 def setup_template_globals(app):
     """Setup custom globals for templates"""
-    @templates.env.global_function
     def url_for(name: str, **path_params) -> str:
         """Custom url_for that works with static files and routes"""
         # For static files, create the URL directly
@@ -213,4 +213,154 @@ def setup_template_globals(app):
         # For other routes, you'd need the request context
         # This is a fallback - the request.url_for should be used when available
         return f"/{name}"
->>>>>>> Incoming (Background Agent changes)
+    
+    def get_flashed_messages(with_categories=False):
+        """FastAPI compatible flash messages - returns empty list for now"""
+        # In FastAPI, flash messages are typically passed as template context
+        # This is a placeholder that returns empty to prevent template errors
+        return []
+    
+    def csrf_token():
+        """FastAPI compatible CSRF token - returns empty string for now"""
+        # In FastAPI, CSRF protection is typically handled by middleware
+        # This is a placeholder that returns empty to prevent template errors
+        return ""
+    
+    # Add the functions as globals to the template environment
+    templates.env.globals["url_for"] = url_for
+    templates.env.globals["get_flashed_messages"] = get_flashed_messages
+    templates.env.globals["csrf_token"] = csrf_token
+
+
+# ─── Session Management Helpers ───────────────────────────────────────────
+def create_session_data(user_id: int, device_id: str, ip_address: str, **kwargs) -> Dict[str, Any]:
+    """Create session data with standard fields"""
+    from datetime import datetime, timezone
+    
+    session_data = {
+        'user_id': user_id,
+        'device_id': device_id,
+        'ip_address': ip_address,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        **kwargs
+    }
+    return session_data
+
+
+def validate_session_data(session_data: Dict[str, Any]) -> Tuple[bool, str]:
+    """Validate session data for required fields and security"""
+    required_fields = ['user_id', 'device_id', 'ip_address', 'timestamp']
+    
+    for field in required_fields:
+        if not session_data.get(field):
+            return False, f"Missing required session field: {field}"
+    
+    # Validate session age
+    try:
+        from datetime import datetime, timezone
+        session_time = datetime.fromisoformat(session_data['timestamp'].replace('Z', '+00:00'))
+        current_time = datetime.now(timezone.utc)
+        
+        # Check if session is older than 24 hours
+        if (current_time - session_time).total_seconds() > 24 * 3600:
+            return False, "Session has expired"
+    except (ValueError, KeyError):
+        return False, "Invalid session timestamp"
+    
+    return True, ""
+
+
+async def require_authenticated_session(request: Request) -> Dict[str, Any]:
+    """Dependency to require an authenticated session"""
+    session_data = request.session.get('user_data')
+    
+    if not session_data:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Authentication required"
+        )
+    
+    is_valid, error = validate_session_data(session_data)
+    if not is_valid:
+        # Clear invalid session
+        request.session.clear()
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=error
+        )
+    
+    return session_data
+
+
+async def require_admin_session(request: Request) -> bool:
+    """Dependency to require admin session"""
+    if not request.session.get('admin_logged_in'):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return True
+
+
+def clear_user_session(request: Request) -> None:
+    """Clear user session data"""
+    request.session.clear()
+
+
+def set_user_session(request: Request, user_data: Dict[str, Any]) -> None:
+    """Set user session data"""
+    request.session['user_data'] = user_data
+
+
+def get_user_session(request: Request) -> Optional[Dict[str, Any]]:
+    """Get user session data if it exists and is valid"""
+    session_data = request.session.get('user_data')
+    if session_data:
+        is_valid, _ = validate_session_data(session_data)
+        if is_valid:
+            return session_data
+    return None
+
+
+# ─── Session Security Middleware ───────────────────────────────────────────
+class SessionSecurityMiddleware(BaseHTTPMiddleware):
+    """Middleware to enhance session security"""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Add session security headers
+        response = await call_next(request)
+        
+        # Set secure session cookies
+        if hasattr(response, 'set_cookie'):
+            response.set_cookie(
+                'session',
+                secure=config.SESSION_COOKIE_SECURE,
+                httponly=config.SESSION_COOKIE_HTTPONLY,
+                samesite='lax',  # Default to lax for compatibility
+                max_age=config.PERMANENT_SESSION_LIFETIME
+            )
+        
+        return response
+
+
+# ─── Session Activity Tracking ───────────────────────────────────────────
+async def track_session_activity(request: Request, activity_type: str, details: Optional[Dict[str, Any]] = None) -> None:
+    """Track session activity for security monitoring"""
+    session_data = get_user_session(request)
+    if session_data:
+        activity = {
+            'timestamp': datetime.now().isoformat(),
+            'activity_type': activity_type,
+            'user_id': session_data.get('user_id'),
+            'ip_address': session_data.get('ip_address'),
+            'device_id': session_data.get('device_id'),
+            'details': details or {}
+        }
+        
+        log.info(
+            action=f"session_activity_{activity_type}",
+            trace_info=session_data.get('ip_address', 'unknown'),
+            message=f"Session activity: {activity_type}",
+            secure=True
+        )

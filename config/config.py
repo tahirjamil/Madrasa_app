@@ -70,8 +70,36 @@ class MadrasaConfig:
     POWER_KEY = get_env_var("POWER_KEY")
     
     # Admin Credentials (with warnings)
-    ADMIN_USERNAME = get_env_var("ADMIN_USERNAME")
-    ADMIN_PASSWORD = get_env_var("ADMIN_PASSWORD")
+    # Use required=False to avoid errors when env vars are not set
+    ADMIN_USERNAME = get_env_var("ADMIN_USERNAME", required=False)
+    ADMIN_PASSWORD = get_env_var("ADMIN_PASSWORD", required=False)
+    
+    # Fallback to reading from .env file directly if not in environment
+    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+        try:
+            env_path = Path(__file__).parent.parent / '.env'
+            if env_path.exists():
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            # Remove quotes if present
+                            value = value.strip().strip('"').strip("'")
+                            if key == 'ADMIN_USERNAME' and not ADMIN_USERNAME:
+                                ADMIN_USERNAME = value
+                            elif key == 'ADMIN_PASSWORD' and not ADMIN_PASSWORD:
+                                ADMIN_PASSWORD = value
+        except Exception as e:
+            logger.warning(f"Failed to read .env file: {e}")
+    
+    # Final fallback for development/testing
+    if not ADMIN_USERNAME:
+        ADMIN_USERNAME = "admin"
+        logger.warning("ADMIN_USERNAME not set, using default 'admin'")
+    if not ADMIN_PASSWORD:
+        ADMIN_PASSWORD = "admin123"
+        logger.warning("ADMIN_PASSWORD not set, using default 'admin123'")
     
     # ============================================================================
     # SESSION AND COOKIE SECURITY

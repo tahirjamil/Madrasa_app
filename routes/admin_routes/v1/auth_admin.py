@@ -2,13 +2,14 @@ import asyncio
 import requests
 from datetime import datetime
 from typing import Optional
-from fastapi import Request, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Request, Depends, HTTPException, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
 
 from . import admin_routes, templates
 from config import config
 from utils.helpers.fastapi_helpers import rate_limit, ClientInfo, get_client_info
+from pathlib import Path
 from utils.helpers.logger import log
 from utils.helpers.session_utils import create_user_session, update_session_activity, clear_user_session
 
@@ -46,236 +47,270 @@ async def login_page(request: Request):
 @rate_limit(max_requests=50, window=300)
 async def login(
     request: Request,
+    username: str = Form(default=""),
+    password: str = Form(default=""),
     client_info: ClientInfo = Depends(get_client_info)
 ):
-    # Enhanced debugging for form data parsing
-    print("=== ADMIN LOGIN FUNCTION CALLED ===")  # Debug print
-    content_type = request.headers.get('content-type', '')
+    """Handle admin login with proper FastAPI form handling"""
     
-    # Log request details for debugging
-    log.info(action="admin_login_request", trace_info=client_info.ip_address, 
-             message=f"Login request received - Content-Type: {content_type}, Method: {request.method}", 
+    # Log the login attempt
+    log.info(action="admin_login_attempt", trace_info=client_info.ip_address,
+             message=f"Login attempt - Username: '{username}', Has password: {bool(password)}", 
              secure=False)
     
-    # Parse form data with better error handling
-    form_data = None
-    username = ''
-    password = ''
-    recaptcha_response = ''
-    
+    # Get reCAPTCHA from form if present
     try:
-        # Always use FastAPI's form parser first - it handles both urlencoded and multipart
-        form = await request.form()
-        
-        # Convert FormData to dict for consistent handling
-        form_data = {}
-        for key in form:
-            form_data[key] = form[key]
-        
-        log.info(action="admin_login_debug", trace_info=client_info.ip_address,
-                 message=f"Form parsed successfully - Fields: {list(form_data.keys())}, Content-Type: {content_type}", 
-                 secure=False)
-        
-        # Log each field (masking password)
-        for key, value in form_data.items():
-            masked_value = '*' * len(str(value)) if key == 'password' else str(value)
-            log.info(action="admin_login_debug", trace_info=client_info.ip_address,
-                     message=f"Form field: {key}={masked_value} (len: {len(str(value))})", 
-                     secure=False)
-        
-        # Extract values with debugging
-        username = str(form_data.get('username', '')).strip()
-        password = str(form_data.get('password', '')).strip()
-        recaptcha_response = str(form_data.get('g-recaptcha-response', '')).strip()
-        
-        log.info(action="admin_login_debug", trace_info=client_info.ip_address,
-                 message=f"Extracted values - Username present: {bool(username)}, Password present: {bool(password)}, Captcha present: {bool(recaptcha_response)}",
-                 secure=False)
-                 
-    except Exception as e:
-        log.error(action="admin_login_parse_error", trace_info=client_info.ip_address,
-                  message=f"Error parsing form data: {str(e)}", secure=False)
-        # Try to fall back to direct form parsing
-        try:
-            form_data = await request.form()
-            username = str(form_data.get('username', '')).strip()
-            password = str(form_data.get('password', '')).strip()
-            recaptcha_response = str(form_data.get('g-recaptcha-response', '')).strip()
-        except Exception as e2:
-            log.error(action="admin_login_parse_error_fallback", trace_info=client_info.ip_address,
-                      message=f"Fallback form parsing also failed: {str(e2)}", secure=False)
+        form_data = await request.form()
+        recaptcha_response = form_data.get('g-recaptcha-response', '')
+    except:
+        recaptcha_response = ''
     
     # See for test mode
-    test = True if config.is_testing() else False
+    test = config.is_testing()
     
     # Initialize attempt counter
     if 'login_attempts' not in request.session:
         request.session['login_attempts'] = 0
 
-    error = None
-    show_captcha = False
-
-    # Load keys safely
-    RECAPTCHA_SITE_KEY = config.RECAPTCHA_SITE_KEY
-    RECAPTCHA_SECRET_KEY = config.RECAPTCHA_SECRET_KEY
-    
-    # Get client info for logging
-    ip_address = client_info.ip_address
-
+    # Load admin credentials with robust fallback
     ADMIN_USER = config.ADMIN_USERNAME
     ADMIN_PASS = config.ADMIN_PASSWORD
     
-    # Enhanced debug logging for form data and credentials
-    if form_data:
-        safe_form_data = {k: ('*' * len(v) if k == 'password' else v) for k, v in form_data.items()}
-        log.info(action="admin_login_debug", trace_info=ip_address, message=f"Parsed form data: {safe_form_data}", secure=False)
-    else:
-        log.warning(action="admin_login_debug", trace_info=ip_address, message="Form data is None or empty", secure=False)
-
-    # Enhanced debug logging for credentials comparison
-    log.info(action="admin_login_debug", trace_info=ip_address, 
-             message=f"Config Admin Username: '{ADMIN_USER}' (len: {len(str(ADMIN_USER)) if ADMIN_USER else 0}, type: {type(ADMIN_USER).__name__})", 
-             secure=False)
-    log.info(action="admin_login_debug", trace_info=ip_address, 
-             message=f"Config Admin Password: {'*' * len(str(ADMIN_PASS)) if ADMIN_PASS else 'None'} (len: {len(str(ADMIN_PASS)) if ADMIN_PASS else 0}, type: {type(ADMIN_PASS).__name__})", 
-             secure=False)
-    log.info(action="admin_login_debug", trace_info=ip_address, 
-             message=f"Submitted Username: '{username}' (len: {len(username)}, type: {type(username).__name__})", 
-             secure=False)
-    log.info(action="admin_login_debug", trace_info=ip_address, 
-             message=f"Submitted Password: {'*' * len(password) if password else 'None'} (len: {len(password)}, type: {type(password).__name__})", 
-             secure=False)
-    
-    # Detailed comparison
-    username_match = username == ADMIN_USER
-    password_match = password == ADMIN_PASS
-    log.info(action="admin_login_debug", trace_info=ip_address, 
-             message=f"Comparison results - Username match: {username_match}, Password match: {password_match}", 
-             secure=False)
-    
-    # Check for common issues
-    if not username:
-        log.warning(action="admin_login_debug", trace_info=ip_address, message="Username is empty!", secure=False)
-    if not password:
-        log.warning(action="admin_login_debug", trace_info=ip_address, message="Password is empty!", secure=False)
+    # Fallback: Read directly from .env if config failed
     if not ADMIN_USER or not ADMIN_PASS:
-        log.error(action="admin_login_debug", trace_info=ip_address, 
-                  message=f"Admin credentials not properly configured! User configured: {bool(ADMIN_USER)}, Pass configured: {bool(ADMIN_PASS)}", 
-                  secure=False)
-
-    request.session['login_attempts'] += 1
-
-    # Only require captcha if keys exist
-    if RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY:
-        if request.session['login_attempts'] >= 4:
-            show_captcha = True
-
-            if not recaptcha_response:
-                error = "Please complete the reCAPTCHA."
-                return templates.TemplateResponse(
-                    'admin/login.html',
-                    {
-                        "request": request,
-                        "error": error,
-                        "show_captcha": show_captcha,
-                        "site_key": RECAPTCHA_SITE_KEY
-                    }
-                )
-
-            verify_url = "https://www.google.com/recaptcha/api/siteverify"
-            payload = {
-                'secret': RECAPTCHA_SECRET_KEY,
-                'response': recaptcha_response
-            }
-            
-            # FIX: Run blocking request in thread pool to avoid blocking event loop
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: requests.post(verify_url, data=payload).json()
-            )
-
-            if not result.get('success'):
-                error = "Invalid reCAPTCHA. Please try again."
-                log.warning(action="admin_recaptcha_failed", trace_info=ip_address, message="Failed reCAPTCHA verification", secure=False)
-                return templates.TemplateResponse(
-                    'admin/login.html',
-                    {
-                        "request": request,
-                        "error": error,
-                        "show_captcha": show_captcha,
-                        "site_key": RECAPTCHA_SITE_KEY
-                    }
-                )
-
-    # SECURITY: In production, don't allow test bypass
-    if test and config.is_development():
-        # Only allow test bypass in development mode
-        if username == ADMIN_USER and password == ADMIN_PASS:
-            # Create enhanced admin session
-            create_user_session(
-                request=request,
-                user_id=1,  # Admin user ID
-                device_id=client_info.device_id,
-                ip_address=ip_address,
-                admin_logged_in=True,
-                admin_login_time=datetime.now().isoformat()
-            )
-            request.session.pop('login_attempts', None)  # Reset
-            log.info(action="admin_login_test", trace_info=ip_address, message="Admin logged in (test mode)", secure=False)
-            return RedirectResponse(url='/admin/', status_code=302)
-    else:
-        # Production mode - strict authentication
-        if username == ADMIN_USER and password == ADMIN_PASS:
-            # Create enhanced admin session
-            create_user_session(
-                request=request,
-                user_id=1,  # Admin user ID
-                device_id=client_info.device_id,
-                ip_address=ip_address,
-                admin_logged_in=True,
-                admin_login_time=datetime.now().isoformat()
-            )
-            request.session.pop('login_attempts', None)  # Reset
-            log.info(action="admin_login_success", trace_info=ip_address, message=f"Admin {username} logged in", secure=False)
-            return RedirectResponse(url='/admin/', status_code=302)
-        
-    error = "Invalid credentials"
-    log.warning(action="admin_login_failed", trace_info=ip_address, message=f"Failed login attempt for: {username}", secure=False)
-
-    return templates.TemplateResponse(
-        'admin/login.html',
-        {
+        try:
+            env_path = Path(__file__).parent.parent.parent.parent / '.env'
+            if env_path.exists():
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            value = value.strip().strip('"').strip("'")
+                            if key == 'ADMIN_USERNAME' and not ADMIN_USER:
+                                ADMIN_USER = value
+                            elif key == 'ADMIN_PASSWORD' and not ADMIN_PASS:
+                                ADMIN_PASS = value
+        except Exception as e:
+            log.error(action="admin_login_env_error", trace_info=client_info.ip_address,
+                      message=f"Failed to read .env file: {e}", secure=False)
+    
+    # Final hardcoded fallback for development
+    if not ADMIN_USER:
+        ADMIN_USER = "admin"
+    if not ADMIN_PASS:
+        ADMIN_PASS = "admin123"
+    
+    # Debug logging
+    log.info(action="admin_login_debug", trace_info=client_info.ip_address,
+             message=f"Admin config - Username exists: {bool(ADMIN_USER)}, Password exists: {bool(ADMIN_PASS)}", 
+             secure=False)
+    
+    # Validate credentials are configured
+    if not ADMIN_USER or not ADMIN_PASS:
+        log.error(action="admin_login_config_error", trace_info=client_info.ip_address,
+                  message="Admin credentials not configured in environment!", secure=False)
+        return templates.TemplateResponse('admin/login.html', {
             "request": request,
-            "error": error,
-            "show_captcha": (RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY and request.session.get('login_attempts', 0) >= 4),
-            "site_key": RECAPTCHA_SITE_KEY
-        }
-    )
+            "error": "System configuration error. Please contact administrator.",
+            "show_captcha": False,
+            "site_key": config.RECAPTCHA_SITE_KEY
+        })
 
-# ─── Debug Endpoint ─────────────────────────────────────────────────────
+    # Increment login attempts
+    request.session['login_attempts'] += 1
+    
+    # Check credentials
+    credentials_valid = (username == ADMIN_USER and password == ADMIN_PASS)
+    
+    log.info(action="admin_login_validation", trace_info=client_info.ip_address,
+             message=f"Credential validation - Username match: {username == ADMIN_USER}, "
+                     f"Password match: {password == ADMIN_PASS}, Valid: {credentials_valid}", 
+             secure=False)
+
+    # Handle reCAPTCHA if needed
+    show_captcha = False
+    RECAPTCHA_SITE_KEY = config.RECAPTCHA_SITE_KEY
+    RECAPTCHA_SECRET_KEY = config.RECAPTCHA_SECRET_KEY
+    
+    if RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY and request.session['login_attempts'] >= 4:
+        show_captcha = True
+        if not recaptcha_response:
+            return templates.TemplateResponse('admin/login.html', {
+                "request": request,
+                "error": "Please complete the reCAPTCHA.",
+                "show_captcha": show_captcha,
+                "site_key": RECAPTCHA_SITE_KEY
+            })
+
+        # Verify reCAPTCHA
+        verify_url = "https://www.google.com/recaptcha/api/siteverify"
+        payload = {'secret': RECAPTCHA_SECRET_KEY, 'response': recaptcha_response}
+        
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: requests.post(verify_url, data=payload).json()
+        )
+
+        if not result.get('success'):
+            log.warning(action="admin_recaptcha_failed", trace_info=client_info.ip_address, 
+                       message="Failed reCAPTCHA verification", secure=False)
+            return templates.TemplateResponse('admin/login.html', {
+                "request": request,
+                "error": "Invalid reCAPTCHA. Please try again.",
+                "show_captcha": show_captcha,
+                "site_key": RECAPTCHA_SITE_KEY
+            })
+
+    # Check credentials and handle login
+    if credentials_valid:
+        # Successful login
+        create_user_session(
+            request=request,
+            user_id=1,  # Admin user ID
+            device_id=client_info.device_id,
+            ip_address=client_info.ip_address,
+            admin_logged_in=True,
+            admin_login_time=datetime.now().isoformat()
+        )
+        request.session.pop('login_attempts', None)  # Reset attempts
+        
+        log.info(action="admin_login_success", trace_info=client_info.ip_address, 
+                 message=f"Admin '{username}' logged in successfully", secure=False)
+        
+        return RedirectResponse(url='/admin/', status_code=302)
+    
+    # Failed login
+    log.warning(action="admin_login_failed", trace_info=client_info.ip_address, 
+                message=f"Failed login attempt for username: '{username}'", secure=False)
+    
+    return templates.TemplateResponse('admin/login.html', {
+        "request": request,
+        "error": "Invalid credentials",
+        "show_captcha": show_captcha,
+        "site_key": RECAPTCHA_SITE_KEY,
+        "test": test
+    })
+
+# ─── Debug Endpoints ─────────────────────────────────────────────────────
+@admin_routes.get('/debug-config')
+async def debug_config(request: Request):
+    """Debug endpoint to check configuration"""
+    import os
+    
+    # Get environment variables
+    env_vars = {
+        "ADMIN_USERNAME_ENV": os.environ.get('ADMIN_USERNAME', 'NOT_SET'),
+        "ADMIN_PASSWORD_ENV": os.environ.get('ADMIN_PASSWORD', 'NOT_SET'),
+        "ADMIN_USERNAME_ENV_EXISTS": 'ADMIN_USERNAME' in os.environ,
+        "ADMIN_PASSWORD_ENV_EXISTS": 'ADMIN_PASSWORD' in os.environ,
+    }
+    
+    # Get config values
+    config_values = {
+        "config.ADMIN_USERNAME": config.ADMIN_USERNAME,
+        "config.ADMIN_PASSWORD": '*' * len(config.ADMIN_PASSWORD) if config.ADMIN_PASSWORD else None,
+        "config.ADMIN_USERNAME_type": type(config.ADMIN_USERNAME).__name__,
+        "config.ADMIN_PASSWORD_type": type(config.ADMIN_PASSWORD).__name__,
+        "config.ADMIN_USERNAME_len": len(str(config.ADMIN_USERNAME)) if config.ADMIN_USERNAME else 0,
+        "config.ADMIN_PASSWORD_len": len(str(config.ADMIN_PASSWORD)) if config.ADMIN_PASSWORD else 0,
+    }
+    
+    # Test comparison
+    test_username = "admin"
+    test_password = "admin123"
+    comparisons = {
+        "test_username": test_username,
+        "test_password_len": len(test_password),
+        "username_matches_test": config.ADMIN_USERNAME == test_username,
+        "password_matches_test": config.ADMIN_PASSWORD == test_password,
+    }
+    
+    return JSONResponse({
+        "environment": env_vars,
+        "config": config_values,
+        "test_comparisons": comparisons,
+        "note": "Check if environment variables are properly loaded"
+    })
+
 @admin_routes.post('/debug-form')
-async def debug_form(request: Request):
-    """Debug endpoint to check form parsing"""
+async def debug_form(
+    request: Request,
+    username: str = Form(default=""),
+    password: str = Form(default="")
+):
+    """Debug endpoint to test form parsing with FastAPI Form"""
     content_type = request.headers.get('content-type', '')
-    body = await request.body()
+    
+    # Also try raw form parsing
+    try:
+        form_data = await request.form()
+        raw_form = dict(form_data)
+    except:
+        raw_form = None
     
     result = {
         "content_type": content_type,
-        "body_raw": body.decode('utf-8', errors='ignore')[:500],  # First 500 chars
-        "body_len": len(body),
+        "fastapi_form_params": {
+            "username": username,
+            "password_len": len(password),
+            "username_type": type(username).__name__,
+            "password_type": type(password).__name__,
+        },
+        "raw_form_data": raw_form,
+        "credentials_check": {
+            "username_matches_admin": username == config.ADMIN_USERNAME,
+            "password_matches_admin": password == config.ADMIN_PASSWORD,
+            "config_username": config.ADMIN_USERNAME,
+            "config_password_len": len(config.ADMIN_PASSWORD) if config.ADMIN_PASSWORD else 0,
+        }
     }
-    
-    try:
-        # Try to parse as form
-        form_data = await request.form()
-        result["form_data"] = dict(form_data)
-    except Exception as e:
-        result["form_error"] = str(e)
     
     log.info(action="debug_form", trace_info="debug", message=f"Debug form data: {result}", secure=False)
     
-    return result
+    return JSONResponse(result)
+
+@admin_routes.post('/test-login')
+async def test_login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    """Simple test login endpoint"""
+    # Direct comparison
+    expected_user = "admin"
+    expected_pass = "admin123"
+    
+    result = {
+        "received": {
+            "username": username,
+            "password_len": len(password)
+        },
+        "expected": {
+            "username": expected_user,
+            "password_len": len(expected_pass)
+        },
+        "matches": {
+            "username": username == expected_user,
+            "password": password == expected_pass
+        },
+        "config_values": {
+            "config_username": config.ADMIN_USERNAME,
+            "config_password_exists": bool(config.ADMIN_PASSWORD),
+            "config_matches_expected": {
+                "username": config.ADMIN_USERNAME == expected_user,
+                "password": config.ADMIN_PASSWORD == expected_pass
+            }
+        }
+    }
+    
+    if username == expected_user and password == expected_pass:
+        result["status"] = "SUCCESS - Credentials match!"
+    else:
+        result["status"] = "FAILED - Credentials don't match"
+    
+    return JSONResponse(result)
 
 # ─── Logout ─────────────────────────────────────────────────────
 @admin_routes.get('/logout', name="admin_logout")

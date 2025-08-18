@@ -2,7 +2,7 @@ import asyncio
 import requests
 from datetime import datetime
 from typing import Optional
-from fastapi import Request, Form, Depends, HTTPException
+from fastapi import Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -46,11 +46,31 @@ async def login_page(request: Request):
 @rate_limit(max_requests=50, window=300)
 async def login(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    recaptcha_response: str = Form(None, alias='g-recaptcha-response'),
     client_info: ClientInfo = Depends(get_client_info)
 ):
+    # Parse form data manually - handle both multipart and urlencoded
+    print("=== ADMIN LOGIN FUNCTION CALLED ===")  # Debug print
+    content_type = request.headers.get('content-type', '')
+    
+    if 'application/x-www-form-urlencoded' in content_type:
+        # Handle URL-encoded form data
+        body = await request.body()
+        form_data_str = body.decode('utf-8')
+        form_data = {}
+        for item in form_data_str.split('&'):
+            if '=' in item:
+                key, value = item.split('=', 1)
+                # URL decode the values
+                import urllib.parse
+                form_data[urllib.parse.unquote(key)] = urllib.parse.unquote(value)
+    else:
+        # Handle multipart form data
+        form_data = await request.form()
+    
+    username = form_data.get('username', '')
+    password = form_data.get('password', '')
+    recaptcha_response = form_data.get('g-recaptcha-response', '')
+    
     # See for test mode
     test = True if config.is_testing() else False
     
@@ -70,6 +90,14 @@ async def login(
 
     ADMIN_USER = config.ADMIN_USERNAME
     ADMIN_PASS = config.ADMIN_PASSWORD
+    
+    # Debug: Log the raw form data
+    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Raw form data: {dict(form_data)}", secure=False)
+
+    # Debug logging to see what credentials are being used
+    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Admin credentials - Username: '{ADMIN_USER}' (len: {len(str(ADMIN_USER)) if ADMIN_USER else 0}), Password: '{ADMIN_PASS}' (len: {len(str(ADMIN_PASS)) if ADMIN_PASS else 0})", secure=False)
+    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Login attempt - Username: '{username}' (len: {len(str(username)) if username else 0}), Password: '{password}' (len: {len(str(password)) if password else 0})", secure=False)
+    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Username match: {username == ADMIN_USER}, Password match: {password == ADMIN_PASS}", secure=False)
 
     request.session['login_attempts'] += 1
 

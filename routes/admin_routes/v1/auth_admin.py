@@ -48,28 +48,62 @@ async def login(
     request: Request,
     client_info: ClientInfo = Depends(get_client_info)
 ):
-    # Parse form data manually - handle both multipart and urlencoded
+    # Enhanced debugging for form data parsing
     print("=== ADMIN LOGIN FUNCTION CALLED ===")  # Debug print
     content_type = request.headers.get('content-type', '')
     
-    if 'application/x-www-form-urlencoded' in content_type:
-        # Handle URL-encoded form data
-        body = await request.body()
-        form_data_str = body.decode('utf-8')
-        form_data = {}
-        for item in form_data_str.split('&'):
-            if '=' in item:
-                key, value = item.split('=', 1)
-                # URL decode the values
-                import urllib.parse
-                form_data[urllib.parse.unquote(key)] = urllib.parse.unquote(value)
-    else:
-        # Handle multipart form data
-        form_data = await request.form()
+    # Log request details for debugging
+    log.info(action="admin_login_request", trace_info=client_info.ip_address, 
+             message=f"Login request received - Content-Type: {content_type}, Method: {request.method}", 
+             secure=False)
     
-    username = form_data.get('username', '')
-    password = form_data.get('password', '')
-    recaptcha_response = form_data.get('g-recaptcha-response', '')
+    # Parse form data with better error handling
+    form_data = None
+    username = ''
+    password = ''
+    recaptcha_response = ''
+    
+    try:
+        # Always use FastAPI's form parser first - it handles both urlencoded and multipart
+        form = await request.form()
+        
+        # Convert FormData to dict for consistent handling
+        form_data = {}
+        for key in form:
+            form_data[key] = form[key]
+        
+        log.info(action="admin_login_debug", trace_info=client_info.ip_address,
+                 message=f"Form parsed successfully - Fields: {list(form_data.keys())}, Content-Type: {content_type}", 
+                 secure=False)
+        
+        # Log each field (masking password)
+        for key, value in form_data.items():
+            masked_value = '*' * len(str(value)) if key == 'password' else str(value)
+            log.info(action="admin_login_debug", trace_info=client_info.ip_address,
+                     message=f"Form field: {key}={masked_value} (len: {len(str(value))})", 
+                     secure=False)
+        
+        # Extract values with debugging
+        username = str(form_data.get('username', '')).strip()
+        password = str(form_data.get('password', '')).strip()
+        recaptcha_response = str(form_data.get('g-recaptcha-response', '')).strip()
+        
+        log.info(action="admin_login_debug", trace_info=client_info.ip_address,
+                 message=f"Extracted values - Username present: {bool(username)}, Password present: {bool(password)}, Captcha present: {bool(recaptcha_response)}",
+                 secure=False)
+                 
+    except Exception as e:
+        log.error(action="admin_login_parse_error", trace_info=client_info.ip_address,
+                  message=f"Error parsing form data: {str(e)}", secure=False)
+        # Try to fall back to direct form parsing
+        try:
+            form_data = await request.form()
+            username = str(form_data.get('username', '')).strip()
+            password = str(form_data.get('password', '')).strip()
+            recaptcha_response = str(form_data.get('g-recaptcha-response', '')).strip()
+        except Exception as e2:
+            log.error(action="admin_login_parse_error_fallback", trace_info=client_info.ip_address,
+                      message=f"Fallback form parsing also failed: {str(e2)}", secure=False)
     
     # See for test mode
     test = True if config.is_testing() else False
@@ -91,13 +125,43 @@ async def login(
     ADMIN_USER = config.ADMIN_USERNAME
     ADMIN_PASS = config.ADMIN_PASSWORD
     
-    # Debug: Log the raw form data
-    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Raw form data: {dict(form_data)}", secure=False)
+    # Enhanced debug logging for form data and credentials
+    if form_data:
+        safe_form_data = {k: ('*' * len(v) if k == 'password' else v) for k, v in form_data.items()}
+        log.info(action="admin_login_debug", trace_info=ip_address, message=f"Parsed form data: {safe_form_data}", secure=False)
+    else:
+        log.warning(action="admin_login_debug", trace_info=ip_address, message="Form data is None or empty", secure=False)
 
-    # Debug logging to see what credentials are being used
-    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Admin credentials - Username: '{ADMIN_USER}' (len: {len(str(ADMIN_USER)) if ADMIN_USER else 0}), Password: '{ADMIN_PASS}' (len: {len(str(ADMIN_PASS)) if ADMIN_PASS else 0})", secure=False)
-    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Login attempt - Username: '{username}' (len: {len(str(username)) if username else 0}), Password: '{password}' (len: {len(str(password)) if password else 0})", secure=False)
-    log.info(action="admin_login_debug", trace_info=ip_address, message=f"Username match: {username == ADMIN_USER}, Password match: {password == ADMIN_PASS}", secure=False)
+    # Enhanced debug logging for credentials comparison
+    log.info(action="admin_login_debug", trace_info=ip_address, 
+             message=f"Config Admin Username: '{ADMIN_USER}' (len: {len(str(ADMIN_USER)) if ADMIN_USER else 0}, type: {type(ADMIN_USER).__name__})", 
+             secure=False)
+    log.info(action="admin_login_debug", trace_info=ip_address, 
+             message=f"Config Admin Password: {'*' * len(str(ADMIN_PASS)) if ADMIN_PASS else 'None'} (len: {len(str(ADMIN_PASS)) if ADMIN_PASS else 0}, type: {type(ADMIN_PASS).__name__})", 
+             secure=False)
+    log.info(action="admin_login_debug", trace_info=ip_address, 
+             message=f"Submitted Username: '{username}' (len: {len(username)}, type: {type(username).__name__})", 
+             secure=False)
+    log.info(action="admin_login_debug", trace_info=ip_address, 
+             message=f"Submitted Password: {'*' * len(password) if password else 'None'} (len: {len(password)}, type: {type(password).__name__})", 
+             secure=False)
+    
+    # Detailed comparison
+    username_match = username == ADMIN_USER
+    password_match = password == ADMIN_PASS
+    log.info(action="admin_login_debug", trace_info=ip_address, 
+             message=f"Comparison results - Username match: {username_match}, Password match: {password_match}", 
+             secure=False)
+    
+    # Check for common issues
+    if not username:
+        log.warning(action="admin_login_debug", trace_info=ip_address, message="Username is empty!", secure=False)
+    if not password:
+        log.warning(action="admin_login_debug", trace_info=ip_address, message="Password is empty!", secure=False)
+    if not ADMIN_USER or not ADMIN_PASS:
+        log.error(action="admin_login_debug", trace_info=ip_address, 
+                  message=f"Admin credentials not properly configured! User configured: {bool(ADMIN_USER)}, Pass configured: {bool(ADMIN_PASS)}", 
+                  secure=False)
 
     request.session['login_attempts'] += 1
 
@@ -188,6 +252,30 @@ async def login(
             "site_key": RECAPTCHA_SITE_KEY
         }
     )
+
+# ─── Debug Endpoint ─────────────────────────────────────────────────────
+@admin_routes.post('/debug-form')
+async def debug_form(request: Request):
+    """Debug endpoint to check form parsing"""
+    content_type = request.headers.get('content-type', '')
+    body = await request.body()
+    
+    result = {
+        "content_type": content_type,
+        "body_raw": body.decode('utf-8', errors='ignore')[:500],  # First 500 chars
+        "body_len": len(body),
+    }
+    
+    try:
+        # Try to parse as form
+        form_data = await request.form()
+        result["form_data"] = dict(form_data)
+    except Exception as e:
+        result["form_error"] = str(e)
+    
+    log.info(action="debug_form", trace_info="debug", message=f"Debug form data: {result}", secure=False)
+    
+    return result
 
 # ─── Logout ─────────────────────────────────────────────────────
 @admin_routes.get('/logout', name="admin_logout")

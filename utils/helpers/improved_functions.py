@@ -11,12 +11,10 @@ def get_env_var(var_name: str, default: Optional[Any] = None, required: bool = T
     if value and value.lower() in ("none", "null", ""):
         value = None
     if not value:
-        if required:
+        if required and not default:
             logger.error(f"Environment variable {var_name} is not set")
-            if not default:
-                raise ValueError(f"Environment variable {var_name} is not set")
-            return default
-        return None
+            raise ValueError(f"Environment variable {var_name} is not set")
+        return default
     return value
 
 def get_project_root(marker_files: Tuple[str, ...] = ("pyproject.toml", "app.py")) -> Path:

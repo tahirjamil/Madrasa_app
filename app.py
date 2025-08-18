@@ -53,10 +53,11 @@ app_start_time = None
 
 async def create_tables_async():
     try:
+        logger.debug("Starting database table creation...")
         await create_tables()
         logger.info("Database tables created successfully")
     except Exception as e:
-        logger.error(f"Database initialization error: {str(e)}")
+        logger.error(f"Database initialization error: {str(e)}", exc_info=True)
 
 # ─── Lifespan Events ──────────────────────────────────────────────
 @asynccontextmanager
@@ -65,16 +66,26 @@ async def lifespan(app: FastAPI):
     global app_start_time
     # Startup
     app_start_time = time.time()
+    logger.info(f"Application starting up at {datetime.now().isoformat()}")
+    
+    # Log configuration status
+    logger.info(f"Configuration loaded - TEST_MODE: {config.is_testing()}, OTEL_ENABLED: {config.OTEL_ENABLED}")
     
     # Initialize observability (traces/metrics) only if enabled
     if config.OTEL_ENABLED:
+        logger.info("Initializing OpenTelemetry...")
         init_otel(
             service_name="madrasa-app",
             environment="development",
             service_version=getattr(config, 'SERVER_VERSION', '0.0.0')
         )
+        logger.info("OpenTelemetry initialized successfully")
+    else:
+        logger.info("OpenTelemetry disabled")
     
+    logger.debug("Initializing application...")
     initialize_application()
+    logger.info("Application initialization completed")
     
     # Skip database initialization in test mode
     if config.is_testing():
@@ -182,12 +193,22 @@ app.add_middleware(SessionSecurityMiddleware)
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        logger.debug(f"Processing request: {request.method} {request.url.path}")
+        
         response = await call_next(request)
+        
+        # Add security headers
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['X-XSS-Protection'] = '1; mode=block'
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        
+        # Log request completion
+        process_time = time.time() - start_time
+        logger.debug(f"Request completed: {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
+        
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -197,18 +218,21 @@ class XSSProtectionMiddleware(BaseHTTPMiddleware):
         """Block requests containing obvious XSS indicators in args, form, or JSON."""
         try:
             # Check query parameters
-            for value in request.query_params.values():
+            if request.query_params:
+                logger.debug(f"Checking query params for XSS: {dict(request.query_params)}")
+            for key, value in request.query_params.items():
                 if isinstance(value, str) and security_manager.detect_xss(value):
-                    logger.warning(f"Blocked potential XSS via query params: {request.url.path}")
+                    logger.warning(f"Blocked potential XSS via query params: {request.url.path} - Param: {key}")
                     response, status = send_json_response("Invalid input", 400, "XSS detected")
                     return JSONResponse(content=response, status_code=status)
 
             # Check form data (if present)
             if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
                 form = await request.form()
-                for value in form.values():
+                logger.debug(f"Checking form data for XSS: {list(form.keys())}")
+                for key, value in form.items():
                     if isinstance(value, str) and security_manager.detect_xss(value):
-                        logger.warning(f"Blocked potential XSS via form data: {request.url.path}")
+                        logger.warning(f"Blocked potential XSS via form data: {request.url.path} - Field: {key}")
                         response, status = send_json_response("Invalid input", 400, "XSS detected")
                         return JSONResponse(content=response, status_code=status)
 
@@ -317,23 +341,43 @@ app.add_middleware(RequestLoggingMiddleware)
 # ─── Exception Handlers ────────────────────────────────────────────
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc: HTTPException):
-    logger.warning(f"404 error: {request.url}")
+    logger.warning(f"404 error: {request.method} {request.url} - Client: {request.client.host if request.client else 'unknown'}")
+    logger.debug(f"404 details - Path: {request.url.path}, Query: {dict(request.query_params)}")
     return templates.TemplateResponse('404.html', {'request': request}, status_code=404)
 
 @app.exception_handler(400)
 async def bad_request_handler(request: Request, exc: HTTPException):
+    logger.warning(f"400 error: {request.method} {request.url} - Detail: {exc.detail}")
+    logger.debug(f"400 request headers: {dict(request.headers)}")
+    
     if exc.detail and "CSRF" in str(exc.detail):
-        logger.warning(f"CSRF error: {request.url}")
+        logger.warning(f"CSRF error detected: {request.url} - Detail: {exc.detail}")
         return templates.TemplateResponse('admin/csrf_error.html', 
                                         {'request': request, 'reason': str(exc.detail)}, 
                                         status_code=400)
-    response, status = send_json_response("Bad request", 400)
+    
+    response, status = send_json_response("Bad request", 400, str(exc.detail) if exc.detail else None)
     return JSONResponse(content=response, status_code=status)
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
-    response, status = send_json_response("Internal server error", 500, str(exc))
+    import traceback
+    
+    logger.error(f"Unhandled exception on {request.method} {request.url}: {str(exc)}", exc_info=True)
+    logger.error(f"Exception type: {type(exc).__name__}")
+    logger.error(f"Full traceback:\n{traceback.format_exc()}")
+    logger.debug(f"Request details - Headers: {dict(request.headers)}, Client: {request.client.host if request.client else 'unknown'}")
+    
+    # In development/test mode, include more details
+    if config.is_development() or config.is_testing():
+        response, status = send_json_response("Internal server error", 500, {
+            "error": str(exc),
+            "type": type(exc).__name__,
+            "path": request.url.path
+        })
+    else:
+        response, status = send_json_response("Internal server error", 500)
+    
     return JSONResponse(content=response, status_code=status)
 
 # ─── Routes ────────────────────────────────────────────
@@ -347,16 +391,20 @@ async def favicon():
 @app.get('/health')
 async def health_check():
     """Health check endpoint for monitoring"""
+    logger.debug(f"Health check requested from {request.client.host if request.client else 'unknown'}")
+    
     try:
         # In test mode, return a simple health status
         if config.is_testing():
-            return JSONResponse({
+            health_data = {
                 "status": "healthy",
                 "version": MadrasaConfig.SERVER_VERSION,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": "test",
                 "uptime": time.time() - app_start_time if app_start_time else 0
-            })
+            }
+            logger.debug(f"Health check (test mode): {health_data}")
+            return JSONResponse(health_data)
         
         # Advanced health check
         health_status = await get_system_health()

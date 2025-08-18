@@ -1,23 +1,11 @@
-from typing import Optional
-from fastapi import Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel, EmailStr
+from fastapi import Request, HTTPException
+from fastapi.responses import HTMLResponse
 
-from utils.helpers.improved_functions import get_env_var, send_json_response
-from utils.helpers.fastapi_helpers import rate_limit, handle_async_errors
+from utils.helpers.fastapi_helpers import handle_async_errors
 from . import web_routes, templates
-from utils.helpers.helpers import send_email
 import os
 import markdown
-import re
 from datetime import datetime
-import html  # For escaping HTML
-
-# Pydantic models for form data
-class ContactForm(BaseModel):
-    fullname: str
-    email_or_phone: str
-    description: str
 
 @web_routes.get("/", response_class=HTMLResponse, name="home")
 async def home(request: Request):
@@ -36,82 +24,6 @@ async def donate(request: Request):
         "current_year": datetime.now().year,
         "url_for": url_for
     })
-
-@web_routes.get('/contact', response_class=HTMLResponse, name="contact")
-@handle_async_errors
-@rate_limit(max_requests=50, window=60)  # 50 requests per minute to prevent spam
-async def contact_get(request: Request):
-    # Read raw comma‑separated strings from env
-    raw_phones = get_env_var('BUSINESS_PHONE') or ''
-    raw_emails = get_env_var('BUSINESS_EMAIL') or ''
-
-    # Turn into clean lists
-    phones = [p.strip() for p in raw_phones.split(',') if p.strip()] if raw_phones else []
-    emails = [e.strip() for e in raw_emails.split(',') if e.strip()] if raw_emails else []
-    
-    from . import url_for
-    return templates.TemplateResponse("contact.html", {
-        "request": request,
-        "current_year": datetime.now().year,
-        "business_phones": phones,
-        "business_emails": emails,
-        "business_email": emails[0] if emails else '',
-        "business_phone": phones[0] if phones else '',
-        "url_for": url_for
-    })
-
-@web_routes.post('/contact')
-@handle_async_errors
-@rate_limit(max_requests=50, window=60)
-async def contact_post(
-    request: Request,
-    fullname: str = Form(...),
-    email_or_phone: str = Form(...),
-    description: str = Form(...)
-):
-    # Read raw comma‑separated strings from env
-    raw_phones = get_env_var('BUSINESS_PHONE') or ''
-    raw_emails = get_env_var('BUSINESS_EMAIL') or ''
-
-    # Turn into clean lists
-    phones = [p.strip() for p in raw_phones.split(',') if p.strip()] if raw_phones else []
-    emails = [e.strip() for e in raw_emails.split(',') if e.strip()] if raw_emails else []
-
-    # Validate required fields
-    error_message = None
-    if not fullname or not email_or_phone or not description:
-        error_message = 'All fields are required.'
-    
-    # Validate field lengths
-    elif len(fullname) > 100 or len(email_or_phone) > 100 or len(description) > 1000:
-        error_message = 'Please keep your input within reasonable length limits.'
-    
-    # Basic email/phone validation
-    if '@' not in email_or_phone and not re.match(r'^[\d\s\+\-\(\)]+$', email_or_phone):
-        error_message = 'Please provide a valid email address or phone number.'
-
-    if error_message:
-        return RedirectResponse(url=str(request.url) + "?error=true", status_code=303) # Use 303 for redirect
-
-    try:
-        # Escape HTML to prevent XSS
-        safe_fullname = html.escape(fullname)
-        safe_contact = html.escape(email_or_phone)
-        safe_description = html.escape(description)
-        
-        await send_email(
-            to_email=emails[0],  # primary admin address
-            subject="Contact Form Submission",
-            body=f"Name: {safe_fullname}\nContact: {safe_contact}\n\nDescription: {safe_description}"
-        )
-    except Exception as e:
-        # Log the error but don't expose details to user
-        from utils.helpers.logger import log
-        log.error(action="contact_form_error", trace_info="web", message=str(e), secure=False)
-        # Flash message is not directly available in FastAPI, so we'll redirect with a query parameter
-        return RedirectResponse(url=str(request.url) + "?error=true", status_code=303)
-
-    return RedirectResponse(url=str(request.url) + "?success=true", status_code=303)
 
 @web_routes.get('/privacy', response_class=HTMLResponse, name="privacy")
 @handle_async_errors
@@ -268,39 +180,6 @@ async def terms(request: Request):
         "current_year": datetime.now().year,
         "url_for": url_for
     })
-
-@web_routes.get("/debug-paths")
-async def debug_paths(request: Request):
-    """Debug endpoint to check file paths"""
-    import os
-    from utils.helpers.logger import log
-    
-    current_file = __file__
-    content_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'content')
-    
-    privacy_path = os.path.join(content_dir, 'privacy_policy.md')
-    terms_path = os.path.join(content_dir, 'terms.md')
-    
-    result = {
-        "current_file": current_file,
-        "content_dir": content_dir,
-        "content_dir_exists": os.path.exists(content_dir),
-        "privacy_policy_path": privacy_path,
-        "privacy_policy_exists": os.path.exists(privacy_path),
-        "terms_path": terms_path,
-        "terms_exists": os.path.exists(terms_path),
-    }
-    
-    # List files in content directory if it exists
-    if os.path.exists(content_dir):
-        try:
-            result["content_files"] = os.listdir(content_dir)
-        except Exception as e:
-            result["content_files_error"] = str(e)
-    
-    log.info(action="debug_paths", trace_info="debug", message=f"Path debug info: {result}", secure=False)
-    
-    return result
 
 @web_routes.get("/account/{page_type}", response_class=HTMLResponse)
 async def manage_account(request: Request, page_type: str):

@@ -1,6 +1,4 @@
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
-from config import config
+from fastapi import APIRouter
 
 web_routes = APIRouter()
 

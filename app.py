@@ -1,7 +1,6 @@
-import os, time, logging, asyncio
+import os, time, logging
 from datetime import datetime, timezone
-from pathlib import Path
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -15,7 +14,7 @@ import json
 
 from config import config, MadrasaConfig
 from utils import create_tables
-from utils.helpers.improved_functions import send_json_response
+from utils.helpers.improved_functions import send_json_response, get_project_root
 from utils.keydb.keydb_utils import connect_to_keydb, close_keydb
 from utils.otel.otel_utils import init_otel
 
@@ -24,7 +23,6 @@ from utils.helpers.helpers import (
     get_system_health, initialize_application, security_manager,
 )
 from utils.helpers.fastapi_helpers import templates, setup_template_globals, SessionSecurityMiddleware
-from routes.admin_routes import admin_routes
 from routes.api import api
 from routes.web_routes import web_routes
 
@@ -40,13 +38,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── App Setup ──────────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent
-
-env = BASE_DIR / ".env"
-
-# load development
-
-load_dotenv(env)
+BASE_DIR = get_project_root()
+load_dotenv(BASE_DIR / ".env", override=True)
 
 # Initialize start time variable
 app_start_time = None
@@ -66,7 +59,6 @@ async def lifespan(app: FastAPI):
     global app_start_time
     # Startup
     app_start_time = time.time()
-    logger.info(f"Application starting up at {datetime.now().isoformat()}")
     
     # Log configuration status
     logger.info(f"Configuration loaded - TEST_MODE: {config.is_testing()}, OTEL_ENABLED: {config.OTEL_ENABLED}")
@@ -76,7 +68,7 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing OpenTelemetry...")
         init_otel(
             service_name="madrasa-app",
-            environment="development",
+            environment="development" if config.is_development() else "production",
             service_version=getattr(config, 'SERVER_VERSION', '0.0.0')
         )
         logger.info("OpenTelemetry initialized successfully")
@@ -87,33 +79,32 @@ async def lifespan(app: FastAPI):
     initialize_application()
     logger.info("Application initialization completed")
     
-    # Skip database initialization in test mode
-    if config.is_testing():
-        logger.warning("TEST_MODE enabled - skipping database initialization")
-        app.state.db_pool = None
-        app.state.keydb = None
-    else:
-        await create_tables_async()
-        # Initialize database connection pool
+    await create_tables_async()
+    # Initialize database connection pool
+    try:
+        logger.debug("Establishing database connection pool...")
         from utils.mysql.database_utils import get_db_pool
         app.state.db_pool = await get_db_pool()
         app.state.keydb = await connect_to_keydb()
         logger.info("Database connection pool established successfully")
+    except Exception as e:
+        logger.error(f"Error establishing database connection pool: {e}")
+        raise RuntimeError("Failed to initialize database connection pool") from e
     
     yield
     
     # Shutdown
-    if hasattr(app.state, 'db_pool') and app.state.db_pool is not None:
+    if app.state.db_pool is not None:
         try:
             from utils.mysql.database_utils import close_db_pool
             await close_db_pool()
-            logger.info("Database connection pool closed successfully")
+            logger.info("Database connection pool closed")
         except Exception as e:
             logger.error(f"Error closing database connection pool: {e}")
-    if hasattr(app.state, 'keydb') and app.state.keydb:
+    if app.state.keydb:
         try:
             await close_keydb(app.state.keydb)
-            logger.info("Keydb connection closed successfully")
+            logger.info("Keydb connection closed")
         except Exception as e:
             logger.error(f"Error closing keydb connection: {e}")
 
@@ -130,7 +121,7 @@ setup_template_globals(app)
 # ─── CORS Configuration ──────────────────────────────────────────────
 if not config.is_development():
     # Allow only specific origins in production
-    allowed_origins = config.ALLOWED_ORIGINS if hasattr(config, 'ALLOWED_ORIGINS') else []
+    allowed_origins = config.ALLOWED_ORIGINS or []
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -170,21 +161,15 @@ logger.info(f"BASE_URL: {config.BASE_URL}")
 logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
 logger.info(f"CORS enabled: {not config.is_development() and 'Restricted' or 'All origins (dev)'}")
 
-# ensure upload folder exists
-os.makedirs(MadrasaConfig.PROFILE_IMG_UPLOAD_FOLDER, exist_ok=True)
-
 # ─── Middleware ───────────────────────────────
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.types import ASGIApp
 
 # Add session middleware (needed for admin routes)
 # Ensure SECRET_KEY is set, especially for test mode
 secret_key = MadrasaConfig.SECRET_KEY
-if not secret_key and config.is_testing():
+if config.is_testing():
     secret_key = "test-secret-key-for-development-only"
-elif not secret_key:
-    raise ValueError("SECRET_KEY must be set in environment variables")
 
 app.add_middleware(SessionMiddleware, secret_key=secret_key)
 
@@ -217,9 +202,6 @@ class XSSProtectionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Block requests containing obvious XSS indicators in args, form, or JSON."""
         try:
-            # Check query parameters
-            if request.query_params:
-                logger.debug(f"Checking query params for XSS: {dict(request.query_params)}")
             for key, value in request.query_params.items():
                 if isinstance(value, str) and security_manager.detect_xss(value):
                     logger.warning(f"Blocked potential XSS via query params: {request.url.path} - Param: {key}")
@@ -229,7 +211,6 @@ class XSSProtectionMiddleware(BaseHTTPMiddleware):
             # Check form data (if present)
             if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
                 form = await request.form()
-                logger.debug(f"Checking form data for XSS: {list(form.keys())}")
                 for key, value in form.items():
                     if isinstance(value, str) and security_manager.detect_xss(value):
                         logger.warning(f"Blocked potential XSS via form data: {request.url.path} - Field: {key}")
@@ -280,18 +261,18 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
         endpoint = request.url.path
         # SECURITY FIX: Add CSRF check for admin routes - safely check session
-        blocked = False
-        try:
-            if endpoint.startswith("/admin/"):
-                # Check if session is available and admin is logged in
-                if hasattr(request, 'session') and request.session:
-                    blocked = not request.session.get("admin_logged_in", False)
-                else:
-                    # Session not available, block admin routes
-                    blocked = True
-        except Exception:
-            # Session access failed, block admin routes
-            blocked = True
+        # blocked = False
+        # try:
+        #     if endpoint.startswith("/admin/"):
+        #         # Check if session is available and admin is logged in
+        #         if hasattr(request, 'session') and request.session:
+        #             blocked = not request.session.get("admin_logged_in", False)
+        #         else:
+        #             # Session not available, block admin routes
+        #             blocked = True
+        # except Exception:
+        #     # Session access failed, block admin routes
+        #     blocked = True
 
         # Get JSON payload if available
         req_json = None
@@ -311,7 +292,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "ip": ip,
             "endpoint": endpoint,
-            "status": "Blocked" if blocked else "Allowed",
+            # "status": "Blocked" if blocked else "Allowed",
             "method": request.method,
             "path": request.url.path,
             "req_json": req_json,
@@ -369,8 +350,9 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.debug(f"Request details - Headers: {dict(request.headers)}, Client: {request.client.host if request.client else 'unknown'}")
     
     # In development/test mode, include more details
-    if config.is_development() or config.is_testing():
-        response, status = send_json_response("Internal server error", 500, {
+    if config.is_development():
+        response, status = send_json_response("Internal server error", 500) 
+        response.update({
             "error": str(exc),
             "type": type(exc).__name__,
             "path": request.url.path
@@ -389,23 +371,11 @@ async def favicon():
     )
 
 @app.get('/health')
-async def health_check():
+async def health_check(request: Request):
     """Health check endpoint for monitoring"""
     logger.debug(f"Health check requested from {request.client.host if request.client else 'unknown'}")
     
     try:
-        # In test mode, return a simple health status
-        if config.is_testing():
-            health_data = {
-                "status": "healthy",
-                "version": MadrasaConfig.SERVER_VERSION,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "mode": "test",
-                "uptime": time.time() - app_start_time if app_start_time else 0
-            }
-            logger.debug(f"Health check (test mode): {health_data}")
-            return JSONResponse(health_data)
-        
         # Advanced health check
         health_status = await get_system_health()
 
@@ -438,7 +408,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Now include routers
-app.include_router(admin_routes, prefix='/admin')
 app.include_router(web_routes)
 app.include_router(api)
  

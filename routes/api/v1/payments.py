@@ -1,12 +1,11 @@
-from typing import Optional
 from fastapi import Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from utils.helpers.improved_functions import get_env_var, send_json_response
 from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors
-from . import api
-import aiomysql, os, time, requests
+from api import api
+import aiomysql
 from datetime import datetime, timezone
 from utils.mysql.database_utils import get_db_connection
 from utils.helpers.helpers import calculate_fees, format_phone_number, cache_with_invalidation, validate_madrasa_name

@@ -398,6 +398,7 @@ class ServerConfig:
     SERVER_MAX_REQUESTS_JITTER = 50
     
     # Logging Configuration
+    LOGGING_ENABLED = True
     LOGGING_LEVEL = "INFO"
     LOGGING_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     LOGGING_ROTATION = "1 day"

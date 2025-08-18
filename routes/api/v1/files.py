@@ -1,13 +1,13 @@
 # ─── Enhanced File Serving Routes ───────────────────────────────────────────
 from fastapi import Request, HTTPException, Depends
-from fastapi.responses import FileResponse, JSONResponse
-from typing import Optional, Tuple
+from fastapi.responses import FileResponse
+from typing import Tuple
 import os
 import re
 
 from utils.helpers.improved_functions import send_json_response
 from utils.helpers.fastapi_helpers import ClientInfo, validate_device_dependency, handle_async_errors, get_client_info
-from . import api
+from api import api
 from utils.helpers.logger import log
 from config import config
 

@@ -13,7 +13,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from utils.helpers.improved_functions import get_env_var, send_json_response
 
 # Local imports
-from . import api
+from api import api
 from utils.mysql.database_utils import get_db_connection
 from config import config
 from utils.helpers.helpers import (

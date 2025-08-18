@@ -37,7 +37,7 @@ class AdvancedLogger:
     def __init__(self, config: ServerConfig):
         self.config = config
         self.logger = logging.getLogger("MadrashaServer")
-        self.logger.setLevel(getattr(logging, default_config.LOGGING_LEVEL))
+        self.logger.setLevel(getattr(logging, default_config.LOGGING_LEVEL.upper()))
         
         # Clear existing handlers
         self.logger.handlers.clear()
@@ -110,9 +110,9 @@ class ProcessManager:
             self.logger.info(f"Starting server on {current_os}")
             
             # Use Uvicorn for FastAPI
-            host = getattr(default_config, 'SERVER_HOST', '0.0.0.0')
-            port = getattr(default_config, 'SERVER_PORT', 8000)
-            workers = getattr(default_config, 'WORKER_COUNT', 1)
+            host = default_config.SERVER_HOST
+            port = default_config.SERVER_PORT
+            workers = default_config.SERVER_WORKERS
             
             if dev_mode:
                 # Development mode - single worker with reload
@@ -367,20 +367,22 @@ class AdvancedServerRunner:
             
             # Handle daemon mode
             if daemon:
+                if platform.system() == "Windows":
+                    raise NotImplementedError("Daemon mode is not supported on Windows")
+                
                 self.logger.info("Starting server in daemon mode...")
                 if platform.system() != "Windows":
                     # Fork and detach from parent process (Unix-like systems)
                     try:
-                        pid = os.fork()
+                        pid = os.fork() # type: ignore[attr-defined for Unix-like systems]
                         if pid > 0:
                             # Parent process - exit
                             self.logger.info(f"Daemon started with PID: {pid}")
                             return True
                         elif pid == 0:
                             # Child process - continue
-                            os.setsid()  # Create new session
-                            # SECURITY FIX: Use safer umask value (022 = owner write, group/other read)
-                            os.umask(0o022)  # Changed from 0 to 0o022
+                            os.setsid() # type: ignore[attr-defined for Unix-like systems]
+                            os.umask(0o022)
                             # Redirect standard file descriptors
                             sys.stdout.flush()
                             sys.stderr.flush()
@@ -537,14 +539,13 @@ def main():
             try:
                 with open(runner.config.pid_file, 'r') as f:
                     pid = int(f.read().strip())
-                # FIX: Handle Windows compatibility
                 if platform.system() == "Windows":
                     # On Windows, use SIGTERM for both restart types
                     os.kill(pid, signal.SIGTERM)
                     print("Restart signal sent (Windows: using SIGTERM)")
                 else:
                     # On Unix-like systems, use SIGUSR1/SIGUSR2
-                    sig = signal.SIGUSR1 if args.restart else signal.SIGUSR2
+                    sig = signal.SIGUSR1 if args.restart else signal.SIGUSR2 # type: ignore[attr-defined for Unix-like systems]
                     os.kill(pid, sig)
                     print("Restart signal sent" + (" (graceful)" if args.restart else " (force)"))
             except Exception as e:

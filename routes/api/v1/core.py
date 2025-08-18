@@ -6,16 +6,16 @@ from zoneinfo import ZoneInfo
 
 import aiomysql
 from PIL import Image
-from fastapi import Request, HTTPException, Depends, UploadFile, File, Form
+from fastapi import Request, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field, validator
+from pydantic import validator
 from werkzeug.utils import secure_filename
 
 from utils.helpers.improved_functions import get_env_var, send_json_response
 from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors, rate_limit
 
 # Local imports
-from . import api
+from api import api
 from utils.mysql.database_utils import get_db_connection
 from config import config
 from utils.helpers.helpers import (

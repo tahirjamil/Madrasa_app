@@ -1,3 +1,4 @@
+import logging
 import sys
 import aiomysql, asyncio, json
 from datetime import datetime
@@ -35,19 +36,27 @@ log_count_lock = asyncio.Lock()
 async def log_event(action: str, trace_info: str, message: str, secure: bool, level: str= "info", metadata=None) -> None:
     """Enhanced logging function with better error handling and metadata support"""
     global log_count
+
+    MAX_ACTION_LEN = 50
+    MAX_MESSAGE_LEN = 255
+    MAX_TRACE_LEN = 100
     
-    # Input validation
-    if not action or len(action) > 100:
-        _log_error("Invalid action parameter")
+    # Truncate strings if they exceed max length
+    action = action[:MAX_ACTION_LEN]
+    trace_info = trace_info[:MAX_TRACE_LEN]
+    message = message[:MAX_MESSAGE_LEN]
+
+    from config import config as default_config, server_config
+    if not server_config.LOGGING_ENABLED:
+        _log_error("Logging is disabled in the configuration")
         return
-    if not trace_info or len(trace_info) > 500:
-        _log_error("Invalid trace_info parameter")
+    # Check if we are in development mode
+    if default_config.is_development:
+        logger = logging.getLogger("MadrashaServer")
+        logger.setLevel(getattr(logging, server_config.LOGGING_LEVEL.upper()))
+
+        logger.info(f"SERVER LOG {level.upper()}: message={message},")
         return
-    if not message or len(message) > 1000:
-        _log_error("Invalid message parameter")
-        return
-    if level not in ["info", "warning", "error", "critical"]:
-        level = "info"
     
     try:
         from utils.mysql.database_utils import get_db_connection

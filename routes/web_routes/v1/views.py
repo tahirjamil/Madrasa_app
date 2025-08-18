@@ -1,15 +1,16 @@
-from fastapi import Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from utils.helpers.fastapi_helpers import handle_async_errors
-from . import web_routes, templates
+from config import config
+from utils.helpers.fastapi_helpers import handle_async_errors, templates
+from utils.helpers.helpers import rate_limit
 import os
 import markdown
 from datetime import datetime
+from web_routes import web_routes, url_for
 
 @web_routes.get("/", response_class=HTMLResponse, name="home")
 async def home(request: Request):
-    from . import url_for
     return templates.TemplateResponse("home.html", {
         "request": request,
         "current_year": datetime.now().year,
@@ -18,7 +19,6 @@ async def home(request: Request):
 
 @web_routes.get("/donate", response_class=HTMLResponse, name="donate")
 async def donate(request: Request):
-    from . import url_for
     return templates.TemplateResponse("donate.html", {
         "request": request,
         "current_year": datetime.now().year,
@@ -93,7 +93,6 @@ async def privacy(request: Request):
         log.error(action="privacy_policy_error", trace_info="web", 
                   message=f"Error loading privacy policy: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
     
-    from . import url_for
     return templates.TemplateResponse('privacy.html', {
         "request": request,
         "title": title,
@@ -171,7 +170,6 @@ async def terms(request: Request):
         log.error(action="terms_error", trace_info="web", 
                   message=f"Error loading terms: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
     
-    from . import url_for
     return templates.TemplateResponse('terms.html', {
         "request": request,
         "title": title,
@@ -195,3 +193,58 @@ async def manage_account(request: Request, page_type: str):
             "page_type": page_type.capitalize()
         }
     )
+
+
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+@web_routes.get('/info', response_class=HTMLResponse, name="info_page")
+@handle_async_errors
+@rate_limit(max_requests=500, window=60)
+async def info_admin(request: Request):
+
+    # require admin
+    if not request.session.get('admin_logged_in'):
+        return RedirectResponse(url='/admin/login', status_code=302)
+
+    # Thread-safe access to request log
+    if config.is_testing():
+        logs = []
+    else:
+        request_log = request.app.state.request_response_log
+        request_log_lock = request.app.state.request_log_lock
+        with request_log_lock:
+            logs = list(request_log)[-100:]
+
+    return templates.TemplateResponse("admin/info.html", {"request": request, "logs": logs})
+
+@web_routes.get('/info/data', name="info_data_admin")
+@handle_async_errors
+async def info_data_admin(request: Request):
+    if config.is_testing():
+        return JSONResponse(content=[])
+
+    # Thread-safe access to request log
+    request_log = request.app.state.request_response_log
+    request_log_lock = request.app.state.request_log_lock
+    with request_log_lock:
+        logs = list(request_log)[-100:]
+    # serializable copy
+    out = []
+    for e in logs:
+        out.append({
+            "time":     e["time"],
+            "ip":       e["ip"],
+            "method":   e["method"],
+            "path":     e["path"],
+            "req_json": e.get("req_json"),
+            "res_json": e.get("res_json")
+        })
+    return JSONResponse(content=out)

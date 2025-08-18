@@ -32,7 +32,7 @@ async def privacy(request: Request):
     
     # Debug: Log the request
     log.info(action="privacy_page_accessed", trace_info=request.client.host if request.client else "unknown",
-             message="Privacy page accessed", secure=False)
+            message="Privacy page accessed", secure=False)
     
     # Construct the full path to the markdown file with debugging
     current_file = __file__
@@ -80,18 +80,18 @@ async def privacy(request: Request):
             if os.path.exists(content_dir):
                 files = os.listdir(content_dir)
                 log.info(action="privacy_debug", trace_info="web", 
-                         message=f"Files in content directory: {files}", secure=False)
+                        message=f"Files in content directory: {files}", secure=False)
             else:
                 log.error(action="privacy_debug", trace_info="web", 
-                          message=f"Content directory does not exist: {content_dir}", secure=False)
+                        message=f"Content directory does not exist: {content_dir}", secure=False)
         except Exception as list_error:
             log.error(action="privacy_debug", trace_info="web", 
-                      message=f"Error listing content directory: {str(list_error)}", secure=False)
+                    message=f"Error listing content directory: {str(list_error)}", secure=False)
     except Exception as e:
         # Log any other errors with full traceback
         import traceback
         log.error(action="privacy_policy_error", trace_info="web", 
-                  message=f"Error loading privacy policy: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
+                message=f"Error loading privacy policy: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
     
     return templates.TemplateResponse('privacy.html', {
         "request": request,
@@ -109,7 +109,7 @@ async def terms(request: Request):
     
     # Debug: Log the request
     log.info(action="terms_page_accessed", trace_info=request.client.host if request.client else "unknown",
-             message="Terms page accessed", secure=False)
+            message="Terms page accessed", secure=False)
     
     # Construct the full path to the markdown file with debugging
     current_file = __file__
@@ -157,18 +157,18 @@ async def terms(request: Request):
             if os.path.exists(content_dir):
                 files = os.listdir(content_dir)
                 log.info(action="terms_debug", trace_info="web", 
-                         message=f"Files in content directory: {files}", secure=False)
+                        message=f"Files in content directory: {files}", secure=False)
             else:
                 log.error(action="terms_debug", trace_info="web", 
-                          message=f"Content directory does not exist: {content_dir}", secure=False)
+                        message=f"Content directory does not exist: {content_dir}", secure=False)
         except Exception as list_error:
             log.error(action="terms_debug", trace_info="web", 
-                      message=f"Error listing content directory: {str(list_error)}", secure=False)
+                    message=f"Error listing content directory: {str(list_error)}", secure=False)
     except Exception as e:
         # Log any other errors with full traceback
         import traceback
         log.error(action="terms_error", trace_info="web", 
-                  message=f"Error loading terms: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
+                message=f"Error loading terms: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
     
     return templates.TemplateResponse('terms.html', {
         "request": request,

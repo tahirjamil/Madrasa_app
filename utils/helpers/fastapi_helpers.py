@@ -3,6 +3,8 @@ FastAPI helper functions and dependencies
 Replaces Quart-specific helpers with FastAPI patterns
 """
 
+import json
+import os
 from typing import Optional, Dict, Any, Callable, Tuple
 from functools import wraps
 import time
@@ -14,6 +16,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, field_validator
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_429_TOO_MANY_REQUESTS
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
 
 from config import config
 from .helpers import security_manager
@@ -462,3 +465,68 @@ async def track_session_activity(request: Request, activity_type: str, details: 
             message=f"Session activity: {activity_type}",
             secure=True
         )
+
+MAX_JSON_BODY = int(os.getenv("MAX_JSON_BODY", 1_000_000))  # default 1MB
+
+def _content_length_ok(request: Request, max_bytes: int) -> bool:
+    cl = request.headers.get("content-length")
+    if not cl:
+        return True
+    try:
+        return int(cl) <= max_bytes
+    except ValueError:
+        return True
+
+async def _stream_limited(request: Request, max_bytes: int) -> bytes:
+    """Stream request body in chunks and stop when max_bytes exceeded."""
+    size = 0
+    parts = []
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > max_bytes:
+            raise HTTPException(status_code=413, detail="Payload too large")
+        parts.append(chunk)
+    return b"".join(parts)
+
+async def read_and_recreate_request(request: Request, max_bytes: Optional[int] = None) -> Tuple[bytes, StarletteRequest]:
+    """
+    Read request body safely and recreate a Request with a fresh receive() for downstream.
+    - Honors Content-Length (cheap check).
+    - Streams when Content-Length not present.
+    - Raises HTTPException(413) if body is too large.
+    Returns (body_bytes, new_request)
+    """
+    max_bytes = max_bytes or MAX_JSON_BODY
+
+    # cheap Content-Length check
+    if not _content_length_ok(request, max_bytes):
+        raise HTTPException(status_code=413, detail="Payload too large")
+
+    # If content-length exists, .body() is safe-ish (fast path)
+    if request.headers.get("content-length"):
+        body = await request.body()
+        if len(body) > max_bytes:
+            raise HTTPException(status_code=413, detail="Payload too large")
+    else:
+        # stream and enforce limit
+        body = await _stream_limited(request, max_bytes)
+
+    # recreate receive for downstream (Starlette expects "more_body" flag)
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    new_request = Request(request.scope, receive=receive)
+    return body, new_request
+
+
+async def read_json_and_recreate(request: Request, max_bytes: Optional[int] = None):
+    """
+    Convenience: read body and parse JSON. Returns (parsed_json_or_None, new_request)
+    """
+    body, new_req = await read_and_recreate_request(request, max_bytes=max_bytes)
+    if not body:
+        return None, new_req
+    try:
+        return json.loads(body), new_req
+    except Exception:
+        return None, new_req

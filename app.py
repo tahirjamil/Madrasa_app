@@ -1,14 +1,17 @@
+import asyncio
+from logging.handlers import RotatingFileHandler
 import os, time, logging
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+# TODO: BABEL NOT SETUP YET
 import socket
-from threading import Lock
 from collections import deque
 import json
 
@@ -20,18 +23,23 @@ from utils.otel.otel_utils import init_otel
 
 # ─── Import Routers ──────────────────────────────────────────
 from utils.helpers.helpers import (
-    get_system_health, initialize_application, security_manager,
+    get_system_health, initialize_application, security_manager, get_ip_address
 )
-from utils.helpers.fastapi_helpers import templates, setup_template_globals, SessionSecurityMiddleware
+from utils.helpers.fastapi_helpers import (
+    templates, setup_template_globals, 
+    _content_length_ok, _stream_limited, read_and_recreate_request, 
+    read_json_and_recreate, SessionSecurityMiddleware)
 from routes.api import api
 from routes.web_routes import web_routes
 
 # ─── Setup Logging ──────────────────────────────────────────
+fh = RotatingFileHandler("debug.log", maxBytes=10*1024*1024, backupCount=5)
+level = logging.DEBUG if config.is_development() else logging.INFO
 logging.basicConfig(
-    level=logging.DEBUG,  # Changed from WARNING to DEBUG to allow debug logs
+    level=level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('debug.log'),
+        fh,
         logging.StreamHandler()
     ]
 )
@@ -94,14 +102,14 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    if app.state.db_pool is not None:
+    if getattr(app.state, "db_pool", None) is not None:
         try:
             from utils.mysql.database_utils import close_db_pool
             await close_db_pool()
             logger.info("Database connection pool closed")
         except Exception as e:
             logger.error(f"Error closing database connection pool: {e}")
-    if app.state.keydb:
+    if getattr(app.state, "keydb", None) is not None:
         try:
             await close_keydb(app.state.keydb)
             logger.info("Keydb connection closed")
@@ -147,18 +155,22 @@ if config.OTEL_ENABLED:
     from utils.otel.asgi_middleware import RequestTracingMiddleware
     app.add_middleware(RequestTracingMiddleware)
 
+def content_type_starts_with(request: Request, prefix: str) -> bool:
+    ct = request.headers.get("content-type", "")
+    return ct.split(";", 1)[0].strip().lower().startswith(prefix)
+
 # ─── Request/Response Logging ───────────────────────────────
 # Thread-safe request log with max size of 100 entries
-request_response_log = deque(maxlen=100)
-request_log_lock = Lock()
-
-# Store these in app.state instead of as module variables
-app.state.request_response_log = request_response_log
-app.state.request_log_lock = request_log_lock
+app.state.request_response_log = deque(maxlen=100)
+app.state.request_log_lock = asyncio.Lock()
 
 # Log important configuration
+try:
+    host_ip = socket.gethostbyname(socket.gethostname())
+except Exception:
+    host_ip = "unknown"
 logger.info(f"BASE_URL: {config.BASE_URL}")
-logger.info(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
+logger.info(f"Host IP: {host_ip}")
 logger.info(f"CORS enabled: {not config.is_development() and 'Restricted' or 'All origins (dev)'}")
 
 # ─── Middleware ───────────────────────────────
@@ -200,28 +212,16 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 class XSSProtectionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        """Block requests containing obvious XSS indicators in args, form, or JSON."""
         try:
-            for key, value in request.query_params.items():
-                if isinstance(value, str) and security_manager.detect_xss(value):
-                    logger.warning(f"Blocked potential XSS via query params: {request.url.path} - Param: {key}")
-                    response, status = send_json_response("Invalid input", 400, "XSS detected")
-                    return JSONResponse(content=response, status_code=status)
-
-            # Check form data (if present)
-            if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
-                form = await request.form()
-                for key, value in form.items():
-                    if isinstance(value, str) and security_manager.detect_xss(value):
-                        logger.warning(f"Blocked potential XSS via form data: {request.url.path} - Field: {key}")
-                        response, status = send_json_response("Invalid input", 400, "XSS detected")
-                        return JSONResponse(content=response, status_code=status)
-
-            # Check JSON payload (if present)
-            if request.headers.get("content-type") == "application/json":
-                try:
-                    json_data = await request.json()
-                    
+            # only inspect typical bodies (json/form)
+            ct = request.headers.get("content-type", "")
+            if ct and (ct.startswith("application/json") or ct.startswith("application/x-www-form-urlencoded") or ct.startswith("multipart/form-data")):
+                # read + recreate inside helper (enforces max body)
+                json_data, request = await read_json_and_recreate(request)  # uses MAX_JSON_BODY
+                # If you need form data, you can also:
+                body_bytes, request = await read_and_recreate_request(request)
+                # then parse form if required via starlette
+                if json_data:
                     def _contains_xss(obj):
                         if isinstance(obj, str):
                             return security_manager.detect_xss(obj)
@@ -230,19 +230,17 @@ class XSSProtectionMiddleware(BaseHTTPMiddleware):
                         if isinstance(obj, (list, tuple, set)):
                             return any(_contains_xss(v) for v in obj)
                         return False
-
-                    if json_data and _contains_xss(json_data):
-                        logger.warning(f"Blocked potential XSS via JSON body: {request.url.path}")
+                    if _contains_xss(json_data):
                         response, status = send_json_response("Invalid input", 400, "XSS detected")
                         return JSONResponse(content=response, status_code=status)
-                except Exception:
-                    pass
 
-            response = await call_next(request)
-            return response
+            # continue to next middleware/handler (request is already recreated)
+            return await call_next(request)
+        except HTTPException as e:
+            # bubble up payload-too-large
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
         except Exception as e:
-            # Fail-safe: never break requests due to guard errors
-            logger.error(f"XSS guard error: {str(e)}")
+            logger.exception("XSS guard error")
             return await call_next(request)
 
 app.add_middleware(XSSProtectionMiddleware)
@@ -258,7 +256,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/admin/info_data":
             return await call_next(request)
 
-        ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+        ip = get_ip_address(request)
         endpoint = request.url.path
         # SECURITY FIX: Add CSRF check for admin routes - safely check session
         # blocked = False
@@ -276,17 +274,20 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         # Get JSON payload if available
         req_json = None
-        if request.headers.get("content-type") == "application/json":
+        ct = request.headers.get("content-type", "")
+        if ct and ct.startswith("application/json"):
             try:
                 body = await request.body()
-                req_json = json.loads(body) if body else None
+                req_json, request = await read_json_and_recreate(request)
                 # Need to recreate request with body for downstream
                 from starlette.datastructures import Headers
                 async def receive():
-                    return {"type": "http.request", "body": body}
+                    return {"type": "http.request", "body": body, "more_body": False}
                 request = Request(request.scope, receive=receive)
+            except HTTPException as e:
+                return JSONResponse({"error": e.detail}, status_code=e.status_code)
             except Exception:
-                pass
+                req_json = None
 
         entry = {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -303,7 +304,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         request.state.log_entry = entry
         
         # Thread-safe append to request log
-        with app.state.request_log_lock:
+        async with app.state.request_log_lock:
             app.state.request_response_log.append(entry)
 
         response = await call_next(request)
@@ -339,6 +340,10 @@ async def bad_request_handler(request: Request, exc: HTTPException):
     
     response, status = send_json_response("Bad request", 400, str(exc.detail) if exc.detail else None)
     return JSONResponse(content=response, status_code=status)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse({"error": "validation_error", "details": exc.errors()}, status_code=422)
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
@@ -384,7 +389,7 @@ async def health_check(request: Request):
             "uptime": time.time() - app_start_time if app_start_time else 0
         })
 
-        return JSONResponse(health_status)
+        return JSONResponse(content=health_status, status_code=200)
     except RuntimeError as e:
         logger.error(f"Health check failed: {e}")
         return JSONResponse({
@@ -403,6 +408,11 @@ async def health_check(request: Request):
         
 # ─── Register Routers ────────────────────────────────────
 # ─── Static Files ────────────────────────────────────────────
+# Make sure static and uploads directories exist
+if not os.path.exists("static"):
+    os.makedirs("static")
+if not os.path.exists("uploads"):
+    os.makedirs("uploads")
 # Mount static files BEFORE routers to ensure they're available for url_for
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

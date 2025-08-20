@@ -55,7 +55,7 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
         logger = logging.getLogger("MadrashaServer")
         logger.setLevel(getattr(logging, server_config.LOGGING_LEVEL.upper()))
 
-        logger.info(f"SERVER LOG {level.upper()}: message={message},")
+        logger.info(f"SERVER LOG {level.upper()}: {action}\ndetails: {message},")
         return
     
     try:
@@ -188,7 +188,7 @@ def log_event_sync(action : str, trace_info: str, message : str, secure: bool, l
         _log_error(f"Sync logging failed: {type(e).__name__}")
 
 # Utility functions for different log levels with backward compatibility
-class logger:
+class log_class:
     def info(self, action : str, message: str, trace_info: str= "system", secure: bool= False, metadata=None) -> None:
         """Log info level message"""
         log_event_async(action=action, trace_info=trace_info, message=message, secure=secure, level="info", metadata=metadata)
@@ -205,4 +205,4 @@ class logger:
         """Log critical level message"""
         log_event_async(action=action, trace_info=trace_info, message=message, secure=secure, level="critical", metadata=metadata)
 
-log = logger()
+log = log_class()

@@ -931,7 +931,7 @@ async def check_opentelemetry_health() -> Dict[str, Any]:
     except Exception as e:
         return {"status": "unhealthy", "message": f"OpenTelemetry error: {str(e)}"}
 
-async def get_system_health(request: Request | None) -> Dict[str, Any]:
+async def get_system_health(request: Request | None= None) -> Dict[str, Any]:
     """Get comprehensive system health status"""
     db_health = await check_database_health()
     fs_health = await check_file_system_health()

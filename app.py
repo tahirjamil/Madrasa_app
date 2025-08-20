@@ -1,5 +1,4 @@
 import asyncio
-from logging.handlers import RotatingFileHandler
 import os, time, logging
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
@@ -13,7 +12,12 @@ from dotenv import load_dotenv
 import socket
 from collections import deque
 
-# ─── Import Configurations and Utilities ──────────────────────────────
+# ─── Logging Utilities ──────────────────────────────────────────────
+from rich.traceback import install
+from rich.logging import RichHandler
+from logging.handlers import RotatingFileHandler
+
+# ─── Import Configurations and Utilities ────────────────────────────
 from config import config, MadrasaConfig
 from utils import create_tables
 from utils.helpers.improved_functions import send_json_response, get_project_root
@@ -29,14 +33,18 @@ from routes.api import api
 from routes.web_routes import web_routes
 
 # ─── Setup Logging ──────────────────────────────────────────
+
+# Enable rich tracebacks for uncaught exceptions
+install(show_locals=True)
+
 fh = RotatingFileHandler("debug.log", maxBytes=10*1024*1024, backupCount=5)
 level = logging.DEBUG if config.is_development() else logging.INFO
 logging.basicConfig(
     level=level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        fh,
-        logging.StreamHandler()
+        fh,                  # File logs
+        RichHandler()        # Console logs with rich formatting
     ]
 )
 logger = logging.getLogger(__name__)
@@ -345,7 +353,7 @@ async def health_check(request: Request):
     
     try:
         # Advanced health check
-        health_status = await get_system_health()
+        health_status = await get_system_health(request)
 
         # Extra health check - use initialized start_time
         health_status.update({

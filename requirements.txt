@@ -8,6 +8,7 @@ aiomysql
 redis[hiredis]>=5.0.0
 Babel
 werkzeug
+rich
 
 # Other dependencies
 requests

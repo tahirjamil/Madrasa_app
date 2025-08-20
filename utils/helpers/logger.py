@@ -33,7 +33,7 @@ def get_crypto_funcs(data: str, which: str) -> str | None:
 log_count = 0
 log_count_lock = asyncio.Lock()
 
-async def log_event(action: str, trace_info: str, message: str, secure: bool, level: str= "info", metadata=None) -> None:
+async def log_event(action: str, message: str, trace_info: str= "system", secure: bool= False, level: str= "info", metadata=None) -> None:
     """Enhanced logging function with better error handling and metadata support"""
     global log_count
 
@@ -189,19 +189,19 @@ def log_event_sync(action : str, trace_info: str, message : str, secure: bool, l
 
 # Utility functions for different log levels with backward compatibility
 class logger:
-    def info(self, action : str, trace_info: str, message : str, secure: bool, metadata=None) -> None:
+    def info(self, action : str, message: str, trace_info: str= "system", secure: bool= False, metadata=None) -> None:
         """Log info level message"""
         log_event_async(action=action, trace_info=trace_info, message=message, secure=secure, level="info", metadata=metadata)
 
-    def warning(self, action : str, trace_info: str, message : str, secure: bool, metadata=None) -> None:
+    def warning(self, action : str, message: str, trace_info: str= "system", secure: bool= False, metadata=None) -> None:
         """Log warning level message"""
         log_event_async(action=action, trace_info=trace_info, message=message, secure=secure, level="warning", metadata=metadata)
 
-    def error(self, action : str, trace_info: str, message : str, secure: bool, metadata=None) -> None:
+    def error(self, action : str, message: str, trace_info: str= "system", secure: bool= False, metadata=None) -> None:
         """Log error level message"""
         log_event_async(action=action, trace_info=trace_info, message=message, secure=secure, level="error", metadata=metadata)
 
-    def critical(self, action : str, trace_info: str, message : str, secure: bool, metadata=None) -> None:
+    def critical(self, action : str, message: str, trace_info: str= "system", secure: bool= False, metadata=None) -> None:
         """Log critical level message"""
         log_event_async(action=action, trace_info=trace_info, message=message, secure=secure, level="critical", metadata=metadata)
 

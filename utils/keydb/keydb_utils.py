@@ -1,19 +1,13 @@
 import asyncio
-import os
-from typing import Any, Optional, Tuple, TypedDict, cast
-
-# Removed Quart import - using FastAPI app state instead
-
-# Import config when needed to avoid circular imports
-# from utils.otel.db_tracing import TracedRedisPool  # Import when needed to avoid circular imports
-
-# Redis asyncio client (redis-py >= 4.2 / 5.x)
+from typing import Any, Optional, Tuple, TypedDict, Union
+from fastapi import Request
 import redis.asyncio as redis
 
 from utils.helpers.improved_functions import get_env_var
 from utils.helpers.logger import log
 
 from config import config
+from utils.otel.otel_utils import TracedRedisPool
 
 
 class RedisConnectConfig(TypedDict, total=False):
@@ -80,59 +74,67 @@ def get_keydb_config() -> RedisConnectConfig | None:
 
     return cfg
 
-
-async def connect_to_keydb() -> Optional[redis.Redis]:
-    """
-    Establish connection to KeyDB with proper error handling
-    """
+async def connect_to_keydb(max_retries: int = 3, retry_delay: float = 0.5) -> Union[redis.Redis, TracedRedisPool] | None:
+    """Create a global KeyDB/Redis client using redis.asyncio (redis-py) with retries."""
     try:
-        # Create connection
-        keydb_client = redis.Redis(
-            host=config.REDIS_HOST,
-            port=config.REDIS_PORT,
-            password=config.REDIS_PASSWORD,
-            decode_responses=True,
-            socket_keepalive=True,
-            socket_connect_timeout=5,
-            retry_on_timeout=True,
-            health_check_interval=30
+        cfg = get_keydb_config()
+    except RuntimeError:
+        log.info(
+            action="keydb_connection_skipped",
+            trace_info="system",
+            message="KeyDB connection skipped - cache disabled",
+            secure=False
         )
-        
-        # Test connection
-        await keydb_client.ping()
-        
-        # Log success
-        from utils.helpers.logger import log
-        log.info(action="keydb_connected", trace_info="system", message="Successfully connected to KeyDB", secure=False)
-        
-        return keydb_client
-        
-    except redis.ConnectionError as e:
-        from utils.helpers.logger import log
-        log.error(action="keydb_connection_failed", trace_info="system", message=f"Failed to connect to KeyDB: {str(e)}", secure=False)
-        return None
-    except Exception as e:
-        from utils.helpers.logger import log
-        log.critical(action="keydb_error", trace_info="system", message=f"Unexpected KeyDB error: {str(e)}", secure=False)
         return None
 
-
-async def get_keydb_connection(max_retries: int = 3) -> Any:
-    """Get KeyDB connection with retry/backoff similar to DB utils."""
-    for attempt in range(max_retries):
+    for attempt in range(1, max_retries + 1):
         try:
-            # This function is deprecated in favor of get_keydb_from_app
-            # For backward compatibility, return None
-            return None
-        except Exception:
-            if attempt == max_retries - 1:
-                raise
-            await asyncio.sleep(0.1 * (attempt + 1))
+            if cfg and "url" in cfg:
+                client = redis.from_url(
+                    cfg["url"],
+                    db=cfg.get("db", 0),
+                    encoding=cfg.get("encoding", "utf-8"),
+                    decode_responses=True,
+                    socket_connect_timeout=cfg.get("timeout", 10.0),
+                )
+            elif cfg and "address" in cfg:
+                address: Tuple[str, int] = cfg.get("address", ("localhost", 6379))  # type: ignore[assignment]
+                client = redis.Redis(
+                    host=address[0],
+                    port=address[1],
+                    db=cfg.get("db", 0),
+                    password=cfg.get("password"),
+                    encoding=cfg.get("encoding", "utf-8"),
+                    decode_responses=True,
+                    ssl=cfg.get("ssl", False),
+                    socket_connect_timeout=cfg.get("timeout", 10.0),
+                )
+            else:
+                raise RuntimeError("KeyDB connection failed: No configuration provided")
 
-    raise Exception("KeyDB connection failed")
+            # Import TracedRedisPool here to avoid circular imports
+            from utils.otel.otel_utils import TracedRedisPool
+            return TracedRedisPool(client)
 
+        except Exception as e:
+            log.warning(
+                action="keydb_connection_retry",
+                trace_info="system",
+                message=f"Attempt {attempt} failed: {type(e).__name__} - {str(e)}",
+                secure=False
+            )
+            if attempt < max_retries:
+                await asyncio.sleep(retry_delay * attempt)
+            else:
+                log.error(
+                    action="keydb_connection_failed",
+                    trace_info="system",
+                    message=f"All {max_retries} attempts to connect to KeyDB failed: {type(e).__name__}",
+                    secure=False
+                )
+                return None
 
-async def close_keydb(keydb_client: Optional[redis.Redis]) -> None:
+async def close_keydb(keydb_client: Union[redis.Redis, TracedRedisPool, None]) -> None:
     """
     Close KeyDB connection gracefully
     """
@@ -147,26 +149,24 @@ async def close_keydb(keydb_client: Optional[redis.Redis]) -> None:
             log.error(action="keydb_disconnect_error", trace_info="system", message=f"Error disconnecting from KeyDB: {str(e)}", secure=False)
 
 
-async def ping_keydb(timeout: float = 1.0) -> bool:
+async def ping_keydb(request: Request | None, timeout: float = 1.0) -> bool:
     """Simple health-check for KeyDB connection."""
     try:
-        pool = await get_keydb_connection()
-        # In aioredis 1.x, pool executes commands directly
-        pong = await pool.ping()
+        pool = get_keydb_from_app(request)
+        pong = await pool.ping() if pool else None
         return bool(pong)
     except Exception:
-        try:
-            await asyncio.wait_for(asyncio.sleep(0), timeout=timeout)
-        except Exception:
-            pass
+        await asyncio.sleep(timeout)
         return False
 
+_keydb_instance: redis.Redis | TracedRedisPool | None= None
 
-def get_keydb_from_app(app) -> Optional[redis.Redis]:
-    """
-    Get KeyDB client from FastAPI app state
-    This replaces the Quart current_app usage
-    """
-    if hasattr(app, 'state') and hasattr(app.state, 'keydb'):
-        return app.state.keydb
-    return None
+def set_global_keydb(client: redis.Redis | TracedRedisPool | None) -> None:
+    global _keydb_instance
+    _keydb_instance = client
+
+def get_keydb_from_app(request: Request | None) -> redis.Redis | TracedRedisPool | None:
+    """Get KeyDB client from FastAPI app state"""
+    if not request:
+        return _keydb_instance
+    return getattr(request.app.state, "keydb", None)

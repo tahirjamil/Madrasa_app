@@ -155,7 +155,6 @@ uploads/gallery/studio/studio_5.jpg
 uploads/notices/index.json
 uploads/profile_pics/myimg.webp
 utils/__init__.py
-utils/helpers/csrf_protection.py
 utils/helpers/fastapi_helpers.py
 utils/helpers/helpers.py
 utils/helpers/improved_functions.py

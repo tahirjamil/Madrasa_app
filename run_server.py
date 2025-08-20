@@ -9,9 +9,7 @@ import os, sys, platform, subprocess, signal, time, logging, argparse, threading
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
-from config import server_config as default_config
-
-from utils.helpers.helpers import get_system_health
+from config import server_config as default_config, config as global_config
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 
@@ -19,7 +17,7 @@ class ServerConfig:
     """Centralized configuration management"""
     
     def __init__(self):
-        self.base_dir = Path(__file__).resolve().parent
+        self.base_dir = global_config.get_project_root()
         self.config_dir = self.base_dir / "config"
         self.pid_file = self.base_dir / "server.pid"
         self.log_dir = self.base_dir / "logs"
@@ -465,7 +463,7 @@ class AdvancedServerRunner:
                 return False
             
             # Check required files
-            required_files = ["app.py"]  # Removed hypercorn config check
+            required_files = ["app.py"]
             for file in required_files:
                 if not (self.config.base_dir / file).exists():
                     self.logger.error(f"Required file not found: {file}")
@@ -487,7 +485,6 @@ def main():
         epilog="""
         Examples:
         python run_server.py                    # Start in production mode
-        python run_server.py --dev              # Start in development mode
         python run_server.py --daemon           # Start as daemon
         python run_server.py --stop             # Stop running server
         python run_server.py --status           # Check server status
@@ -496,7 +493,6 @@ def main():
         """
     )
     
-    parser.add_argument("--dev", action="store_true", help="Run in development mode")
     parser.add_argument("--daemon", action="store_true", help="Run as daemon")
     parser.add_argument("--stop", action="store_true", help="Stop running server")
     parser.add_argument("--status", action="store_true", help="Check server status")
@@ -555,7 +551,7 @@ def main():
         return
     
     # Check for --dev argument
-    dev_mode = bool(args.dev)
+    dev_mode = bool(global_config.is_development())
     
     print(f"Detected OS: {platform.system()}")
     print(f"Dev mode: {'ON' if dev_mode else 'OFF'}")

@@ -3,23 +3,22 @@ FastAPI helper functions and dependencies
 Replaces Quart-specific helpers with FastAPI patterns
 """
 
+from datetime import datetime
 import json
-import os
 from typing import Optional, Dict, Any, Callable, Tuple
 from functools import wraps
 import time
 from collections import defaultdict
-from datetime import datetime
 
 from fastapi import Request, HTTPException, Depends, Header
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, field_validator
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_429_TOO_MANY_REQUESTS
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 
 from config import config
 from .helpers import security_manager
+from .improved_functions import get_env_var
 from .logger import log
 
 
@@ -214,102 +213,12 @@ def setup_template_globals(app):
             filename = path_params.get("filename", "")
             return f"/uploads/{filename}"
         
-        # Handle admin routes with prefix
-        if name.startswith("admin_routes."):
-            route_name = name.replace("admin_routes.", "")
-            # Map route names to paths
-            admin_route_map = {
-                "admin_dashboard": "/admin/",
-                "login": "/admin/login",
-                "admin_logout": "/admin/logout",
-                "view_logs": "/admin/logs",
-                "logs_data": "/admin/logs/data",
-                "info_page": "/admin/info",
-                "info_data_admin": "/admin/info/data",
-                "exam_results": "/admin/exam_results",
-                "delete_exam_result": "/admin/exam_results/delete",
-                "members": "/admin/members",
-                "manage_member": "/admin/members/manage",
-                "delete_pending_member": "/admin/members/delete",
-                "notice_page": "/admin/notice",
-                "delete_notice": "/admin/notice/delete",
-                "routines": "/admin/routines",
-                "add_routine": "/admin/routines/add",
-                "events": "/admin/events",
-                "add_exam": "/admin/events/exams/add",
-                "madrasa_pictures": "/admin/madrasa_pictures",
-                "delete_picture": "/admin/pictures/delete",
-                "exams": "/admin/admin/events/exams",
-                "interactions": "/admin/interactions",
-                "power_management": "/admin/power",
-                "modify_payment": "/admin/payment/modify",
-            }
-            
-            base_path = admin_route_map.get(route_name, f"/admin/{route_name}")
-            
-            # Handle path parameters
-            if path_params:
-                # For query parameters
-                query_params = []
-                for key, value in path_params.items():
-                    if key not in ["filename", "verify_people_id", "user_id", "modify"]:
-                        query_params.append(f"{key}={value}")
-                
-                # Special handling for specific routes
-                if route_name == "delete_exam_result" and "filename" in path_params:
-                    return f"{base_path}/{path_params['filename']}"
-                elif route_name == "delete_notice" and "filename" in path_params:
-                    return f"{base_path}/{path_params['filename']}"
-                elif route_name == "delete_picture" and "filename" in path_params:
-                    return f"{base_path}/{path_params['filename']}"
-                elif route_name == "delete_pending_member" and "verify_people_id" in path_params:
-                    return f"{base_path}/{path_params['verify_people_id']}"
-                elif route_name == "manage_member" and "modify" in path_params:
-                    base_path = f"/admin/members/{path_params['modify']}"
-                    if "user_id" in path_params:
-                        query_params.append(f"user_id={path_params['user_id']}")
-                elif route_name == "modify_payment" and "modify" in path_params:
-                    base_path = f"/admin/payment/{path_params['modify']}"
-                    if "user_id" in path_params:
-                        query_params.append(f"user_id={path_params['user_id']}")
-                
-                if query_params:
-                    return f"{base_path}?{'&'.join(query_params)}"
-            
-            return base_path
-        
-        # Handle API routes
-        elif name.startswith("api."):
-            route_name = name.replace("api.", "")
-            api_route_map = {
-                "manage_account": "/api/v1/account/manage",
-                "process_payment": "/api/v1/process_payment",
-                "due_payments": "/api/v1/due_payments",
-            }
-            base_path = api_route_map.get(route_name, f"/api/v1/{route_name}")
-            
-            # Handle query parameters
-            if path_params:
-                query_params = []
-                for key, value in path_params.items():
-                    if key == "page_type":
-                        # For manage_account, page_type is in the path
-                        base_path = base_path.replace("/manage", f"/{value}")
-                    else:
-                        query_params.append(f"{key}={value}")
-                
-                if query_params:
-                    return f"{base_path}?{'&'.join(query_params)}"
-            
-            return base_path
-        
         # For other routes (web routes)
         else:
             # Direct mapping for known routes
             route_map = {
                 "home": "/",
                 "donate": "/donate",
-                "contact": "/contact",
                 "privacy": "/privacy",
                 "terms": "/terms",
             }
@@ -319,154 +228,23 @@ def setup_template_globals(app):
         """FastAPI compatible flash messages - returns empty list for now"""
         # In FastAPI, flash messages are typically passed as template context
         # This is a placeholder that returns empty to prevent template errors
+        # TODO: Implement actual flash message handling if needed with keydb
         return []
-    
-    def csrf_token():
-        """FastAPI compatible CSRF token - returns empty string for now"""
-        # In FastAPI, CSRF protection is typically handled by middleware
-        # This is a placeholder that returns empty to prevent template errors
-        return ""
     
     # Add the functions as globals to the template environment
     templates.env.globals["url_for"] = url_for
     templates.env.globals["get_flashed_messages"] = get_flashed_messages
-    templates.env.globals["csrf_token"] = csrf_token
+    templates.env.globals.update({
+    "home_path": "/",
+    "donate_path": "/donate",
+    "privacy_path": "/privacy",
+    "terms_path": "/terms",
+    "current_year": datetime.now(),
+    })
 
 
-# ─── Session Management Helpers ───────────────────────────────────────────
-def create_session_data(user_id: int, device_id: str, ip_address: str, **kwargs) -> Dict[str, Any]:
-    """Create session data with standard fields"""
-    from datetime import datetime, timezone
-    
-    session_data = {
-        'user_id': user_id,
-        'device_id': device_id,
-        'ip_address': ip_address,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        **kwargs
-    }
-    return session_data
-
-
-def validate_session_data(session_data: Dict[str, Any]) -> Tuple[bool, str]:
-    """Validate session data for required fields and security"""
-    required_fields = ['user_id', 'device_id', 'ip_address', 'timestamp']
-    
-    for field in required_fields:
-        if not session_data.get(field):
-            return False, f"Missing required session field: {field}"
-    
-    # Validate session age
-    try:
-        from datetime import datetime, timezone
-        session_time = datetime.fromisoformat(session_data['timestamp'].replace('Z', '+00:00'))
-        current_time = datetime.now(timezone.utc)
-        
-        # Check if session is older than 24 hours
-        if (current_time - session_time).total_seconds() > 24 * 3600:
-            return False, "Session has expired"
-    except (ValueError, KeyError):
-        return False, "Invalid session timestamp"
-    
-    return True, ""
-
-
-async def require_authenticated_session(request: Request) -> Dict[str, Any]:
-    """Dependency to require an authenticated session"""
-    session_data = request.session.get('user_data')
-    
-    if not session_data:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Authentication required"
-        )
-    
-    is_valid, error = validate_session_data(session_data)
-    if not is_valid:
-        # Clear invalid session
-        request.session.clear()
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail=error
-        )
-    
-    return session_data
-
-
-async def require_admin_session(request: Request) -> bool:
-    """Dependency to require admin session"""
-    if not request.session.get('admin_logged_in'):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
-    return True
-
-
-def clear_user_session(request: Request) -> None:
-    """Clear user session data"""
-    request.session.clear()
-
-
-def set_user_session(request: Request, user_data: Dict[str, Any]) -> None:
-    """Set user session data"""
-    request.session['user_data'] = user_data
-
-
-def get_user_session(request: Request) -> Optional[Dict[str, Any]]:
-    """Get user session data if it exists and is valid"""
-    session_data = request.session.get('user_data')
-    if session_data:
-        is_valid, _ = validate_session_data(session_data)
-        if is_valid:
-            return session_data
-    return None
-
-
-# ─── Session Security Middleware ───────────────────────────────────────────
-class SessionSecurityMiddleware(BaseHTTPMiddleware):
-    """Middleware to enhance session security"""
-    
-    async def dispatch(self, request: Request, call_next):
-        # Add session security headers
-        response = await call_next(request)
-        
-        # Set secure session cookies
-        if hasattr(response, 'set_cookie'):
-            response.set_cookie(
-                'session',
-                secure=config.SESSION_COOKIE_SECURE,
-                httponly=config.SESSION_COOKIE_HTTPONLY,
-                samesite='lax',  # Default to lax for compatibility
-                max_age=config.PERMANENT_SESSION_LIFETIME
-            )
-        
-        return response
-
-
-# ─── Session Activity Tracking ───────────────────────────────────────────
-async def track_session_activity(request: Request, activity_type: str, details: Optional[Dict[str, Any]] = None) -> None:
-    """Track session activity for security monitoring"""
-    session_data = get_user_session(request)
-    if session_data:
-        activity = {
-            'timestamp': datetime.now().isoformat(),
-            'activity_type': activity_type,
-            'user_id': session_data.get('user_id'),
-            'ip_address': session_data.get('ip_address'),
-            'device_id': session_data.get('device_id'),
-            'details': details or {}
-        }
-        
-        log.info(
-            action=f"session_activity_{activity_type}",
-            trace_info=session_data.get('ip_address', 'unknown'),
-            message=f"Session activity: {activity_type}",
-            secure=True
-        )
-
-MAX_JSON_BODY = int(os.getenv("MAX_JSON_BODY", 1_000_000))  # default 1MB
+# default (module-level) - still useful if env not set
+MAX_JSON_BODY = int(get_env_var("MAX_JSON_BODY", 1_000_000))  # default 1MB
 
 def _content_length_ok(request: Request, max_bytes: int) -> bool:
     cl = request.headers.get("content-length")
@@ -478,40 +256,42 @@ def _content_length_ok(request: Request, max_bytes: int) -> bool:
         return True
 
 async def _stream_limited(request: Request, max_bytes: int) -> bytes:
-    """Stream request body in chunks and stop when max_bytes exceeded."""
     size = 0
     parts = []
     async for chunk in request.stream():
         size += len(chunk)
         if size > max_bytes:
+            log.info(action="Streaming limit exceeded", trace_info="system", message=f"size: {size} max_bytes: {max_bytes}", secure=False)
             raise HTTPException(status_code=413, detail="Payload too large")
         parts.append(chunk)
     return b"".join(parts)
 
 async def read_and_recreate_request(request: Request, max_bytes: Optional[int] = None) -> Tuple[bytes, StarletteRequest]:
-    """
-    Read request body safely and recreate a Request with a fresh receive() for downstream.
-    - Honors Content-Length (cheap check).
-    - Streams when Content-Length not present.
-    - Raises HTTPException(413) if body is too large.
-    Returns (body_bytes, new_request)
-    """
-    max_bytes = max_bytes or MAX_JSON_BODY
+    # Resolve effective max_bytes at call time:
+    if max_bytes is None:
+        max_bytes = MAX_JSON_BODY
+
+    # sanity check
+    if max_bytes <= 0:
+        max_bytes = MAX_JSON_BODY
+
+    log.info(action="Recreate_request", trace_info="system", message=f"using max_bytes={max_bytes}, Content-Length={request.headers.get("content-length")}", secure=False)
 
     # cheap Content-Length check
     if not _content_length_ok(request, max_bytes):
+        log.warning(action="Large Content", trace_info="system", message="Content-Length too large, rejecting early", secure=False)
         raise HTTPException(status_code=413, detail="Payload too large")
 
-    # If content-length exists, .body() is safe-ish (fast path)
+    # fast path if content-length present
     if request.headers.get("content-length"):
         body = await request.body()
         if len(body) > max_bytes:
+            log.warning(action="Body size exceeds max_bytes", trace_info="system", message=f"P{len(body)} > {max_bytes}", secure=False)
             raise HTTPException(status_code=413, detail="Payload too large")
     else:
         # stream and enforce limit
         body = await _stream_limited(request, max_bytes)
 
-    # recreate receive for downstream (Starlette expects "more_body" flag)
     async def receive():
         return {"type": "http.request", "body": body, "more_body": False}
 
@@ -520,9 +300,7 @@ async def read_and_recreate_request(request: Request, max_bytes: Optional[int] =
 
 
 async def read_json_and_recreate(request: Request, max_bytes: Optional[int] = None):
-    """
-    Convenience: read body and parse JSON. Returns (parsed_json_or_None, new_request)
-    """
+    # Read and recreate the request
     body, new_req = await read_and_recreate_request(request, max_bytes=max_bytes)
     if not body:
         return None, new_req

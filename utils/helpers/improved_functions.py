@@ -11,9 +11,9 @@ def get_env_var(var_name: str, default: Optional[Any] = None, required: bool = T
     if value and value.lower() in ("none", "null", ""):
         value = None
     if not value:
+        logger.debug(f"Environment variable {var_name} not set, using default: {default}")
         if required and not default:
-            logger.error(f"Environment variable {var_name} is not set")
-            raise ValueError(f"Environment variable {var_name} is not set")
+            raise ValueError(f"Environment variable {var_name} is not set, and no default provided.")
         return default
     return value
 

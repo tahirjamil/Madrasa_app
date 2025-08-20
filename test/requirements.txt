@@ -1,1 +1,5 @@
 aiohttp
+pytest
+pytest-asyncio
+httpx
+anyio

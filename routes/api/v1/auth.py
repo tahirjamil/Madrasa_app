@@ -10,15 +10,15 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from utils.helpers.improved_functions import get_env_var, send_json_response
+from utils.helpers.improved_functions import get_env_var, send_json_response, get_project_root
 
 # Local imports
-from api import api
+from routes.api import api
 from utils.mysql.database_utils import get_db_connection
 from config import config
 from utils.helpers.helpers import (
     check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, 
-    get_client_info as get_client_info_from_helpers, record_login_attempt, secure_data, send_sms, send_email, 
+    get_client_info as get_client_info_from_helpers, record_login_attempt, send_sms, send_email, 
     get_email, rate_limit, encrypt_sensitive_data, hash_sensitive_data,
     handle_async_errors, validate_email, validate_fullname, validate_password_strength, validate_madrasa_name
 )
@@ -184,7 +184,7 @@ async def register(
         try:
             async with get_db_connection() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.db_tracing import TracedCursorWrapper
+                    from utils.otel.otel_utils import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                 # Check if user already exists
                 await cursor.execute(

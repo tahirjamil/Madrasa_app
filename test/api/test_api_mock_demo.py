@@ -199,7 +199,6 @@ def generate_test_report():
             "sql_injection": {"tested": True, "blocked": True},
             "xss_attempts": {"tested": True, "blocked": True},
             "rate_limiting": {"tested": True, "working": True},
-            "csrf_protection": {"tested": True, "working": True}
         },
         "performance": {
             "average_response_time_ms": 87,

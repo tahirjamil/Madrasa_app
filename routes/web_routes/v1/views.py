@@ -1,3 +1,4 @@
+import re
 from fastapi import Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -7,14 +8,14 @@ from utils.helpers.helpers import rate_limit
 import os
 import markdown
 from datetime import datetime
-from web_routes import web_routes, url_for
+from routes.web_routes import web_routes, url_for
+from utils.helpers.improved_functions import get_env_var
 
 @web_routes.get("/", response_class=HTMLResponse, name="home")
 async def home(request: Request):
     return templates.TemplateResponse("home.html", {
         "request": request,
         "current_year": datetime.now().year,
-        "url_for": url_for
     })
 
 @web_routes.get("/donate", response_class=HTMLResponse, name="donate")
@@ -22,229 +23,195 @@ async def donate(request: Request):
     return templates.TemplateResponse("donate.html", {
         "request": request,
         "current_year": datetime.now().year,
-        "url_for": url_for
     })
 
 @web_routes.get('/privacy', response_class=HTMLResponse, name="privacy")
 @handle_async_errors
-async def privacy(request: Request):
-    from utils.helpers.logger import log
-    
-    # Debug: Log the request
-    log.info(action="privacy_page_accessed", trace_info=request.client.host if request.client else "unknown",
-            message="Privacy page accessed", secure=False)
-    
-    # Construct the full path to the markdown file with debugging
-    current_file = __file__
-    log.info(action="privacy_debug", trace_info="web", message=f"Current file: {current_file}", secure=False)
-    
-    content_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'content')
-    log.info(action="privacy_debug", trace_info="web", message=f"Content directory: {content_dir}", secure=False)
-    
-    md_path = os.path.join(content_dir, 'privacy_policy.md')
-    log.info(action="privacy_debug", trace_info="web", message=f"Looking for privacy policy at: {md_path}", secure=False)
-    
-    # Check if file exists
-    file_exists = os.path.exists(md_path)
-    log.info(action="privacy_debug", trace_info="web", message=f"File exists: {file_exists}", secure=False)
-    
-    # Default content in case file doesn't exist
-    title = "Privacy Policy"
-    content = "<p>Privacy policy content is not available at the moment.</p>"
-    last_updated = "Not available"
-    
+async def privacy():
+    # Load contact info from environment variables
+    contact_email = get_env_var('BUSINESS_EMAIL', '')
+    contact_phone = get_env_var('BUSINESS_PHONE', '')
+    effective_date = get_env_var('PRIVACY_POLICY_EFFECTIVE_DATE', '')
+
     try:
-        # Read and parse the markdown file
-        with open(md_path, 'r', encoding='utf-8') as f:
-            md_content = f.read()
-            
-        # Extract title if it's in the first line as # Title
-        lines = md_content.split('\n')
-        if lines and lines[0].startswith('# '):
-            title = lines[0][2:].strip()
-            md_content = '\n'.join(lines[1:])
-        
-        # Convert markdown to HTML
-        content = markdown.markdown(md_content, extensions=['extra', 'nl2br'])
-        
-        # Get last modified date
-        last_modified = os.path.getmtime(md_path)
-        last_updated = datetime.fromtimestamp(last_modified).strftime('%B %d, %Y')
-        
-    except FileNotFoundError as e:
-        # Log the error with more details
-        log.warning(action="privacy_policy_not_found", trace_info="web", 
-                    message=f"Privacy policy file not found at {md_path}. Error: {str(e)}", secure=False)
-        # List files in content directory for debugging
-        try:
-            if os.path.exists(content_dir):
-                files = os.listdir(content_dir)
-                log.info(action="privacy_debug", trace_info="web", 
-                        message=f"Files in content directory: {files}", secure=False)
-            else:
-                log.error(action="privacy_debug", trace_info="web", 
-                        message=f"Content directory does not exist: {content_dir}", secure=False)
-        except Exception as list_error:
-            log.error(action="privacy_debug", trace_info="web", 
-                    message=f"Error listing content directory: {str(list_error)}", secure=False)
+        # Use safe path join
+        policy_path = os.path.join(config.get_project_root(), 'content', 'privacy_policy.md')
+        with open(policy_path, 'r', encoding='utf-8') as f:
+            policy_md = f.read()
+    except FileNotFoundError:
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="privacy_policy_file_not_found", trace_info="system", message=f"Privacy policy file not found", secure=False)
+        return templates.TemplateResponse(
+        'error.html',
+        {
+            "error_title": "Privacy Policy Unavailable",
+            "error_message": "The privacy policy is currently unavailable. Please try again later or contact support.",
+            "contact_email": contact_email
+        }, 503)
     except Exception as e:
-        # Log any other errors with full traceback
-        import traceback
-        log.error(action="privacy_policy_error", trace_info="web", 
-                message=f"Error loading privacy policy: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
-    
-    return templates.TemplateResponse('privacy.html', {
-        "request": request,
-        "title": title,
-        "content": content,
-        "last_updated": last_updated,
-        "current_year": datetime.now().year,
-        "url_for": url_for
-    })
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="privacy_policy_file_error", trace_info="system", message=f"Error reading privacy policy file: {type(e).__name__}", secure=False)
+        return templates.TemplateResponse(
+        'error.html',
+        {
+            "error_title": "Privacy Policy Error",
+            "error_message": "There was an error loading the privacy policy. Please try again later or contact support.",
+            "contact_email": contact_email
+        }, 500)
+
+    # Replace placeholders with actual contact info
+    policy_md = policy_md.replace('{{ contact_email }}', contact_email)
+    policy_md = policy_md.replace('{{ phone }}', contact_phone)
+
+    # Split content into sections based on '## ' headings
+    sections_md = re.split(r'\n## ', policy_md.strip())
+
+    # The first element is the introduction
+    introduction_md = sections_md.pop(0) if sections_md else ""
+    introduction_html = markdown.markdown(introduction_md, extensions=['extra'])
+
+    # The rest are the collapsible sections
+    parsed_sections = []
+    for section_md in sections_md:
+        if not section_md.strip():
+            continue
+        
+        lines = section_md.strip().split('\n', 1)
+        title = lines[0].strip()
+        content_md = lines[1] if len(lines) > 1 else ''
+        
+        parsed_sections.append({
+            'title': title,
+            'content_html': markdown.markdown(content_md, extensions=['extra']),
+            'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
+        })
+
+    return templates.TemplateResponse(
+        'privacy.html',
+        {
+            "introduction_html": introduction_html,
+            "sections": parsed_sections,
+            "effective_date": effective_date
+        })
 
 @web_routes.get('/terms', response_class=HTMLResponse, name="terms")
 @handle_async_errors
 async def terms(request: Request):
     from utils.helpers.logger import log
-    
-    # Debug: Log the request
-    log.info(action="terms_page_accessed", trace_info=request.client.host if request.client else "unknown",
-            message="Terms page accessed", secure=False)
-    
-    # Construct the full path to the markdown file with debugging
-    current_file = __file__
-    log.info(action="terms_debug", trace_info="web", message=f"Current file: {current_file}", secure=False)
-    
-    content_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'content')
-    log.info(action="terms_debug", trace_info="web", message=f"Content directory: {content_dir}", secure=False)
-    
-    md_path = os.path.join(content_dir, 'terms.md')
-    log.info(action="terms_debug", trace_info="web", message=f"Looking for terms at: {md_path}", secure=False)
-    
-    # Check if file exists
-    file_exists = os.path.exists(md_path)
-    log.info(action="terms_debug", trace_info="web", message=f"File exists: {file_exists}", secure=False)
-    
-    # Default content in case file doesn't exist
-    title = "Terms of Service"
-    content = "<p>Terms of service content is not available at the moment.</p>"
-    last_updated = "Not available"
+    contact_email = get_env_var('BUSINESS_EMAIL', '')
+    effective_date = get_env_var('TERMS_EFFECTIVE_DATE', '')
     
     try:
-        # Read and parse the markdown file
-        with open(md_path, 'r', encoding='utf-8') as f:
-            md_content = f.read()
-            
-        # Extract title if it's in the first line as # Title
-        lines = md_content.split('\n')
-        if lines and lines[0].startswith('# '):
-            title = lines[0][2:].strip()
-            md_content = '\n'.join(lines[1:])
-        
-        # Convert markdown to HTML
-        content = markdown.markdown(md_content, extensions=['extra', 'nl2br'])
-        
-        # Get last modified date
-        last_modified = os.path.getmtime(md_path)
-        last_updated = datetime.fromtimestamp(last_modified).strftime('%B %d, %Y')
-        
-    except FileNotFoundError as e:
-        # Log the error with more details
-        log.warning(action="terms_not_found", trace_info="web", 
-                    message=f"Terms file not found at {md_path}. Error: {str(e)}", secure=False)
-        # List files in content directory for debugging
-        try:
-            if os.path.exists(content_dir):
-                files = os.listdir(content_dir)
-                log.info(action="terms_debug", trace_info="web", 
-                        message=f"Files in content directory: {files}", secure=False)
-            else:
-                log.error(action="terms_debug", trace_info="web", 
-                        message=f"Content directory does not exist: {content_dir}", secure=False)
-        except Exception as list_error:
-            log.error(action="terms_debug", trace_info="web", 
-                    message=f"Error listing content directory: {str(list_error)}", secure=False)
+        # Use safe path join
+        terms_path = os.path.join(config.get_project_root(), 'content', 'terms.md')
+        with open(terms_path, 'r', encoding='utf-8') as f:
+            terms_md = f.read()
+    except FileNotFoundError:
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="terms_file_not_found", trace_info="system", message=f"Terms file not found", secure=False)
+        return templates.TemplateResponse(
+        'error.html',
+        {
+            "error_title": "Terms of Service Unavailable",
+            "error_message": "The terms of service are currently unavailable. Please try again later or contact support.",
+            "contact_email": contact_email
+        }, 503)
     except Exception as e:
-        # Log any other errors with full traceback
-        import traceback
-        log.error(action="terms_error", trace_info="web", 
-                message=f"Error loading terms: {str(e)}\nTraceback: {traceback.format_exc()}", secure=False)
+        # Log the error and return a user-friendly error page
+        from utils.helpers.logger import log
+        log.critical(action="terms_file_error", trace_info="system", message=f"Error reading terms file: {type(e).__name__}", secure=False)
+        return templates.TemplateResponse(
+        'error.html',
+        {
+            "error_title": "Terms of Service Error",
+            "error_message": "There was an error loading the terms of service. Please try again later or contact support.",
+            "contact_email": contact_email
+        }, 500)
     
-    return templates.TemplateResponse('terms.html', {
-        "request": request,
-        "title": title,
-        "content": content,
-        "last_updated": last_updated,
-        "current_year": datetime.now().year,
-        "url_for": url_for
-    })
+     # Replace placeholders with actual contact info
+    terms_md = terms_md.replace('{{ contact_email }}', contact_email)
 
-@web_routes.get("/account/{page_type}", response_class=HTMLResponse)
-async def manage_account(request: Request, page_type: str):
-    """Manage account (deactivate/delete) with enhanced security"""
-    # Validate page type
-    if page_type not in ("remove", "deactivate"):
-        raise HTTPException(status_code=400, detail="Invalid page type")
+    # Split content into sections based on '## ' headings
+    sections_md = re.split(r'\n## ', terms_md.strip())
+    
+    # The first element is the introduction
+    introduction_md = sections_md.pop(0) if sections_md else ""
+    introduction_html = markdown.markdown(introduction_md, extensions=['extra'])
+
+    parsed_sections = []
+    for section_md in sections_md:
+        if not section_md.strip():
+            continue
+        
+        lines = section_md.strip().split('\n', 1)
+        title = lines[0].strip()
+        content_md = lines[1] if len(lines) > 1 else ''
+        
+        parsed_sections.append({
+            'title': title,
+            'content_html': markdown.markdown(content_md, extensions=['extra']),
+            'id': re.sub(r'[^a-zA-Z0-9]', '', title.split('.')[0])
+        })
     
     return templates.TemplateResponse(
-        "account_manage.html",
+        'terms.html',
         {
-            "request": request,
-            "page_type": page_type.capitalize()
-        }
-    )
-
-
-
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-@web_routes.get('/info', response_class=HTMLResponse, name="info_page")
-@handle_async_errors
-@rate_limit(max_requests=500, window=60)
-async def info_admin(request: Request):
-
-    # require admin
-    if not request.session.get('admin_logged_in'):
-        return RedirectResponse(url='/admin/login', status_code=302)
-
-    # Thread-safe access to request log
-    if config.is_testing():
-        logs = []
-    else:
-        request_log = request.app.state.request_response_log
-        request_log_lock = request.app.state.request_log_lock
-        with request_log_lock:
-            logs = list(request_log)[-100:]
-
-    return templates.TemplateResponse("admin/info.html", {"request": request, "logs": logs})
-
-@web_routes.get('/info/data', name="info_data_admin")
-@handle_async_errors
-async def info_data_admin(request: Request):
-    if config.is_testing():
-        return JSONResponse(content=[])
-
-    # Thread-safe access to request log
-    request_log = request.app.state.request_response_log
-    request_log_lock = request.app.state.request_log_lock
-    with request_log_lock:
-        logs = list(request_log)[-100:]
-    # serializable copy
-    out = []
-    for e in logs:
-        out.append({
-            "time":     e["time"],
-            "ip":       e["ip"],
-            "method":   e["method"],
-            "path":     e["path"],
-            "req_json": e.get("req_json"),
-            "res_json": e.get("res_json")
+            "introduction_html": introduction_html,
+            "sections": parsed_sections,
+            "effective_date": effective_date
         })
-    return JSONResponse(content=out)
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+
+# TODO: Add account Management routes
+
+
+# TODO: Uncomment and implement info routes if needed
+# @web_routes.get('/info', response_class=HTMLResponse, name="info")
+# @handle_async_errors
+# @rate_limit(max_requests=500, window=60)
+# async def info_admin(request: Request):
+
+#     # Thread-safe access to request log
+#     if config.is_testing():
+#         logs = []
+#     else:
+#         request_log = request.app.state.request_response_log
+#         request_log_lock = request.app.state.request_log_lock
+#         with request_log_lock:
+#             logs = list(request_log)[-100:]
+
+#     return templates.TemplateResponse("admin/info.html", {"request": request, "logs": logs})
+
+# @web_routes.get('/info/data', name="info_data")
+# @handle_async_errors
+# async def info_data_admin(request: Request):
+
+#     if config.is_testing():
+#         return JSONResponse(content=[])
+#     # Thread-safe access to request log
+#     request_log = request.app.state.request_response_log
+#     request_log_lock = request.app.state.request_log_lock
+#     with request_log_lock:
+#         logs = list(request_log)[-100:]
+#     # serializable copy
+#     out = []
+#     for e in logs:
+#         out.append({
+#             "time":     e["time"],
+#             "ip":       e["ip"],
+#             "method":   e["method"],
+#             "path":     e["path"],
+#             "req_json": e.get("req_json"),
+#             "res_json": e.get("res_json")
+#         })
+#     return JSONResponse(content=out)

@@ -56,8 +56,7 @@ class MadrasaConfig:
     # ============================================================================
     
     # Secret Keys and Encryption
-    SECRET_KEY = get_env_var("SECRET_KEY") # secrets.token_urlsafe(32)
-    WTF_CSRF_SECRET_KEY = get_env_var("WTF_CSRF_SECRET_KEY")
+    SECRET_KEY = get_env_var("SECRET_KEY")
     ENCRYPTION_KEY = get_env_var("ENCRYPTION_KEY")
     
     # API Keys for Different Client Types
@@ -113,8 +112,8 @@ class MadrasaConfig:
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1 * 3600  # 1 hour session timeout
     
-    # CSRF Protection
-    WTF_CSRF_TIME_LIMIT = 1 * 3600  # CSRF token expires in 1 hour
+    # TODO: CSRF Protection Need to implement
+    # CSRF token expires in 1 hour
     
     # reCAPTCHA Configuration
     RECAPTCHA_SITE_KEY = get_env_var("RECAPTCHA_SITE_KEY")

@@ -1,12 +1,13 @@
 from fastapi import Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
-from utils.helpers.improved_functions import get_env_var, send_json_response
-from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors
-from api import api
 import aiomysql
 from datetime import datetime, timezone
+
+# Local imports
+from utils.helpers.improved_functions import get_env_var, send_json_response
+from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors
+from routes.api import api
 from utils.mysql.database_utils import get_db_connection
 from utils.helpers.helpers import calculate_fees, format_phone_number, cache_with_invalidation, validate_madrasa_name
 from config import config
@@ -168,120 +169,120 @@ async def transaction_history(
     }, status_code=200)
 
 
-# ====== Process Payment ======
-@api.post('/process_payment')
-@handle_async_errors
-async def process_payment(
-    request: Request,
-    payment_data: PaymentData,
-    client_info: ClientInfo = Depends(validate_device_dependency)
-) -> JSONResponse:
-    """Process a payment transaction"""
+# # ====== Process Payment ======
+# @api.post('/process_payment')
+# @handle_async_errors
+# async def process_payment(
+#     request: Request,
+#     payment_data: PaymentData,
+#     client_info: ClientInfo = Depends(validate_device_dependency)
+# ) -> JSONResponse:
+#     """Process a payment transaction"""
     
-    try:
-        madrasa_name = get_env_var("MADRASA_NAME", "annur")
+#     try:
+#         madrasa_name = get_env_var("MADRASA_NAME", "annur")
         
 
-        # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, payment_data.phone):
-            response, status = send_json_response("Invalid configuration", 500)
-            return JSONResponse(content=response, status_code=status)
+#         # SECURITY: Validate madrasa_name is in allowed list
+#         if not validate_madrasa_name(madrasa_name, payment_data.phone):
+#             response, status = send_json_response("Invalid configuration", 500)
+#             return JSONResponse(content=response, status_code=status)
         
-        # Validate phone
-        formatted_phone, msg = format_phone_number(payment_data.phone)
-        if not formatted_phone:
-            response, status = send_json_response(msg, 400)
-            return JSONResponse(content=response, status_code=status)
+#         # Validate phone
+#         formatted_phone, msg = format_phone_number(payment_data.phone)
+#         if not formatted_phone:
+#             response, status = send_json_response(msg, 400)
+#             return JSONResponse(content=response, status_code=status)
         
-        # Start database transaction
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                try:
-                    # Begin transaction
-                    await conn.begin()
+#         # Start database transaction
+#         async with get_db_connection() as conn:
+#             async with conn.cursor(aiomysql.DictCursor) as cursor:
+#                 try:
+#                     # Begin transaction
+#                     await conn.begin()
                     
-                    # Get user_id
-                    await cursor.execute(
-                        "SELECT user_id FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-                        (formatted_phone, payment_data.full_name)
-                    )
-                    user_result = await cursor.fetchone()
+#                     # Get user_id
+#                     await cursor.execute(
+#                         "SELECT user_id FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+#                         (formatted_phone, payment_data.full_name)
+#                     )
+#                     user_result = await cursor.fetchone()
                     
-                    if not user_result:
-                        await conn.rollback()
-                        response, status = send_json_response("User not found", 404)
-                        return JSONResponse(content=response, status_code=status)
+#                     if not user_result:
+#                         await conn.rollback()
+#                         response, status = send_json_response("User not found", 404)
+#                         return JSONResponse(content=response, status_code=status)
                     
-                    user_id = user_result['user_id']
+#                     user_id = user_result['user_id']
                     
-                    # Check if transaction_id already exists
-                    await cursor.execute(f"""
-                        SELECT transaction_id FROM {madrasa_name}.payments_transaction 
-                        WHERE transaction_id = %s
-                    """, (payment_data.transaction_id,))
+#                     # Check if transaction_id already exists
+#                     await cursor.execute(f"""
+#                         SELECT transaction_id FROM {madrasa_name}.payments_transaction 
+#                         WHERE transaction_id = %s
+#                     """, (payment_data.transaction_id,))
                     
-                    if await cursor.fetchone():
-                        await conn.rollback()
-                        response, status = send_json_response("Transaction ID already exists", 409)
-                        return JSONResponse(content=response, status_code=status)
+#                     if await cursor.fetchone():
+#                         await conn.rollback()
+#                         response, status = send_json_response("Transaction ID already exists", 409)
+#                         return JSONResponse(content=response, status_code=status)
                     
-                    # Insert payment transaction
-                    await cursor.execute(f"""
-                        INSERT INTO {madrasa_name}.payments_transaction 
-                        (user_id, transaction_id, amount, bank_ac, bank_name, description, payment_date, created_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        user_id,
-                        payment_data.transaction_id,
-                        payment_data.total_amount,
-                        payment_data.bank_ac,
-                        payment_data.bank_name,
-                        payment_data.description,
-                        datetime.now(timezone.utc),
-                        datetime.now(timezone.utc)
-                    ))
+#                     # Insert payment transaction
+#                     await cursor.execute(f"""
+#                         INSERT INTO {madrasa_name}.payments_transaction 
+#                         (user_id, transaction_id, amount, bank_ac, bank_name, description, payment_date, created_at)
+#                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+#                     """, (
+#                         user_id,
+#                         payment_data.transaction_id,
+#                         payment_data.total_amount,
+#                         payment_data.bank_ac,
+#                         payment_data.bank_name,
+#                         payment_data.description,
+#                         datetime.now(timezone.utc),
+#                         datetime.now(timezone.utc)
+#                     ))
                     
-                    # Update payment status if needed
-                    await cursor.execute(f"""
-                        UPDATE {madrasa_name}.payments 
-                        SET last_payment_date = %s, 
-                            total_paid = total_paid + %s
-                        WHERE user_id = %s
-                    """, (datetime.now(timezone.utc), payment_data.total_amount, user_id))
+#                     # Update payment status if needed
+#                     await cursor.execute(f"""
+#                         UPDATE {madrasa_name}.payments 
+#                         SET last_payment_date = %s, 
+#                             total_paid = total_paid + %s
+#                         WHERE user_id = %s
+#                     """, (datetime.now(timezone.utc), payment_data.total_amount, user_id))
                     
-                    # Commit transaction
-                    await conn.commit()
+#                     # Commit transaction
+#                     await conn.commit()
                     
-                    log.info(
-                        action="payment_processed_successfully",
-                        trace_info=client_info.ip_address,
-                        message=f"Payment processed for user {payment_data.full_name}, amount: {payment_data.total_amount}",
-                        secure=False
-                    )
+#                     log.info(
+#                         action="payment_processed_successfully",
+#                         trace_info=client_info.ip_address,
+#                         message=f"Payment processed for user {payment_data.full_name}, amount: {payment_data.total_amount}",
+#                         secure=False
+#                     )
                     
-                    response, status = send_json_response("Payment processed successfully", 200)
-                    response.update({
-                        "transaction_id": payment_data.transaction_id,
-                        "amount": payment_data.total_amount
-                    })
-                    return JSONResponse(content=response, status_code=status)
+#                     response, status = send_json_response("Payment processed successfully", 200)
+#                     response.update({
+#                         "transaction_id": payment_data.transaction_id,
+#                         "amount": payment_data.total_amount
+#                     })
+#                     return JSONResponse(content=response, status_code=status)
                     
-                except Exception as e:
-                    await conn.rollback()
-                    log.error(
-                        action="payment_processing_failed",
-                        trace_info=client_info.ip_address,
-                        message=f"Payment processing failed: {str(e)}",
-                        secure=False
-                    )
-                    raise
+#                 except Exception as e:
+#                     await conn.rollback()
+#                     log.error(
+#                         action="payment_processing_failed",
+#                         trace_info=client_info.ip_address,
+#                         message=f"Payment processing failed: {str(e)}",
+#                         secure=False
+#                     )
+#                     raise
                     
-    except Exception as e:
-        log.critical(
-            action="process_payment_error",
-            trace_info="system",
-            message=f"Payment processing error: {str(e)}",
-            secure=False
-        )
-        response, status = send_json_response("Payment processing failed", 500, str(e))
-        return JSONResponse(content=response, status_code=status)
+#     except Exception as e:
+#         log.critical(
+#             action="process_payment_error",
+#             trace_info="system",
+#             message=f"Payment processing error: {str(e)}",
+#             secure=False
+#         )
+#         response, status = send_json_response("Payment processing failed", 500, str(e))
+#         return JSONResponse(content=response, status_code=status)

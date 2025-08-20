@@ -15,7 +15,7 @@ from utils.helpers.improved_functions import get_env_var, send_json_response
 from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors, rate_limit
 
 # Local imports
-from api import api
+from routes.api import api
 from utils.mysql.database_utils import get_db_connection
 from config import config
 from utils.helpers.helpers import (
@@ -372,7 +372,7 @@ async def add_person(
         # Get image path for response
         async with get_db_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.db_tracing import TracedCursorWrapper
+                from utils.otel.otel_utils import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
                     f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
@@ -465,7 +465,7 @@ async def get_info(request: Request) -> JSONResponse:
         
         
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
+            from utils.otel.otel_utils import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             members = await cursor.fetchall()
@@ -547,7 +547,7 @@ async def get_routine(request: Request) -> JSONResponse:
     
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
+            from utils.otel.otel_utils import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
@@ -620,7 +620,7 @@ async def events(request: Request) -> JSONResponse:
     
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
+            from utils.otel.otel_utils import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             rows = await cursor.fetchall()
@@ -726,7 +726,7 @@ async def get_exams(request: Request) -> JSONResponse:
     
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
+            from utils.otel.otel_utils import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute(sql, params)
             result = await cursor.fetchall()

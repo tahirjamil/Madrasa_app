@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
     command: ["--config", "/etc/otel-collector-config.yaml"]
     volumes:
-      - ./utils/otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
+      - ./config/otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
@@ -77,7 +77,7 @@ services:
       - "9090:9090"  # Prometheus UI
     volumes:
       - prometheus_data:/prometheus
-      - ./utils/otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - observability_network
     healthcheck:

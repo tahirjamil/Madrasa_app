@@ -17,9 +17,6 @@ from aiomysql import IntegrityError
 from dotenv import load_dotenv
 from fastapi import Request, Response, HTTPException
 from cryptography.fernet import Fernet
-# Import these functions when needed to avoid circular imports
-# from utils.mysql.database_utils import get_db_connection
-# from utils.keydb.keydb_utils import get_keydb_connection
 from config import config
 from utils.helpers.improved_functions import get_env_var, send_json_response
 from utils.helpers.logger import log
@@ -34,14 +31,14 @@ def get_cache_key(prefix: str, **kwargs) -> str:
         parts.append(f"{k}:{json.dumps(v, sort_keys=True, separators=(',',':'), default=str, ensure_ascii=False)}")
     return ":".join(parts)
 
-async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: Any = None) -> Any:
+async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: Any = None, request: Request | None= None) -> Any:
     """Fetch cached JSON-serializable data from KeyDB. Falls back to in-memory cache if needed."""
     if ttl is None:
         ttl = getattr(config, "CACHE_TTL", 3600)
     try:
-        from utils.keydb.keydb_utils import get_keydb_connection
-        pool = await get_keydb_connection()
-        raw = await pool.get(cache_key)
+        from utils.keydb.keydb_utils import get_keydb_from_app
+        pool = get_keydb_from_app(request)
+        raw = await pool.get(cache_key) if pool else None
         if raw is not None:
             # metrics removed
             try:
@@ -56,34 +53,37 @@ async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: An
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable when getting cache key '{cache_key}': {e}")
 
-async def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None) -> None:
+async def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None, request: Request | None= None) -> None:
     """Store JSON-serializable data in KeyDB with TTL. Falls back to in-memory cache if needed."""
     if ttl is None:
         ttl = getattr(config, "CACHE_TTL", 3600)
     try:
-        from utils.keydb.keydb_utils import get_keydb_connection
-        pool = await get_keydb_connection()
+        from utils.keydb.keydb_utils import get_keydb_from_app
+        pool = get_keydb_from_app(request)
         payload = canonical_json(data)
         # aioredis 1.x supports expire argument in set
-        await pool.set(cache_key, payload, expire=int(ttl) if ttl else None)
+        if pool:
+            await pool.set(cache_key, payload, expire=int(ttl) if ttl else None)
     except RuntimeError as e:
         # Redis cache is disabled, silently skip
         pass
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable when setting cache key '{cache_key}': {e}")
 
-async def _invalidate_cache_pattern_async(pattern: str) -> int:
+async def _invalidate_cache_pattern_async(request: Request | None, pattern: str) -> int:
     """Asynchronously delete keys matching pattern from KeyDB. Returns number deleted."""
     try:
-        from utils.keydb.keydb_utils import get_keydb_connection
-        pool = await get_keydb_connection()
-        # Use KEYS for simplicity; for large keyspaces consider SCAN.
-        keys = await pool.keys(pattern)
-        if not keys:
-            return 0
-        # aioredis delete supports varargs
-        await pool.delete(*keys)
-        return len(keys)
+        from utils.keydb.keydb_utils import get_keydb_from_app
+        pool = get_keydb_from_app(request)
+        if pool:
+            # Use KEYS for simplicity; for large keyspaces consider SCAN.
+            keys = await pool.keys(pattern)
+            if not keys:
+                return 0
+            # aioredis delete supports varargs
+            await pool.delete(*keys)
+            return len(keys)
+        return 0
     except RuntimeError as e:
         # Redis cache is disabled, return 0
         return 0
@@ -93,7 +93,7 @@ async def _invalidate_cache_pattern_async(pattern: str) -> int:
 def invalidate_cache_pattern(pattern: str) -> int:
     """Fire-and-forget invalidation against KeyDB; returns 0 immediately. Fallback clears local cache."""
     loop = asyncio.get_event_loop()
-    loop.create_task(_invalidate_cache_pattern_async(pattern))
+    loop.create_task(_invalidate_cache_pattern_async(request=None, pattern=pattern))
     return 0
 
 # operation -> patterns mapping (domain specific)
@@ -439,7 +439,7 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
     async with get_db_context() as conn:
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.db_tracing import TracedCursorWrapper
+                from utils.otel.otel_utils import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
                     "SELECT email FROM global.users WHERE fullname = %s AND phone = %s",
@@ -469,7 +469,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
     async with get_db_context() as conn:
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.db_tracing import TracedCursorWrapper
+                from utils.otel.otel_utils import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
                     "SELECT user_id FROM global.users WHERE phone = %s AND fullname = %s",
@@ -496,7 +496,7 @@ async def upsert_translation(conn, translation_text: str, madrasa_name: str, bn_
     translation_text = translation_text.strip()
     
     async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from utils.otel.db_tracing import TracedCursorWrapper
+        from utils.otel.otel_utils import TracedCursorWrapper
         cursor = TracedCursorWrapper(_cursor)
         # Upsert translation entry
         sql = f"""
@@ -597,7 +597,7 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                     peoples_fields[key] = value
             
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.db_tracing import TracedCursorWrapper
+                from utils.otel.otel_utils import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 # Insert into acc_types table FIRST if user_id exists
                 if 'user_id' in peoples_fields and peoples_fields['user_id']:
@@ -661,7 +661,7 @@ async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid
         async with get_db_context() as conn:
             try:
                 async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.db_tracing import TracedCursorWrapper
+                    from utils.otel.otel_utils import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                     if not uid and not acc_type:
                         await cursor.execute(f"""
@@ -900,7 +900,7 @@ async def check_keydb_health() -> Dict[str, Any]:
     """Check KeyDB health"""
     try:
         from utils.keydb.keydb_utils import ping_keydb
-        if await ping_keydb():
+        if await ping_keydb(None):
             return {"status": "healthy", "message": "KeyDB connection successful"}
         else:
             return {"status": "unhealthy", "message": "KeyDB connection failed"}
@@ -931,7 +931,7 @@ async def check_opentelemetry_health() -> Dict[str, Any]:
     except Exception as e:
         return {"status": "unhealthy", "message": f"OpenTelemetry error: {str(e)}"}
 
-async def get_system_health() -> Dict[str, Any]:
+async def get_system_health(request: Request | None) -> Dict[str, Any]:
     """Get comprehensive system health status"""
     db_health = await check_database_health()
     fs_health = await check_file_system_health()
@@ -946,10 +946,10 @@ async def get_system_health() -> Dict[str, Any]:
     
     # Try to fetch KeyDB dbsize as cache_size; if unavailable set 0
     try:
-        from utils.keydb.keydb_utils import get_keydb_connection
-        from_keydb = await get_keydb_connection()
+        from utils.keydb.keydb_utils import get_keydb_from_app
+        from_keydb = get_keydb_from_app(request)
         try:
-            cache_size = int(await from_keydb.dbsize())
+            cache_size = int(await from_keydb.dbsize()) if from_keydb else 0
         except Exception:
             cache_size = int(await from_keydb.execute('DBSIZE'))
     except Exception:
@@ -1046,33 +1046,6 @@ def initialize_application() -> bool:
     except Exception as e:
         log.critical(action="init_error", trace_info="system", message=str(e), secure=False)
         return False
-
-# ─── CSRF Protection ───────────────────────────────────────────────────────
-
-async def validate_csrf_token(request: Request):
-    """
-    Validate CSRF token from form data
-    
-    TODO: This function needs to be updated to work with FastAPI's CSRF protection.
-    """
-    from utils.helpers.csrf_protection import validate_csrf_token as validate_token
-    form = await request.form()
-    token = form.get('csrf_token')
-    if not validate_token(token):
-        # In FastAPI, we should raise HTTPException instead of using flash
-        raise HTTPException(status_code=400, detail="CSRF token validation failed")
-    return True
-
-def require_csrf(f):
-    """
-    Decorator to require CSRF validation for POST requests
-    
-    TODO: This decorator is incompatible with FastAPI.
-    CSRF protection should be implemented using FastAPI middleware or dependencies.
-    This is kept as a no-op for backward compatibility during migration.
-    """
-    # Return function as-is
-    return f
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ──────────────────────── Security functions ─────────────────────────────────
@@ -1235,7 +1208,7 @@ async def check_code(user_code: str, phone: str) -> None:
     try:
         async with get_db_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.db_tracing import TracedCursorWrapper
+                from utils.otel.otel_utils import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute("""
                     SELECT code, created_at FROM global.verifications
@@ -1274,7 +1247,7 @@ async def delete_code() -> None:
     
     async with get_db_connection() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
+            from utils.otel.otel_utils import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("""
                 DELETE FROM global.verifications
@@ -1540,7 +1513,7 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
 
     async with get_db_connection() as conn:
         async with conn.cursor() as _cursor:
-            from utils.otel.db_tracing import TracedCursorWrapper
+            from utils.otel.otel_utils import TracedCursorWrapper
             cursor = TracedCursorWrapper(_cursor)
             # Check if this device is already registered for this user
             await cursor.execute(
@@ -1568,32 +1541,34 @@ async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: 
             return True, ""
     
 
-async def check_login_attempts(identifier: str) -> Tuple[bool, int]:
+async def check_login_attempts(request: Request | None, identifier: str) -> Tuple[bool, int]:
     """Check login attempts in KeyDB and return (allowed, remaining)."""
     cache_key = f"login_attempts:{identifier}"
-    from utils.keydb.keydb_utils import get_keydb_connection
-    pool = await get_keydb_connection()
-    raw = await pool.get(cache_key)
-    attempts = int(raw or 0)
+    from utils.keydb.keydb_utils import get_keydb_from_app
+    pool = get_keydb_from_app(request)
+    raw = await pool.get(cache_key) if pool else 0
+    attempts = int(raw)
     # Import config here to avoid circular import
     from config import config
     if attempts >= config.LOGIN_ATTEMPTS_LIMIT:
         return False, 0
     return True, config.LOGIN_ATTEMPTS_LIMIT - attempts
 
-async def record_login_attempt(identifier: str, success: bool) -> None:
+async def record_login_attempt(request: Request | None, identifier: str, success: bool) -> None:
     """Record login attempt in KeyDB (increment on failure, clear on success)."""
     cache_key = f"login_attempts:{identifier}"
-    from utils.keydb.keydb_utils import get_keydb_connection
-    pool = await get_keydb_connection()
-    if success:
-        await pool.delete(cache_key)
-    else:
-        raw = await pool.get(cache_key)
-        attempts = int(raw or 0) + 1
-        # Import config here to avoid circular import
-        from config import config
-        await pool.set(cache_key, attempts, expire=int(config.LOGIN_LOCKOUT_MINUTES * 60))
+    from utils.keydb.keydb_utils import get_keydb_from_app
+    pool = get_keydb_from_app(request)
+    if pool:
+        if success:
+            await pool.delete(cache_key)
+        else:
+            raw = await pool.get(cache_key)
+            attempts = int(raw or 0) + 1
+            # Import config here to avoid circular import
+            from config import config
+            await pool.set(cache_key, attempts, expire=int(config.LOGIN_LOCKOUT_MINUTES * 60))
+    return
 
 
 # ─── Utility Functions ─────────────────────────────────────────────────────
@@ -1635,6 +1610,17 @@ def decrypt_sensitive_data(encrypted_data: str) -> str:
         return encrypted_data
 
 # ─── Client Request Info ───────────────────────────────────────────────────
+
+SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie"}
+
+def redact_headers(headers: dict) -> dict:
+    out = {}
+    for k, v in headers.items():
+        if k.lower() in SENSITIVE_HEADERS:
+            out[k] = "[REDACTED]"
+        else:
+            out[k] = v
+    return out
 
 # DEPRECATED: This function is replaced by get_client_info dependency in FastAPI
 # Use ClientInfo and get_client_info from utils.helpers.fastapi_helpers instead

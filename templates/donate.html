@@ -16,11 +16,11 @@
       <div class="card h-100 shadow-sm option-card" role="button"
            data-title="bKash"
            data-url=""
-           data-qr="{{ url_for('static', filename='icons/bkash_qr.png') }}"
+           data-qr="{{ request.url_for('static', filename='icons/bkash_qr.png') }}"
            data-info="+8801XXXXXXXXX"
            data-gateway="false">
         <div class="card-body text-center p-4">
-          <img src="{{ url_for('static', filename='icons/bkash.png') }}"
+          <img src="{{ url_for('static', path='icons/bkash.png') }}"
                alt="bKash" class="mb-3" style="width: 64px; height: 64px;">
           <h3 class="h5 card-title">bKash</h3>
           <p class="card-text text-muted">Quick and easy mobile payments</p>
@@ -33,11 +33,11 @@
       <div class="card h-100 shadow-sm option-card" role="button"
            data-title="Nagad"
            data-url=""
-           data-qr="{{ url_for('static', filename='icons/nagad_qr.png') }}"
+           data-qr="{{ request.url_for('static', path='icons/nagad_qr.png') }}"
            data-info="+8801YYYYYYYYY"
            data-gateway="false">
         <div class="card-body text-center p-4">
-          <img src="{{ url_for('static', filename='icons/nagad.png') }}"
+          <img src="{{ request.url_for('static', path='icons/nagad.png') }}"
                alt="Nagad" class="mb-3" style="width: 64px; height: 64px;">
           <h3 class="h5 card-title">Nagad</h3>
           <p class="card-text text-muted">Secure digital payments</p>
@@ -49,11 +49,11 @@
     <div class="col-12 col-md-4">
       <div class="card h-100 shadow-sm option-card" role="button"
            data-title="Other (SSLCommerz)"
-           data-url="{{ url_for('api.process_payment') }}"
+           data-url="{{ request,url_for('api.process_payment') }}"
            data-info="Use your card / mobile banking"
            data-gateway="true">
         <div class="card-body text-center p-4">
-          <img src="{{ url_for('static', filename='icons/others.png') }}"
+          <img src="{{ request.url_for('static', path='icons/others.png') }}"
                alt="SSLCommerz" class="mb-3" style="width: 64px; height: 64px;">
           <h3 class="h5 card-title">Other Payment Methods</h3>
           <p class="card-text text-muted">Cards and other banking options</p>
@@ -61,35 +61,6 @@
       </div>
     </div>
   </div>
-
-  <div class="row mt-5">
-    <div class="col-md-8 mx-auto">
-      <div class="card bg-light">
-        <div class="card-body">
-          <h4 class="card-title text-center mb-4">Why Support Us?</h4>
-          <div class="row g-4">
-            <div class="col-md-6">
-              <h5><i class="bi bi-book"></i> Education</h5>
-              <p>Help us provide quality Islamic education to students.</p>
-            </div>
-            <div class="col-md-6">
-              <h5><i class="bi bi-building"></i> Infrastructure</h5>
-              <p>Support maintenance and improvement of our facilities.</p>
-            </div>
-            <div class="col-md-6">
-              <h5><i class="bi bi-people"></i> Community</h5>
-              <p>Enable us to serve the community better.</p>
-            </div>
-            <div class="col-md-6">
-              <h5><i class="bi bi-heart"></i> Charity</h5>
-              <p>Earn rewards through charitable giving.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- Modal -->
 <div class="modal fade" id="donateModal" tabindex="-1" aria-hidden="true">
@@ -105,15 +76,9 @@
         <p id="modal-info" class="lead mb-3"></p>
       </div>
       <div class="modal-footer">
-        <a id="modal-link" href="#" class="btn btn-success d-none">
-          Proceed to Payment
-        </a>
-        <button id="copy-btn" type="button" class="btn btn-outline-success">
-          Copy Number
-        </button>
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Close
-        </button>
+        <a id="modal-link" href="#" class="btn btn-success d-none">Proceed to Payment</a>
+        <button id="copy-btn" type="button" class="btn btn-outline-success">Copy Number</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>

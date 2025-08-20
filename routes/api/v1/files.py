@@ -5,9 +5,10 @@ from typing import Tuple
 import os
 import re
 
+# Local imports
 from utils.helpers.improved_functions import send_json_response
 from utils.helpers.fastapi_helpers import ClientInfo, validate_device_dependency, handle_async_errors, get_client_info
-from api import api
+from routes.api import api
 from utils.helpers.logger import log
 from config import config
 

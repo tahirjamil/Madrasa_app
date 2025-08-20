@@ -6,7 +6,6 @@ from utils.helpers.improved_functions import get_project_root
 
 try:
     import aiomysql
-    from aiomysql import Connection, Pool
 except ImportError:  # pragma: no cover
     aiomysql = None
     Connection = None
@@ -177,7 +176,7 @@ async def create_tables():
             # Suppress MySQL warnings
             if aiomysql is not None:
                 async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.db_tracing import TracedCursorWrapper
+                    from utils.otel.otel_utils import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                     await cursor.execute("SET sql_notes = 0")
                     await conn.commit()
@@ -204,7 +203,7 @@ async def create_tables():
             # Execute each SQL statement
             if aiomysql is not None:
                 async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.db_tracing import TracedCursorWrapper
+                    from utils.otel.otel_utils import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                     for statement in sql_statements:
                         if statement.strip():  # Skip empty statements
@@ -219,7 +218,7 @@ async def create_tables():
             # Re-enable MySQL warnings
             if aiomysql is not None:
                 async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.db_tracing import TracedCursorWrapper
+                    from utils.otel.otel_utils import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                     await cursor.execute("SET sql_notes = 1")
                     await conn.commit()

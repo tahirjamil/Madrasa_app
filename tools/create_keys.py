@@ -4,7 +4,6 @@ Create missing secret keys in the project's .env file.
 
 This tool generates and persists the following keys if missing:
 - SECRET_KEY                (random urlsafe)
-- WTF_CSRF_SECRET_KEY      (random urlsafe)
 - ENCRYPTION_KEY           (Fernet key)
 - POWER_KEY                (random urlsafe)
 
@@ -56,7 +55,6 @@ def generate_fernet_key() -> str:
 
 KEY_GENERATORS: Dict[str, Callable[[], str]] = {
     "SECRET_KEY": generate_urlsafe_token,
-    "WTF_CSRF_SECRET_KEY": generate_urlsafe_token,
     "ENCRYPTION_KEY": generate_fernet_key,
     "POWER_KEY": generate_urlsafe_token,
 }

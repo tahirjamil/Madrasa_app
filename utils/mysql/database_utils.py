@@ -179,7 +179,7 @@ async def create_tables():
                     from utils.otel.otel_utils import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                     await cursor.execute("SET sql_notes = 0")
-                    await conn.commit()
+                    
 
             # Split the SQL content into individual statements
             # Remove comments and split by semicolon
@@ -221,7 +221,7 @@ async def create_tables():
                     from utils.otel.otel_utils import TracedCursorWrapper
                     cursor = TracedCursorWrapper(_cursor)
                     await cursor.execute("SET sql_notes = 1")
-                    await conn.commit()
+                    
                 
         log.info(action="tables_created", trace_info="system", message="Database tables created successfully from create_tables.sql", secure=False)
 

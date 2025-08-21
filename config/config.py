@@ -375,12 +375,6 @@ class MadrasaConfig:
     def is_development(self) -> bool:
         """Check if running in development environment."""
         return get_env_var("FASTAPI_ENV", "development") == "development"
-    
-    @lru_cache(maxsize=1)
-    def is_testing(self) -> bool:
-        """Check if running in testing environment."""
-        verify = get_env_var("TEST_MODE", "")
-        return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
 
 # Create global configuration instance
 config = MadrasaConfig()

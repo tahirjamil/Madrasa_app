@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
     app.state.start_time = time.time()
     
     # Log configuration status
-    logger.info(f"Configuration loaded - TEST_MODE: {config.is_testing()}, OTEL_ENABLED: {config.OTEL_ENABLED}")
+    logger.info(f"Configuration loaded - OTEL_ENABLED: {config.OTEL_ENABLED}")
     
     # Initialize observability (traces/metrics) only if enabled
     if config.OTEL_ENABLED:
@@ -129,7 +129,7 @@ app = FastAPI(
 )
 
 # Setup template globals
-setup_template_globals(app)
+setup_template_globals()
 
 # ─── CORS Configuration ──────────────────────────────────────────────
 if not config.is_development():
@@ -177,8 +177,6 @@ from starlette.middleware.sessions import SessionMiddleware
 # Add session middleware (needed for admin routes)
 # Ensure SECRET_KEY is set, especially for test mode
 secret_key = MadrasaConfig.SECRET_KEY
-if config.is_testing():
-    secret_key = "test-secret-key-for-development-only"
 
 app.add_middleware(SessionMiddleware, secret_key=secret_key)
 

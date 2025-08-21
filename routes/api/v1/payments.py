@@ -47,10 +47,6 @@ async def payments(
         response, status = send_json_response("Invalid configuration", 500)
         return JSONResponse(content=response, status_code=status)
 
-    if config.is_testing():
-        fullname = config.DUMMY_FULLNAME
-        phone = config.DUMMY_PHONE
-
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
         response, status = send_json_response(msg, 400)
@@ -108,10 +104,6 @@ async def transaction_history(
     if not validate_madrasa_name(madrasa_name, phone):
         response, status = send_json_response("Invalid configuration", 500)
         return JSONResponse(content=response, status_code=status)
-
-    if config.is_testing():
-        fullname = config.DUMMY_FULLNAME
-        phone = config.DUMMY_PHONE
 
     formatted_phone, msg = format_phone_number(phone)
     if not formatted_phone:
@@ -209,7 +201,6 @@ async def transaction_history(
 #                     user_result = await cursor.fetchone()
                     
 #                     if not user_result:
-#                         await conn.rollback()
 #                         response, status = send_json_response("User not found", 404)
 #                         return JSONResponse(content=response, status_code=status)
                     
@@ -222,7 +213,6 @@ async def transaction_history(
 #                     """, (payment_data.transaction_id,))
                     
 #                     if await cursor.fetchone():
-#                         await conn.rollback()
 #                         response, status = send_json_response("Transaction ID already exists", 409)
 #                         return JSONResponse(content=response, status_code=status)
                     
@@ -251,7 +241,7 @@ async def transaction_history(
 #                     """, (datetime.now(timezone.utc), payment_data.total_amount, user_id))
                     
 #                     # Commit transaction
-#                     await conn.commit()
+#                     
                     
 #                     log.info(
 #                         action="payment_processed_successfully",
@@ -268,7 +258,6 @@ async def transaction_history(
 #                     return JSONResponse(content=response, status_code=status)
                     
 #                 except Exception as e:
-#                     await conn.rollback()
 #                     log.error(
 #                         action="payment_processing_failed",
 #                         trace_info=client_info.ip_address,

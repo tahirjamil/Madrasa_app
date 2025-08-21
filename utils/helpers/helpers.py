@@ -5,20 +5,20 @@ import base64, hashlib, random, re, aiomysql, phonenumbers, requests
 import uuid
 import datetime as dt
 from hmac import compare_digest
-import asyncio, json, os, smtplib, time
+import asyncio, json, smtplib, time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
 from functools import wraps
 from threading import Lock
-from typing import Any, Dict, List, Optional, Tuple, Callable, Union
-
+from typing import Any, Awaitable, Dict, List, Optional, Tuple, Callable, Union
 from aiomysql import IntegrityError
 from dotenv import load_dotenv
 from fastapi import Request, Response, HTTPException
 from cryptography.fernet import Fernet
+
+# Local Imports
 from config import config
-from utils.helpers.improved_functions import get_env_var, send_json_response
 from utils.helpers.logger import log
 
 load_dotenv()
@@ -32,20 +32,21 @@ def get_cache_key(prefix: str, **kwargs) -> str:
     return ":".join(parts)
 
 async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: Any = None, request: Request | None= None) -> Any:
-    """Fetch cached JSON-serializable data from KeyDB. Falls back to in-memory cache if needed."""
+    """Fetch cached JSON-serializable data from KeyDB."""
     if ttl is None:
-        ttl = getattr(config, "CACHE_TTL", 3600)
+        ttl = config.CACHE_TTL if config.CACHE_TTL else 3600
     try:
         from utils.keydb.keydb_utils import get_keydb_from_app
         pool = get_keydb_from_app(request)
         raw = await pool.get(cache_key) if pool else None
         if raw is not None:
-            # metrics removed
             try:
                 return json.loads(raw)
             except Exception:
-                return raw
-        # metrics removed
+                try:
+                    return raw.decode("utf-8")
+                except Exception:
+                    return raw
         return default
     except RuntimeError as e:
         # Redis cache is disabled, return default
@@ -54,35 +55,33 @@ async def get_cached_data(cache_key: str, ttl: Optional[int] = None, default: An
         raise RuntimeError(f"KeyDB unavailable when getting cache key '{cache_key}': {e}")
 
 async def set_cached_data(cache_key: str, data: Any, ttl: Optional[int] = None, request: Request | None= None) -> None:
-    """Store JSON-serializable data in KeyDB with TTL. Falls back to in-memory cache if needed."""
+    """Store JSON-serializable data in KeyDB with TTL."""
     if ttl is None:
-        ttl = getattr(config, "CACHE_TTL", 3600)
+        ttl = config.CACHE_TTL if config.CACHE_TTL else 3600
     try:
         from utils.keydb.keydb_utils import get_keydb_from_app
         pool = get_keydb_from_app(request)
         payload = canonical_json(data)
-        # aioredis 1.x supports expire argument in set
         if pool:
-            await pool.set(cache_key, payload, expire=int(ttl) if ttl else None)
+            await pool.set(cache_key, payload, ex=int(ttl))
     except RuntimeError as e:
         # Redis cache is disabled, silently skip
         pass
     except Exception as e:
         raise RuntimeError(f"KeyDB unavailable when setting cache key '{cache_key}': {e}")
 
-async def _invalidate_cache_pattern_async(request: Request | None, pattern: str) -> int:
+async def _invalidate_cache_pattern_async(pattern: str, request: Request | None= None) -> int:
     """Asynchronously delete keys matching pattern from KeyDB. Returns number deleted."""
     try:
         from utils.keydb.keydb_utils import get_keydb_from_app
         pool = get_keydb_from_app(request)
         if pool:
             # Use KEYS for simplicity; for large keyspaces consider SCAN.
-            keys = await pool.keys(pattern)
-            if not keys:
-                return 0
-            # aioredis delete supports varargs
-            await pool.delete(*keys)
-            return len(keys)
+            count = 0
+            async for key in pool.scan_iter(match=pattern):
+                await pool.delete(key)
+                count += 1
+            return count
         return 0
     except RuntimeError as e:
         # Redis cache is disabled, return 0
@@ -92,76 +91,74 @@ async def _invalidate_cache_pattern_async(request: Request | None, pattern: str)
 
 def invalidate_cache_pattern(pattern: str) -> int:
     """Fire-and-forget invalidation against KeyDB; returns 0 immediately. Fallback clears local cache."""
-    loop = asyncio.get_event_loop()
-    loop.create_task(_invalidate_cache_pattern_async(request=None, pattern=pattern))
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_invalidate_cache_pattern_async(pattern=pattern))
+    except RuntimeError:
+        asyncio.run(_invalidate_cache_pattern_async(pattern=pattern))
     return 0
-
-# operation -> patterns mapping (domain specific)
-CACHE_INVALIDATION_MAP = {
-    'add_person': ['members:*', 'user:*'],
-    'update_person': ['members:*', 'user:*'],
-    'add_event': ['events:*'],
-    'update_event': ['events:*'],
-    # add more...
-}
-
-def invalidate_related_cache(operation: str, **kwargs) -> None:
-    patterns = CACHE_INVALIDATION_MAP.get(operation, [])
-    for p in patterns:
-        invalidate_cache_pattern(p)
 
 # ---------- decorator for endpoint-level caching ----------
 def cache_with_invalidation(func: Optional[Callable] = None, *, ttl: int = 3600):
-    """Decorator for endpoint-level caching backed by KeyDB."""
-    def _decorate(f: Callable):
+    """
+    Decorator for endpoint-level caching backed by KeyDB.
+    Works cleanly with FastAPI (requires Request param in route).
+    """
+
+    def _decorate(f: Callable[..., Awaitable[Any]]):
         @wraps(f)
         async def wrapper(*args, **kwargs):
-            try:
-                # In FastAPI, the request is typically the first argument of the endpoint
-                from fastapi import Request
-                request = None
-                for arg in args:
-                    if isinstance(arg, Request):
-                        request = arg
-                        break
-                
-                if request is None:
-                    # No request found, skip caching
-                    return await f(*args, **kwargs)
-                
-                method = request.method
-                path = request.url.path
-                try:
-                    query = dict(sorted(request.query_params.items()))
-                except Exception:
-                    query = {}
-                try:
-                    body = await request.json() if request.method in ["POST", "PUT", "PATCH"] else None
-                except Exception:
-                    body = None
-                fingerprint = json.dumps({"m": method, "p": path, "q": query, "b": body},
-                                         sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
-            except Exception:
-                fingerprint = json.dumps({"args": [repr(a) for a in args], "kwargs": kwargs},
-                                         sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
+            request: Optional[Request] = kwargs.get("request")
 
-            key = f"{f.__module__}.{f.__name__}:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
-            cached = await get_cached_data(key, ttl=ttl)
+            if request is None:
+                # No request → skip caching (safe fallback)
+                return await f(*args, **kwargs)
+
+            # Build fingerprint
+            try:
+                query = dict(sorted(request.query_params.items()))
+            except Exception:
+                query = {}
+
+            try:
+                body = (
+                    await request.json()
+                    if request.method in {"POST", "PUT", "PATCH"}
+                    else None
+                )
+            except Exception:
+                body = None
+
+            fingerprint = json.dumps(
+                {"m": request.method, "p": request.url.path, "q": query, "b": body},
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+                ensure_ascii=False,
+            )
+
+            key = f"{f.__module__}.{f.__name__}:{hashlib.sha256(fingerprint.encode()).hexdigest()}"
+
+            # Check cache
+            cached = await get_cached_data(key, ttl=ttl, request=request)
             if cached is not None:
                 return cached
 
+            # Call real function
             result = await f(*args, **kwargs)
+
+            # Cache only JSON-serializable, not Response objects
             if not isinstance(result, Response):
-                await set_cached_data(key, result, ttl=ttl)
+                await set_cached_data(key, result, ttl=ttl, request=request)
+
             return result
 
-        # TODO: This decorator is incompatible with FastAPI's request handling.
-        # For now, just return the function as-is
-        return f
+        return wrapper
 
     if callable(func):
         return _decorate(func)
     return _decorate
+
 
 # ---------- Enhanced HTTP Cache ---------- TODO: This is unknown
 class EnhancedJSONEncoder(json.JSONEncoder):
@@ -433,9 +430,6 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
     if cached_email:
         return cached_email
     
-    if config.is_testing():
-        return get_env_var("DUMMY_EMAIL")
-    
     async with get_db_context() as conn:
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -462,10 +456,6 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
     if cached_id:
         return cached_id
     
-    if config.is_testing():
-        fullname = config.DUMMY_FULLNAME
-        phone = config.DUMMY_PHONE
-    
     async with get_db_context() as conn:
         try:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -485,7 +475,8 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
             log.critical(action="get_id_error", trace_info=phone,message=str(e), secure=True)
             return None
 
-async def upsert_translation(conn, translation_text: str, madrasa_name: str, bn_text = None, ar_text = None, context = None) -> Optional[str]:
+async def upsert_translation(conn, translation_text: str, madrasa_name: str, context: str, table_name: str, 
+                             bn_text: str | None= None, ar_text: str | None= None) -> str | None:
     """
     Insert or update a translation entry in the global.translations table
     Returns the translation_text that should be used as foreign key reference
@@ -500,17 +491,18 @@ async def upsert_translation(conn, translation_text: str, madrasa_name: str, bn_
         cursor = TracedCursorWrapper(_cursor)
         # Upsert translation entry
         sql = f"""
-            INSERT INTO {madrasa_name}.translations (translation_text, bn_text, ar_text, context)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO {madrasa_name}.translations (translation_text, bn_text, ar_text, context, table_name)
+            VALUES (%s, %s, %s, %s, %s) AS new
             ON DUPLICATE KEY UPDATE
-                bn_text = COALESCE(VALUES(bn_text), bn_text),
-                ar_text = COALESCE(VALUES(ar_text), ar_text),
-                context = COALESCE(VALUES(context), context)
+                bn_text = new.bn_text,
+                ar_text = new.ar_text,
+                context = new.context,
+                table_name = new.table_name
         """
-        await cursor.execute(sql, (translation_text, bn_text, ar_text, context))
+        await cursor.execute(sql, (translation_text, bn_text, ar_text, context, table_name))
         return translation_text
 
-async def process_multilingual_field(conn, field_base: str, data: dict, madrasa_name: str) -> Optional[str]:
+async def process_multilingual_field(conn, field_base: str, data: dict, madrasa_name: str, context: str, table_name: str) -> Optional[str]:
     """
     Process multilingual field data and insert into translations table
     Returns the translation_text to use as foreign key reference
@@ -524,13 +516,11 @@ async def process_multilingual_field(conn, field_base: str, data: dict, madrasa_
         return None
         
     translation_text = translation_text.strip()
-    return await upsert_translation(conn=conn, translation_text=translation_text, bn_text=bn_text, ar_text=ar_text, madrasa_name=madrasa_name)
+    return await upsert_translation(conn=conn, translation_text=translation_text, bn_text=bn_text, ar_text=ar_text, 
+                                    madrasa_name=madrasa_name, context=context, table_name=table_name)
 
 async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str, phone: str) -> None:
     """Enhanced person insertion with translation handling and error handling"""
-    if config.is_testing():
-        return None
-
     fields = {k: v.strip() if isinstance(v, str) else v for k, v in fields.items()}
     
     async with get_db_context() as conn:
@@ -540,7 +530,7 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             
             # Process name translations
             if any(k.startswith('name_') for k in fields.keys()):
-                name_translation = await process_multilingual_field(conn=conn, field_base='name', data=fields, madrasa_name=madrasa_name)
+                name_translation = await process_multilingual_field(conn=conn, field_base='name', data=fields, madrasa_name=madrasa_name, context="name", table_name="people")
                 if name_translation:
                     translation_fields['name'] = name_translation
                     # Remove individual language fields
@@ -548,7 +538,7 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             
             # Process father name translations  
             if any(k.startswith('father_') for k in fields.keys()):
-                father_translation = await process_multilingual_field(conn=conn, field_base='father', data=fields, madrasa_name=madrasa_name)
+                father_translation = await process_multilingual_field(conn=conn, field_base='father', data=fields, madrasa_name=madrasa_name, context="father", table_name="people")
                 if father_translation:
                     translation_fields['father_name'] = father_translation
                     # Remove individual language fields
@@ -556,7 +546,7 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             
             # Process mother name translations
             if any(k.startswith('mother_') for k in fields.keys()):
-                mother_translation = await process_multilingual_field(conn=conn, field_base='mother', data=fields, madrasa_name=madrasa_name)
+                mother_translation = await process_multilingual_field(conn=conn, field_base='mother', data=fields, madrasa_name=madrasa_name, context="mother", table_name="people")
                 if mother_translation:
                     translation_fields['mother_name'] = mother_translation
                     # Remove individual language fields
@@ -565,21 +555,21 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             # Handle address field - use present_address as the main address
             if 'present_address' in fields and fields['present_address']:
                 address_text = fields['present_address'].strip().lower()
-                address_translation = await upsert_translation(conn, address_text, fields['present_address'])
+                address_translation = await upsert_translation(conn=conn, translation_text=address_text, madrasa_name=madrasa_name, context="present_address", table_name="people")
                 if address_translation:
-                    translation_fields['address'] = address_translation
+                    translation_fields['present_address'] = address_translation
 
             # Handle address field - use present_address as the main address
             if 'permanent_address' in fields and fields['permanent_address']:
                 address_text = fields['permanent_address'].strip().lower()
-                address_translation = await upsert_translation(conn, address_text, fields['present_address'])
+                address_translation = await upsert_translation(conn=conn, translation_text=address_text, madrasa_name=madrasa_name, context="permanent_address", table_name="people")
                 if address_translation:
-                    translation_fields['address'] = address_translation
+                    translation_fields['permanent_address'] = address_translation
 
             # Handle address field - use present_address as the main address
             if 'address' in fields and fields['address']:
                 address_text = fields['address'].strip().lower()
-                address_translation = await upsert_translation(conn, address_text, fields['address'])
+                address_translation = await upsert_translation(conn=conn, translation_text=address_text, madrasa_name=madrasa_name, context="address", table_name="people")
                 if address_translation:
                     translation_fields['address'] = address_translation
             
@@ -622,10 +612,10 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                     # UPSERT for acc_types
                     acc_sql = f"""
                         INSERT INTO global.acc_types ({acc_columns})
-                        VALUES ({acc_placeholders})
+                        VALUES ({acc_placeholders}) AS new
                         ON DUPLICATE KEY UPDATE {acc_updates}
                     """
-                    await cursor.execute(acc_sql, list(acc_type_data.values()))
+                    await cursor.execute(acc_sql, list(acc_updates.replace('VALUES(', 'new.')))
                 
                 # Insert into peoples table AFTER acc_types
                 columns = ', '.join(peoples_fields.keys())
@@ -640,20 +630,20 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                 
                 # UPSERT for peoples
                 sql = f"""
-                    INSERT IGNORE INTO {madrasa_name}.peoples ({columns}) 
+                    INSERT INTO {madrasa_name}.peoples ({columns}) 
                     VALUES ({placeholders}) AS new
-                    ON DUPLICATE KEY UPDATE {updates}
+                    ON DUPLICATE KEY UPDATE {updates.replace('VALUES(', 'new.')}
                 """
                 await cursor.execute(sql, list(peoples_fields.values()))
                 
-            await conn.commit()
+            
             log.info(action="insert_success", trace_info=phone, message="Upserted into peoples with translations", secure=True)
         except Exception as e:
             await conn.rollback()
             log.critical(action="db_insert_error", trace_info=phone,message=str(e), secure=True)
             raise
 
-async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid = None, acc_type = None) -> bool:
+async def delete_users(madrasa_name:Union[str, list[str]] | None= None, uid = None, acc_type = None) -> bool:
     """Enhanced user deletion with comprehensive cleanup"""
     if not madrasa_name:
         madrasa_name = config.MADRASA_NAMES_LIST
@@ -680,10 +670,10 @@ async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid
                     acc_type = user["acc_type"]
                     
                     if acc_type not in ['students', 'teachers', 'staffs', 'admins', 'badri_members']:
-                        await cursor.execute(f"DELETE FROM {madrasa_name}.peoples WHERE user_id = %s", (uid,))
+                        await cursor.execute(f"DELETE FROM {madrasa}.peoples WHERE user_id = %s", (uid,))
                     else:
                         await cursor.execute(f"""
-                            UPDATE {madrasa_name}.peoples SET 
+                            UPDATE {madrasa}.peoples SET 
                                 date_of_birth = NULL,
                                 birth_certificate = NULL,
                                 national_id = NULL,
@@ -705,8 +695,6 @@ async def delete_users(madrasa_name: Optional[Union[str, list[str]]] = None, uid
                     await cursor.execute(f"DELETE FROM global.transactions WHERE user_id = %s", (uid,))
                     await cursor.execute(f"DELETE FROM global.verifications WHERE user_id = %s", (uid,))
                     await cursor.execute(f"DELETE FROM global.users WHERE user_id = %s", (uid,))
-                
-                await conn.commit()
                 return True
                 
             except IntegrityError as e:
@@ -724,9 +712,6 @@ def calculate_fees(class_name: str, gender: str, special_food: bool = False,
     """Calculate fees with comprehensive pricing logic"""
     total = 0.0
     class_lower = class_name.lower()
-    
-    if config.is_testing():
-        return 9999.0
     
     # Food charges
     if food:
@@ -763,144 +748,21 @@ def calculate_fees(class_name: str, gender: str, special_food: bool = False,
     
     return max(0, total)  # Ensure non-negative total
 
-# ─── File Management Functions ───────────────────────────────────────────────
-
-def load_results() -> List[Dict[str, Any]]:
-    """Load exams results with caching and error handling."""
-    cache_key = "load_results:default"
-    # File-based data; skip remote cache and always read
-    try:
-        # Ensure we have the config attribute
-        if not hasattr(config, 'EXAM_RESULTS_INDEX_FILE'):
-            log.critical(action="config_error", trace_info="load_results", 
-                        message="EXAM_RESULTS_INDEX_FILE not found in config", secure=False)
-            return []
-        with open(config.EXAM_RESULTS_INDEX_FILE, 'r') as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = []
-    # Not cached remotely to avoid stale file index issues
-    return data
-
-def save_results(data: List[Dict[str, Any]]) -> None:
-    """Save exam results with atomic write and cache invalidation."""
-    # Ensure we have the config attribute
-    if not hasattr(config, 'EXAM_RESULTS_INDEX_FILE'):
-        log.critical(action="config_error", trace_info="save_results", 
-                    message="EXAM_RESULTS_INDEX_FILE not found in config", secure=False)
-        return
-    temp_file = config.EXAM_RESULTS_INDEX_FILE + '.tmp'
-    try:
-        with open(temp_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        os.replace(temp_file, config.EXAM_RESULTS_INDEX_FILE)
-        # Invalidate cached loads
-        invalidate_cache_pattern("load_results:")
-    except Exception as e:
-        log.critical(action="save_results_error", trace_info="file_ops", message=str(e), secure=False)
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-
-def load_notices() -> List[Dict[str, Any]]:
-    """Load notices with caching and auto-recovery from corrupted files."""
-    cache_key = "load_notices:default"
-    # File-based data; skip remote cache and always read
-    try:
-        # Ensure we have the config attribute
-        if not hasattr(config, 'NOTICES_INDEX_FILE'):
-            log.critical(action="config_error", trace_info="load_notices", 
-                        message="NOTICES_INDEX_FILE not found in config", secure=False)
-            return []
-        with open(config.NOTICES_INDEX_FILE, 'r') as f:
-            data = json.load(f)
-    except json.JSONDecodeError:
-        # Auto-fix broken JSON
-        with open(config.NOTICES_INDEX_FILE, 'w') as f:
-            json.dump([], f)
-        data = []
-    except FileNotFoundError:
-        data = []
-    # Not cached remotely to avoid stale file index issues
-    return data
-
-def save_notices(data: List[Dict[str, Any]]) -> None:
-    """Save notices with atomic write and cache invalidation."""
-    # Ensure we have the config attribute
-    if not hasattr(config, 'NOTICES_INDEX_FILE'):
-        log.critical(action="config_error", trace_info="save_notices", 
-                    message="NOTICES_INDEX_FILE not found in config", secure=False)
-        return
-    temp_file = config.NOTICES_INDEX_FILE + '.tmp'
-    try:
-        with open(temp_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        os.replace(temp_file, config.NOTICES_INDEX_FILE)
-        # Invalidate cached loads
-        invalidate_cache_pattern("load_notices:")
-    except Exception as e:
-        log.critical(action="save_notices_error", trace_info="file_ops", message=str(e), secure=False)
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-
-# ─── Utility Decorators ─────────────────────────────────────────────────────
-
-def rate_limit(max_requests: int, window: int):
-    """
-    Decorator for rate limiting endpoints
-    
-    TODO: This decorator is incompatible with FastAPI.
-    Use the rate_limit decorator from fastapi_helpers.py instead.
-    This is kept as a no-op for backward compatibility during migration.
-    """
-    def decorator(func):
-        # Return function as-is
-        return func
-    return decorator
-
-def require_api_key(func):
-    """
-    Decorator to require valid API key
-    
-    TODO: This decorator is incompatible with FastAPI.
-    Use the require_api_key dependency from fastapi_helpers.py instead.
-    This is kept as a no-op for backward compatibility during migration.
-    """
-    # Return function as-is
-    return func
-
 # ─── Health Check Functions ─────────────────────────────────────────────────
 
 async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and health"""
-    from utils.mysql.database_utils import get_db_connection
     
-    async with get_db_connection() as conn:
+    async with get_db_context() as conn:
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT 1")
             return {"status": "healthy", "message": "Database connection successful"}
-
-async def check_file_system_health() -> Dict[str, Any]:
-    """Check file system health and permissions"""
-    try:
-        # Check if directories exist and are writable
-        for directory in [config.EXAM_RESULTS_UPLOAD_FOLDER, config.NOTICES_UPLOAD_FOLDER]: # TODO: Add more directories to check
-            if not os.path.exists(directory):
-                os.makedirs(directory, exist_ok=True)
-            
-            test_file = os.path.join(directory, '.health_check')
-            with open(test_file, 'w') as f:
-                f.write('test')
-            os.remove(test_file)
         
-        return {"status": "healthy", "message": "File system accessible"}
-    except Exception as e:
-        return {"status": "unhealthy", "message": f"File system error: {str(e)}"}
-
-async def check_keydb_health() -> Dict[str, Any]:
+async def check_keydb_health(request: Request | None= None) -> Dict[str, Any]:
     """Check KeyDB health"""
     try:
         from utils.keydb.keydb_utils import ping_keydb
-        if await ping_keydb(None):
+        if await ping_keydb(request):
             return {"status": "healthy", "message": "KeyDB connection successful"}
         else:
             return {"status": "unhealthy", "message": "KeyDB connection failed"}
@@ -934,37 +796,27 @@ async def check_opentelemetry_health() -> Dict[str, Any]:
 async def get_system_health(request: Request | None= None) -> Dict[str, Any]:
     """Get comprehensive system health status"""
     db_health = await check_database_health()
-    fs_health = await check_file_system_health()
-    keydb_health = await check_keydb_health()
+    keydb_health = await check_keydb_health(request)
     opentelemetry_health = await check_opentelemetry_health()
-
-    status = "healthy"
-    if db_health["status"] == "unhealthy" and fs_health["status"] == "unhealthy":
-        status = "critical"
-    elif db_health["status"] == "unhealthy" or fs_health["status"] == "unhealthy":
-        status = "unhealthy"
     
-    # Try to fetch KeyDB dbsize as cache_size; if unavailable set 0
+    # Get KeyDB cache size
+    cache_size = 0
+    from_keydb = None
     try:
         from utils.keydb.keydb_utils import get_keydb_from_app
         from_keydb = get_keydb_from_app(request)
-        try:
-            cache_size = int(await from_keydb.dbsize()) if from_keydb else 0
-        except Exception:
-            cache_size = int(await from_keydb.execute('DBSIZE'))
+        if from_keydb:
+            cache_size = int(await from_keydb.dbsize())
     except Exception:
         cache_size = 0
 
     return {
-        "status": status,
         "version": "1.0.0",
         "timestamp": datetime.now().isoformat(),
         "database": db_health,
         "keydb": keydb_health,
         "opentelemetry": opentelemetry_health,
-        "file_system": fs_health,
         "maintenance_mode": config.is_maintenance(),
-        "test_mode": config.is_testing(),
         "cache_size": cache_size,
         "rate_limiter_size": len(rate_limiter._requests)
     }
@@ -979,56 +831,35 @@ class AppError(Exception):
         self.error_code = error_code
         self.details = details or {}
 
-
 def handle_async_errors(func: Callable) -> Callable:
-    """Decorator for comprehensive async error handling"""
+    """Error handling decorator for async routes"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
         except AppError as e:
-            log.critical(action="app_error", trace_info="error_handler", message=f"{e.error_code}: {e.message}", secure=False)
+            log.critical(action="app_error", trace_info="error_handler", message=f"{e.error_code}: {e.message}")
             raise HTTPException(
                 status_code=400,
                 detail={
                     "message": e.message,
                     "error_code": e.error_code,
-                    "details": e.details
                 }
             )
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            log.critical(action="Async error", message="An error occured, HTTPExeption on handle async")
+            raise
         except Exception as e:
-            log.critical(action="unexpected_error", trace_info="error_handler", message=str(e), secure=False)
-            # metrics removed
+            log.error(
+                action=f"unhandled_error_{func.__name__}", 
+                message=f"Unhandled error in {func.__name__}: {str(e)}",
+            )
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "message": "An unexpected error occurred",
-                    "error_code": "INTERNAL_ERROR",
-                    "details": str(e)
-                }
+                detail="Internal server error"
             )
-    
     return wrapper
-
-# ─── Metrics and Analytics ─────────────────────────────────────────────────
-
-class MetricsCollector:
-    """Deprecated custom metrics collector. Kept as a no-op for compatibility."""
-    
-    def __init__(self):
-        self.metrics = {}
-        self.start_time = time.time()
-    
-    def increment(self, metric: str, value: int = 1) -> None:
-        """Increment a metric counter"""
-        return None
-    
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get current metrics"""
-        return {}
-
-# Global metrics collector
-metrics_collector = MetricsCollector()
 
 
 # ─── Application Initialization ────────────────────────────────────────────
@@ -1111,31 +942,25 @@ rate_limiter = RateLimiter()
 
 def is_valid_api_key(api_key: str) -> bool:
     """Validate API key securely based on request method"""
-
-    if config.is_testing():
-        return True
-
-    if not api_key:
-        return False
-
     return any(compare_digest(api_key, key) for key in config.API_KEYS if isinstance(key, str))
 
 
-async def check_rate_limit(identifier: str, max_requests: int | None = None, window: int | None = None) -> bool:
+async def check_rate_limit(identifier: str,  request: Request, max_requests: int | None= None, window: int | None= None,) -> bool:
     """Enhanced rate limiting with additional checks"""
+    from utils.helpers.fastapi_helpers import get_client_info
     if max_requests is None:
         max_requests = config.DEFAULT_RATE_LIMIT
     if window is None:
         window = config.RATE_LIMIT_WINDOW
-    
-    # Additional security checks
-    client_info = await get_client_info() or {}
+
+    client_info = await get_client_info(request)
     
     # Check for suspicious patterns
     if security_manager.detect_sql_injection(identifier):
         await security_manager.track_suspicious_activity(
-            client_info["ip_address"], 
-            "SQL injection attempt"
+            get_ip_address(request), 
+            "SQL injection attempt",
+            client_info.device_id
         )
         return False
         
@@ -1201,10 +1026,6 @@ async def check_code(user_code: str, phone: str) -> None:
     """Enhanced code verification with security features"""
     from utils.mysql.database_utils import get_db_connection
     
-    
-    if config.is_testing():
-        return None
-    
     try:
         async with get_db_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
@@ -1258,9 +1079,6 @@ async def delete_code() -> None:
 
 def format_phone_number(phone: str) -> Tuple[Optional[str], str]:
     """Format and validate phone number to international E.164 format"""
-    if config.is_testing():
-        phone = config.DUMMY_PHONE
-
     if not phone:
         return None, "Phone number is required"
     phone = phone.strip().replace(" ", "").replace("-", "")
@@ -1307,14 +1125,6 @@ def validate_fullname(fullname: str) -> Tuple[bool, str]:
     if not _FULLNAME_RE.match(fullname):
         return False, "Fullname must be words starting with uppercase, followed by lowercase letters, apostrophes, or hyphens"
     return True, ""
-
-def validate_request_data(data: Dict[str, Any], required_fields: List[str]) -> Tuple[bool, List[str]]:
-    """Validate authentication request data"""
-    missing_fields = []
-    for field in required_fields:
-        if not data.get(field):
-            missing_fields.append(field)
-    return len(missing_fields) == 0, missing_fields
 
 async def validate_device_info(device_id: str, ip_address: str, device_brand: str, device_model: str, device_os: str) -> Tuple[bool, str]:
     """Validate device information for security"""
@@ -1387,14 +1197,11 @@ class SecurityManager:
     
     def sanitize_inputs(self, input_str: str) -> str:
         """Sanitize user input"""
-        if not input_str:
-            return ""
-        
         # Remove potentially dangerous characters
         sanitized = re.sub(r'[<>"\']', '', input_str)
         return sanitized.strip()
     
-    async def track_suspicious_activity(self, ip_address: str, activity: str) -> None:
+    async def track_suspicious_activity(self, ip_address: str, activity: str, device_id: str | None= None) -> None: # TODO: implemenmt device_id
         """Track suspicious activities for threat analysis (thread-safe)"""
         with self._lock:
             if ip_address not in self.suspicious_activities:
@@ -1413,15 +1220,6 @@ class SecurityManager:
 
 # Global security manager
 security_manager = SecurityManager()
-
-
-# ─── Performance Monitoring and Metrics ───────────────────────────────────────
-def record_request_metrics(endpoint: str, duration: float, status_code: int) -> None:
-    return None
-
-def monitor_database_performance(query: str, duration: float) -> None:
-    return None
-
 
 # ─── Advanced Validation Functions ──────────────────────────────────────────
 
@@ -1471,7 +1269,7 @@ def validate_password_strength(password: str) -> Tuple[bool, str]:
     return True, ""
 
 
-async def validate_file_upload(file, allowed_extensions: List[str], max_size: Optional[int] = None) -> Tuple[bool, str]:
+async def validate_file_upload(file, allowed_extensions: List[str], request: Request, max_size: int | None= None) -> Tuple[bool, str]:
     """Enhanced file upload validation with security checks"""
     if not file or not file.filename:
         return False, "No file provided"
@@ -1498,7 +1296,7 @@ async def validate_file_upload(file, allowed_extensions: List[str], max_size: Op
         if re.search(pattern, file.filename, re.IGNORECASE):
             log.warning(
                 action="suspicious_filename",
-                trace_info=(await get_client_info() or {})["ip_address"],
+                trace_info=get_ip_address(request),
                 message=f"Suspicious filename detected: {file.filename}",
                 secure=False
             )
@@ -1506,8 +1304,8 @@ async def validate_file_upload(file, allowed_extensions: List[str], max_size: Op
     
     return True, ""
 
-# ──── User Login Limits ────────────────────────────────────────────────────
-async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]: # TODO: fix the device limit where it should delete from interactions table
+# ──── User Login Limits ──────────────────────────────────────────────────── # TODO: Check full
+async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]:
     """Check if user has reached device limit"""
     from utils.mysql.database_utils import get_db_connection
 
@@ -1567,7 +1365,7 @@ async def record_login_attempt(request: Request | None, identifier: str, success
             attempts = int(raw or 0) + 1
             # Import config here to avoid circular import
             from config import config
-            await pool.set(cache_key, attempts, expire=int(config.LOGIN_LOCKOUT_MINUTES * 60))
+            await pool.set(cache_key, attempts, ex=int(config.LOGIN_LOCKOUT_MINUTES * 60))
     return
 
 
@@ -1622,29 +1420,6 @@ def redact_headers(headers: dict) -> dict:
             out[k] = v
     return out
 
-# DEPRECATED: This function is replaced by get_client_info dependency in FastAPI
-# Use ClientInfo and get_client_info from utils.helpers.fastapi_helpers instead
-async def get_client_info(request: Optional[Request] = None, full_record: Optional[Dict] = None) -> Dict[str, Any] | None:
-    """
-    DEPRECATED: Use get_client_info dependency from fastapi_helpers instead.
-    This function is kept for backward compatibility during migration.
-    """
-    if full_record:
-        # Process full record if provided
-        return process_client_info_record(full_record)
-    
-    log.warning(action="deprecated_function", trace_info="system", message="get_client_info is deprecated. Use FastAPI dependency instead.", secure=False)
-    return None
-
-def process_client_info_record(record: Dict) -> Dict[str, Any]:
-    """Process a full database record to extract client info"""
-    # This functionality is preserved from the original function
-    info = {}
-    for key, value in record.items():
-        if value is not None:
-            info[key] = value
-    return info
-
 def get_ip_address(request: Request) -> str:
     """Extract client IP address from request headers"""
     forwarded_for = request.headers.get('X-Forwarded-For')
@@ -1658,7 +1433,7 @@ def get_ip_address(request: Request) -> str:
         return request.client.host
     return "unknown"
 
-async def validate_device_fingerprint(device_data: Dict[str, Any]) -> bool:
+async def validate_device_fingerprint(device_data: Dict[str, Any], request: Request) -> bool:
     """Validate device fingerprint for security"""
     required_device_fields = ['device_id', 'device_brand', 'ip_address', 'os_version', 'app_version', 'device_model', 'device_os']
     
@@ -1681,7 +1456,7 @@ async def validate_device_fingerprint(device_data: Dict[str, Any]) -> bool:
             await security_manager.track_suspicious_activity(device_data['ip_address'], "Suspicious device identifier detected")
             return False
     
-    # Note: validate_request_origin requires request object which is not available in this context
+    # TODO: validate_request_origin requires request object which is not available in this context
     # This check has been removed. Consider passing request as parameter if needed.
     # if not await validate_request_origin(request):
     #     print("Suspicious referer")
@@ -1700,24 +1475,12 @@ async def validate_request_origin(request: Request) -> bool:
             parsed_host = urlparse(str(request.base_url))
             
             if parsed_referer.netloc != parsed_host.netloc:
-                log.warning(action="suspicious_referer", trace_info=(await get_client_info() or {})["ip_address"], message=f"Suspicious referer: {referer}", secure=False)
+                log.warning(action="suspicious_referer", trace_info=get_ip_address(request), message=f"Suspicious referer: {referer}")
                 return False
         except Exception:
             return False
     
     return True
-
-# DEPRECATED: This function is replaced by Pydantic models in FastAPI
-# Use BaseAuthRequest and other models from utils.helpers.fastapi_helpers instead
-async def secure_data(required_fields: list[str] | None= None) -> tuple[dict[str, Any] | None, str]:
-    """
-    DEPRECATED: Use Pydantic models instead for FastAPI.
-    This function is kept for backward compatibility during migration.
-    """
-    # Note: This function won't work properly in FastAPI context
-    # It's replaced by Pydantic models with automatic validation
-    log.warning(action="deprecated_function", trace_info="system", message="secure_data is deprecated. Use Pydantic models instead.", secure=False)
-    return None, "Function deprecated - use Pydantic models"
 
 async def validate_request_headers(request: Request) -> Tuple[bool, str]:
     """Validate request headers for security"""
@@ -1735,7 +1498,7 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
     for header in suspicious_headers:
         if request.headers.get(header):
             log.critical(action="suspicious_header", trace_info=ip_address, message=f"Suspicious header detected: {header}", secure=False)
-            await security_manager.track_suspicious_activity(ip_address, "Suspicious header detected")
+            await security_manager.track_suspicious_activity(ip_address=ip_address, activity="Suspicious header detected", device_id=device_id)
     
     return True, ""
 

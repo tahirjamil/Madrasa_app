@@ -91,7 +91,7 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
                     params.extend([None, None])
 
                 await cursor.execute(sql, params)
-                await conn.commit()
+                
                 
                 async with log_count_lock:
                     if log_count > 500:
@@ -103,7 +103,7 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
                         
                         # If more than 1000, delete oldest (increased from 500)
                         if total > 1000:
-                            await conn.commit()
+                            
                             await cursor.execute("""
                                 DELETE FROM logs 
                                 WHERE log_id IN (
@@ -115,7 +115,7 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
                                 )
                             """, (total - 1000,))
                             log_count = 0
-                        await conn.commit()
+                        
                     else:
                         log_count += 1
                 

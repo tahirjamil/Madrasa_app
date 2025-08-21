@@ -120,12 +120,6 @@ async def register(
 ) -> JSONResponse:
     """Register a new user with comprehensive validation and security"""
     
-    # Test mode handling
-    if config.is_testing():
-        response, status = send_json_response("Ignored because in test mode", 201)
-        response.update({"info": None})
-        return JSONResponse(content=response, status_code=status)
-    
     try:
         # Data is already validated by Pydantic, client info by dependency
         fullname = data.fullname
@@ -207,7 +201,6 @@ async def register(
                     (fullname, formatted_phone, hashed_phone, encrypted_phone, 
                     hashed_password, email, hashed_email, encrypted_email, ip_address)
                 )
-                await conn.commit()
                 
                 # Get user ID
                 await cursor.execute(
@@ -252,7 +245,6 @@ async def register(
                         "UPDATE peoples SET user_id = %s WHERE LOWER(name) = LOWER(%s) AND phone = %s",
                         (user_id, fullname, formatted_phone)
                     )
-                    await conn.commit()
                 
                 # Log successful registration
                 log.info(action="user_registered_successfully", trace_info=ip_address, message=f"User registered successfully: {fullname}", secure=False)
@@ -293,11 +285,6 @@ async def login(
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Authenticate user login with enhanced security and validation"""
-    
-    if config.is_testing():
-        response, status = send_json_response("Ignored because in test mode", 201)
-        response.update({"info": None})
-        return JSONResponse(content=response, status_code=status)
         
     # Extract and sanitize data
     fullname = data.fullname
@@ -408,14 +395,12 @@ async def login(
                     "UPDATE people SET last_login = %s WHERE user_id = %s",
                     (datetime.now(timezone.utc), user["user_id"])
                 )
-                await conn.commit()
                 
                 # Track device
                 await cursor.execute("""
                     INSERT INTO device_interactions (user_id, device_id, interaction_type, ip_address)
                     VALUES (%s, %s, 'login', %s)
                 """, (user["user_id"], device_id, ip_address))
-                await conn.commit()
                 
                 log.info(action="login_successful", trace_info=ip_address, message=f"User logged in successfully: {fullname}", secure=False)
                 
@@ -444,10 +429,6 @@ async def send_verification_code(
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Send verification code via SMS or email with enhanced security"""
-    # Test mode handling
-    if config.is_testing():
-        response, status = send_json_response(f"Verification code sent to {config.DUMMY_EMAIL}", 200)
-        return JSONResponse(content=response, status_code=status)
     
     try:
         # Extract and sanitize data
@@ -535,7 +516,6 @@ async def send_verification_code(
                             INSERT INTO sms_logs (phone, code, ip_address, expires_at)
                             VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
                         """, (formatted_phone, code, ip_address))
-                        await conn.commit()
                         
                         log.info(action="verification_code_sent_sms", trace_info=ip_address, message=f"Verification code sent via SMS to: {formatted_phone}", secure=False)
                         
@@ -556,7 +536,6 @@ async def send_verification_code(
                             INSERT INTO sms_logs (phone, code, ip_address, expires_at)
                             VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
                         """, (formatted_phone, code, ip_address))
-                        await conn.commit()
                         
                         log.info(action="verification_code_sent_email", trace_info=ip_address, message=f"Verification code sent via email to: {email}", secure=False)
                         
@@ -592,14 +571,6 @@ async def reset_password(
         device_id = client_info.device_id
         ip_address = client_info.ip_address
         
-        # Test mode handling
-        if config.is_testing():
-            if not new_password:
-                response, status = send_json_response("App in test mode", 200)
-                return JSONResponse(content=response, status_code=status)
-            else:
-                response, status = send_json_response("App in test mode", 201)
-                return JSONResponse(content=response, status_code=status)
         
         # Validate and format phone number
         formatted_phone, phone_error = format_phone_number(phone)
@@ -679,14 +650,12 @@ async def reset_password(
                     "UPDATE people SET password_hash = %s, updated_at = %s WHERE user_id = %s",
                     (hashed_password, datetime.now(timezone.utc), user['user_id'])
                 )
-                await conn.commit()
                 
                 # Track password reset event
                 await cursor.execute("""
                     INSERT INTO password_reset_logs (user_id, ip_address, reset_method)
                     VALUES (%s, %s, %s)
                 """, (user['user_id'], ip_address, 'code' if code else 'old_password'))
-                await conn.commit()
                 
                 log.info(action="password_reset_successful", trace_info=ip_address, message=f"Password reset successful for: {fullname}", secure=False)
                 
@@ -784,7 +753,6 @@ async def manage_account(
                     WHERE user_id = %s""",
                     (now, scheduled_deletion, now, user["user_id"])
                 )
-                await conn.commit()
                 
                 # Log the action
                 action = "delete" if page_type in ["remove", "delete"] else "deactivate"
@@ -793,7 +761,7 @@ async def manage_account(
                     VALUES (%s, %s, %s)""",
                     (user["user_id"], action, client_info.ip_address)
                 )
-                await conn.commit()
+                
                 
                 if page_type in ["remove", "delete"]:
                     log.warning(action="account_deletion_scheduled", trace_info=formatted_phone, message=f"User {hash_sensitive_data(fullname)} scheduled for deletion", secure=True)
@@ -818,11 +786,6 @@ async def undo_remove(
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Reactivate a deactivated account with enhanced validation"""
-    
-    # Test mode handling
-    if config.is_testing():
-        response, status = send_json_response("App in test mode", 200)
-        return JSONResponse(content=response, status_code=status)
     
     try:
         # Extract and sanitize data
@@ -877,7 +840,7 @@ async def undo_remove(
                     WHERE user_id = %s""",
                     (datetime.now(timezone.utc), user["user_id"])
                 )
-                await conn.commit()
+                
                 
                 # Log the reactivation
                 await cursor.execute(
@@ -885,7 +848,7 @@ async def undo_remove(
                     VALUES (%s, 'reactivate', %s)""",
                     (user["user_id"], ip_address)
                 )
-                await conn.commit()
+                
                 
                 log.info(action="account_reactivated_successfully", trace_info=ip_address, message=f"Account reactivated successfully for: {fullname}", secure=False)
                 
@@ -905,10 +868,6 @@ async def get_account_status(
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Check account status and validate session with enhanced security"""
-    # Test mode handling
-    if config.is_testing():
-        response, status = send_json_response("App in test mode", 200)
-        return JSONResponse(content=response, status_code=status)
     
     try:
         # Extract and validate device information
@@ -1019,7 +978,7 @@ async def get_account_status(
                     VALUES (%s, %s, 'check', %s)""",
                     (record["user_id"], device_id, ip_address)
                 )
-                await conn.commit()
+                
                 
                 log.info(action="account_check_successful", trace_info=ip_address, message=f"Account check successful for user: {record['user_id']}", secure=False)
                 

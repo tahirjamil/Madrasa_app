@@ -113,12 +113,6 @@ async def add_person(
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Add a new person to the system with comprehensive validation and security """
-    # Test mode handling
-    if config.is_testing():
-        response, status = send_json_response("Ignored because in test mode", 201)
-        response.update({"info": None, "user_id": None})
-        return JSONResponse(content=response, status_code=status)
-    
     try:
         # Use the provided madrasa_name or get from env
         madrasa_name = madrasa_name or get_env_var("MADRASA_NAME")

@@ -182,9 +182,6 @@ async def terms(request: Request):
 # async def info_admin(request: Request):
 
 #     # Thread-safe access to request log
-#     if config.is_testing():
-#         logs = []
-#     else:
 #         request_log = request.app.state.request_response_log
 #         request_log_lock = request.app.state.request_log_lock
 #         with request_log_lock:
@@ -196,8 +193,6 @@ async def terms(request: Request):
 # @handle_async_errors
 # async def info_data_admin(request: Request):
 
-#     if config.is_testing():
-#         return JSONResponse(content=[])
 #     # Thread-safe access to request log
 #     request_log = request.app.state.request_response_log
 #     request_log_lock = request.app.state.request_log_lock

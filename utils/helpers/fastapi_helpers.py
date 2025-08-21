@@ -7,7 +7,6 @@ from datetime import datetime
 import json
 from typing import Optional, Dict, Any, Callable, Tuple
 from functools import wraps
-import time
 from collections import defaultdict
 
 from fastapi import Request, HTTPException, Depends, Header
@@ -16,10 +15,12 @@ from pydantic import BaseModel, Field, field_validator
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_429_TOO_MANY_REQUESTS
 from starlette.requests import Request as StarletteRequest
 
+# Local Imports
 from config import config
 from .helpers import security_manager
 from .improved_functions import get_env_var
 from .logger import log
+from utils.keydb.keydb_utils import get_keydb_from_app
 
 
 # ─── API Key Authentication ───────────────────────────────────────────
@@ -47,9 +48,9 @@ class ClientInfo(BaseModel):
     """Client information model"""
     ip_address: str
     device_id: str
-    device_model: Optional[str] = "unknown"
-    device_os: Optional[str] = "unknown"
-    device_brand: Optional[str] = "unknown"
+    device_model: Optional[str] = None
+    device_os: Optional[str] = None
+    device_brand: Optional[str] = None
     api_key: Optional[str] = None
 
 
@@ -77,65 +78,40 @@ async def get_client_info(
 
 
 # ─── Rate Limiting ───────────────────────────────────────────
-# Simple in-memory rate limiter (consider using redis for production)
-rate_limit_storage: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"count": 0, "reset_time": 0})
-
 def rate_limit(max_requests: int = 10, window: int = 60):
-    """Rate limiting decorator for FastAPI routes"""
+    """Redis-based rate limiting decorator for FastAPI routes"""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(request: Request, *args, **kwargs):
-            # Get client identifier
-            client_id = request.headers.get("X-Forwarded-For", 
-                                          request.client.host if request.client else "unknown")
-            
-            current_time = time.time()
-            client_data = rate_limit_storage[client_id]
-            
-            # Reset counter if window expired
-            if current_time > client_data["reset_time"]:
-                client_data["count"] = 0
-                client_data["reset_time"] = current_time + window
-            
-            # Check rate limit
-            if client_data["count"] >= max_requests:
-                raise HTTPException(
-                    status_code=HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Rate limit exceeded. Please try again later."
-                )
-            
-            # Increment counter
-            client_data["count"] += 1
-            
-            # Call the original function
+            client_id = request.headers.get(
+                "X-Forwarded-For",
+                request.client.host if request.client else "unknown"
+            )
+
+            redis = get_keydb_from_app(request)  # your app-specific redis getter
+            if not redis:
+                # Fallback to no rate limiting if redis unavailable
+                return await func(request, *args, **kwargs)
+
+            key = f"rate_limit:{client_id}"
+            current_count = await redis.get(key)
+
+            if current_count is None:
+                # First request in this window
+                await redis.set(key, 1, ex=window)
+            else:
+                current_count = int(current_count)
+                if current_count >= max_requests:
+                    # Rate limit exceeded: abort request
+                    raise HTTPException(
+                        status_code=HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Rate limit exceeded. Please try again later."
+                    )
+                await redis.incr(key)
+
             return await func(request, *args, **kwargs)
-        
         return wrapper
     return decorator
-
-
-# ─── Error Handling ───────────────────────────────────────────
-def handle_async_errors(func: Callable) -> Callable:
-    """Error handling decorator for async routes"""
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        try:
-            return await func(*args, **kwargs)
-        except HTTPException:
-            # Re-raise HTTP exceptions
-            raise
-        except Exception as e:
-            log.error(
-                action=f"unhandled_error_{func.__name__}", 
-                trace_info="system", 
-                message=f"Unhandled error in {func.__name__}: {str(e)}",
-                secure=False
-            )
-            raise HTTPException(
-                status_code=500,
-                detail="Internal server error"
-            )
-    return wrapper
 
 
 # ─── Base Models for Common Request Patterns ───────────────────────────────────────────
@@ -165,7 +141,7 @@ class BaseAuthRequest(BaseModel):
         return v
 
 
-# ─── Device Validation Dependency ───────────────────────────────────────────
+# ─── Device Validation Dependency ─────────────────────────────────────────── # TODO: Unknown
 async def validate_device_dependency(client_info: ClientInfo = Depends(get_client_info)):
     """Validate device information"""
     # Import here to avoid circular imports
@@ -201,30 +177,10 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory="templates")
 
 # Add custom globals to templates
-def setup_template_globals(app):
+def setup_template_globals():
     """Setup custom globals for templates"""
-    def url_for(name: str, **path_params) -> str:
-        """Custom url_for that works with static files and routes"""
-        # For static files, create the URL directly
-        if name == "static":
-            filename = path_params.get("filename", "")
-            return f"/static/{filename}"
-        elif name == "uploads":
-            filename = path_params.get("filename", "")
-            return f"/uploads/{filename}"
-        
-        # For other routes (web routes)
-        else:
-            # Direct mapping for known routes
-            route_map = {
-                "home": "/",
-                "donate": "/donate",
-                "privacy": "/privacy",
-                "terms": "/terms",
-            }
-            return route_map.get(name, f"/{name}")
     
-    def get_flashed_messages(with_categories=False):
+    def get_flashed_messages():
         """FastAPI compatible flash messages - returns empty list for now"""
         # In FastAPI, flash messages are typically passed as template context
         # This is a placeholder that returns empty to prevent template errors
@@ -232,7 +188,6 @@ def setup_template_globals(app):
         return []
     
     # Add the functions as globals to the template environment
-    templates.env.globals["url_for"] = url_for
     templates.env.globals["get_flashed_messages"] = get_flashed_messages
     templates.env.globals.update({
     "home_path": "/",

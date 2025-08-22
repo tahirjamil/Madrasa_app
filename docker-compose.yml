@@ -4,6 +4,15 @@ services:
     build: .
     container_name: madrasa_app
     restart: unless-stopped
+    environment:
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
+      MYSQL_PORT: ${MYSQL_PORT}
+      KEYDB_HOST: ${KEYDB_HOST}
+      KEYDB_PORT: ${KEYDB_PORT}
+      KEYDB_PASSWORD: ${KEYDB_PASSWORD}
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
@@ -62,9 +71,9 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     expose:
-      - "3306"
+      - ${MYSQL_PORT}
     ports:
-      - "3306:3306" # Expose to host in development
+      - "${MYSQL_PORT}:${MYSQL_PORT}" # Expose to host in development
     volumes:
       - mysql_data:/var/lib/mysql
       - ./config/mysql:/docker-entrypoint-initdb.d:ro
@@ -87,9 +96,9 @@ services:
     container_name: madrasa_keydb
     restart: unless-stopped
     expose:
-      - "6379"
+      - ${KEYDB_PORT}
     ports:
-      - "6379:6379"
+      - "${KEYDB_PORT}:${KEYDB_PORT}"
     volumes:
       - keydb_data:/data
       - ./config/keydb/keydb.conf:/etc/keydb/keydb.conf:ro

@@ -16,7 +16,7 @@
       <div class="card h-100 shadow-sm option-card" role="button"
            data-title="bKash"
            data-url=""
-           data-qr="{{ request.url_for('static', filename='icons/bkash_qr.png') }}"
+           data-qr="{{ request.url_for('static', path='icons/bkash_qr.png') }}"
            data-info="+8801XXXXXXXXX"
            data-gateway="false">
         <div class="card-body text-center p-4">
@@ -49,7 +49,7 @@
     <div class="col-12 col-md-4">
       <div class="card h-100 shadow-sm option-card" role="button"
            data-title="Other (SSLCommerz)"
-           data-url="{{ request,url_for('api.process_payment') }}"
+           data-url="#"
            data-info="Use your card / mobile banking"
            data-gateway="true">
         <div class="card-body text-center p-4">

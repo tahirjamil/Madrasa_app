@@ -27,7 +27,7 @@ async def donate(request: Request):
 
 @web_routes.get('/privacy', response_class=HTMLResponse, name="privacy")
 @handle_async_errors
-async def privacy():
+async def privacy(request: Request):
     # Load contact info from environment variables
     contact_email = get_env_var('BUSINESS_EMAIL', '')
     contact_phone = get_env_var('BUSINESS_PHONE', '')
@@ -45,6 +45,7 @@ async def privacy():
         return templates.TemplateResponse(
         'error.html',
         {
+            "request": request,
             "error_title": "Privacy Policy Unavailable",
             "error_message": "The privacy policy is currently unavailable. Please try again later or contact support.",
             "contact_email": contact_email
@@ -56,6 +57,7 @@ async def privacy():
         return templates.TemplateResponse(
         'error.html',
         {
+            "request": request,
             "error_title": "Privacy Policy Error",
             "error_message": "There was an error loading the privacy policy. Please try again later or contact support.",
             "contact_email": contact_email
@@ -91,6 +93,7 @@ async def privacy():
     return templates.TemplateResponse(
         'privacy.html',
         {
+            "request": request,
             "introduction_html": introduction_html,
             "sections": parsed_sections,
             "effective_date": effective_date
@@ -115,6 +118,7 @@ async def terms(request: Request):
         return templates.TemplateResponse(
         'error.html',
         {
+            "request": request,
             "error_title": "Terms of Service Unavailable",
             "error_message": "The terms of service are currently unavailable. Please try again later or contact support.",
             "contact_email": contact_email
@@ -126,6 +130,7 @@ async def terms(request: Request):
         return templates.TemplateResponse(
         'error.html',
         {
+            "request": request,
             "error_title": "Terms of Service Error",
             "error_message": "There was an error loading the terms of service. Please try again later or contact support.",
             "contact_email": contact_email
@@ -159,6 +164,7 @@ async def terms(request: Request):
     return templates.TemplateResponse(
         'terms.html',
         {
+            "request": request,
             "introduction_html": introduction_html,
             "sections": parsed_sections,
             "effective_date": effective_date

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS global_translations (
                 updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-                INDEX idx_global_translations_context (context)
+                INDEX idx_global_translations_context (context),
                 INDEX idx_global_translations_table_name (table_name)
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS translations (
                 updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-                INDEX idx_global_translations_context (context)
+                INDEX idx_global_translations_context (context),
                 INDEX idx_global_translations_table_name (table_name)
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -51,31 +51,43 @@ services:
       interval: 30s
       start_period: 10s
 
-  # # MySQL Database
-  # mysql:
-  #   image: mysql:8.0
-  #   container_name: madrasa_mysql
-  #   restart: unless-stopped
-  #   expose:
-  #     - "3306"  # Only expose to internal network
-  #   volumes:
-  #     - mysql_data:/var/lib/mysql
-  #     - ./config/mysql:/docker-entrypoint-initdb.d:ro
-  #   networks:
-  #     - app_network
-  #   healthcheck:
-  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword"]
-  #     timeout: 10s
-  #     retries: 10
-  #     interval: 30s
-  #     start_period: 30s
-  #   command: --default-authentication-plugin=mysql_native_password
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: madrasa_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    expose:
+      - "3306"
+    ports:
+      - "3306:3306" # Expose to host in development
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./config/mysql:/docker-entrypoint-initdb.d:ro
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_ROOT_PASSWORD}"]
+      timeout: 10s
+      retries: 10
+      interval: 30s
+      start_period: 30s
+    command: >
+      --default-authentication-plugin=caching_sha2_password
+      --host-cache-size=0
+      --pid-file=/tmp/mysqld.pid
 
   # KeyDB for caching and session storage
   keydb:
     image: eqalpha/keydb:latest
     container_name: madrasa_keydb
     restart: unless-stopped
+    expose:
+      - "6379"
     ports:
       - "6379:6379"
     volumes:
@@ -90,6 +102,8 @@ services:
       retries: 5
       interval: 30s
       start_period: 10s
+    environment:
+      KEYDB_PASSWORD: ${KEYDB_PASSWORD}
 
   # OpenTelemetry Collector
   otel-collector:
@@ -99,6 +113,11 @@ services:
     command: ["--config", "/etc/otel-collector-config.yaml"]
     volumes:
       - ./config/otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    expose:
+      - "4317"
+      - "4318"
+      - "9464"
+      - "13133"
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP

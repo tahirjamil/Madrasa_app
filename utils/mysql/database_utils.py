@@ -61,6 +61,7 @@ def get_db_config() -> AiomysqlConnectConfig:
             "autocommit": autocommit,
             "charset": charset,
             "connect_timeout": timeout,
+            "auth_plugin": "caching_sha2_password",
         }
         return unix_cfg
 
@@ -74,6 +75,7 @@ def get_db_config() -> AiomysqlConnectConfig:
         "autocommit": autocommit,
         "charset": charset,
         "connect_timeout": timeout,
+        "auth_plugin": "caching_sha2_password",
     }
     return tcp_cfg
 
@@ -164,17 +166,14 @@ async def create_tables():
         raise
 
     try:
-        async with get_traced_db_cursor() as conn:
-            if conn is None:
+        async with get_traced_db_cursor() as cursor:
+            if cursor is None:
                 log.error(action="db_connection_failed", trace_info="system", message="Database connection failed during table creation", secure=False)
                 raise RuntimeError("Database connection failed during table creation")
 
             # Suppress MySQL warnings
             if aiomysql is not None:
-                async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.otel_utils import TracedCursorWrapper
-                    cursor = TracedCursorWrapper(_cursor)
-                    await cursor.execute("SET sql_notes = 0")
+                await cursor.execute("SET sql_notes = 0")
                     
 
             # Split the SQL content into individual statements
@@ -198,25 +197,19 @@ async def create_tables():
 
             # Execute each SQL statement
             if aiomysql is not None:
-                async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.otel_utils import TracedCursorWrapper
-                    cursor = TracedCursorWrapper(_cursor)
-                    for statement in sql_statements:
-                        if statement.strip():  # Skip empty statements
-                            try:
-                                await cursor.execute(statement)
-                            except Exception as e:
-                                # Log error but don't expose SQL statement details
-                                log.error(action="sql_statement_error", trace_info="system", message=f"Error executing SQL statement: {type(e).__name__}", secure=False)
-                                # Continue with other statements
-                                continue
+                for statement in sql_statements:
+                    if statement.strip():  # Skip empty statements
+                        try:
+                            await cursor.execute(statement)
+                        except Exception as e:
+                            # Log error but don't expose SQL statement details
+                            log.error(action="sql_statement_error", trace_info="system", message=f"Error executing SQL statement: {type(e).__name__}", secure=False)
+                            # Continue with other statements
+                            continue
 
             # Re-enable MySQL warnings
             if aiomysql is not None:
-                async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.otel_utils import TracedCursorWrapper
-                    cursor = TracedCursorWrapper(_cursor)
-                    await cursor.execute("SET sql_notes = 1")
+                await cursor.execute("SET sql_notes = 1")
                     
                 
         log.info(action="tables_created", trace_info="system", message="Database tables created successfully from create_tables.sql", secure=False)

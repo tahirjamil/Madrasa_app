@@ -261,7 +261,7 @@ async def read_and_recreate_request(request: Request, max_bytes: Optional[int] =
     if max_bytes <= 0:
         max_bytes = MAX_JSON_BODY
 
-    log.info(action="Recreate_request", trace_info="system", message=f"using max_bytes={max_bytes}, Content-Length={request.headers.get("content-length")}", secure=False)
+    log.info(action="Recreate_request", trace_info="system", message=f"using max_bytes={max_bytes}, Content-Length={request.headers.get('content-length')}", secure=False)
 
     # cheap Content-Length check
     if not _content_length_ok(request, max_bytes):

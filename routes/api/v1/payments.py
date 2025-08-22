@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 
 # Local imports
 from utils.helpers.improved_functions import get_env_var, send_json_response
-from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors
+from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency
 from routes.api import api
-from utils.mysql.database_utils import get_db_connection
-from utils.helpers.helpers import calculate_fees, format_phone_number, cache_with_invalidation, validate_madrasa_name
+from utils.mysql.database_utils import get_traced_db_cursor
+from utils.helpers.helpers import calculate_fees, format_phone_number, cache_with_invalidation, validate_madrasa_name, handle_async_errors
 from config import config
 from utils.helpers.logger import log
 
@@ -47,14 +47,9 @@ async def payments(
         response, status = send_json_response("Invalid configuration", 500)
         return JSONResponse(content=response, status_code=status)
 
-    formatted_phone, msg = format_phone_number(phone)
-    if not formatted_phone:
-        response, status = send_json_response(msg, 400)
-        return JSONResponse(content=response, status_code=status)
+    formatted_phone = format_phone_number(phone)
 
-
-    async with get_db_connection() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
+    async with get_traced_db_cursor() as cursor:
             await cursor.execute(f"""
             SELECT p.class, p.gender, pay.special_food, pay.reduced_fee,
                 pay.food, pay.due_months AS month, pay.tax, u.phone, u.fullname
@@ -105,14 +100,9 @@ async def transaction_history(
         response, status = send_json_response("Invalid configuration", 500)
         return JSONResponse(content=response, status_code=status)
 
-    formatted_phone, msg = format_phone_number(phone)
-    if not formatted_phone:
-        response, status = send_json_response(msg, 400)
-        return JSONResponse(content=response, status_code=status)
+    formatted_phone = format_phone_number(phone)
 
-    async with get_db_connection() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            
+    async with get_traced_db_cursor() as cursor:
             # Get user_id first
             await cursor.execute(
                 "SELECT user_id FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
@@ -187,8 +177,7 @@ async def transaction_history(
 #             return JSONResponse(content=response, status_code=status)
         
 #         # Start database transaction
-#         async with get_db_connection() as conn:
-#             async with conn.cursor(aiomysql.DictCursor) as cursor:
+#         async with get_traced_db_cursor() as cursor:
 #                 try:
 #                     # Begin transaction
 #                     await conn.begin()

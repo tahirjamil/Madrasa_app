@@ -29,7 +29,8 @@ def send_json_response(
     message: str,
     status_code: int,
     details: Optional[str] = None,
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None,
+    extra_fields: Optional[Dict[str, Any]] = None
 ) -> Tuple[Dict[str, Any], int]:
     """Send a JSON response with a status code."""
     success: bool = 200 <= status_code < 300
@@ -42,4 +43,6 @@ def send_json_response(
         response["details"] = details
     if data is not None:
         response["data"] = data
+    if extra_fields is not None:
+        response.update(extra_fields)
     return response, status_code

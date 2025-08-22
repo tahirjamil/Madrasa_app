@@ -59,11 +59,8 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
         return
     
     try:
-        from utils.mysql.database_utils import get_db_connection
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.otel_utils import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
+        from utils.mysql.database_utils import get_traced_db_cursor
+        async with get_traced_db_cursor() as cursor:
                 # Prepare metadata
                 log_metadata = metadata or {}
                 log_metadata.update({

@@ -1,15 +1,9 @@
 import os
 import asyncio
-from typing import Optional, Any, Dict, cast
+import aiomysql
+from typing import Optional, Any, Dict
 from contextlib import asynccontextmanager
 from utils.helpers.improved_functions import get_project_root
-
-try:
-    import aiomysql
-except ImportError:  # pragma: no cover
-    aiomysql = None
-    Connection = None
-    Pool = None
 
 from utils.helpers.logger import log
 
@@ -134,17 +128,19 @@ async def close_db_pool():
         log.info(action="db_pool_closed", trace_info="system", message="Database connection pool closed", secure=False)
 
 @asynccontextmanager
-async def get_db_connection():
+async def get_traced_db_cursor():
     """Get a database connection from the pool (context manager)"""
     pool = await get_db_pool()
     conn = None
     try:
+        from utils.otel.otel_utils import TracedCursorWrapper
         conn = await pool.acquire()
-        yield conn
+        async with conn.cursor(aiomysql.DictCursor) as _cursor:
+            traced_cursor = TracedCursorWrapper(_cursor)
+            yield traced_cursor
     finally:
         if conn:
             pool.release(conn)
-
 
 
 # Table Creation
@@ -168,7 +164,7 @@ async def create_tables():
         raise
 
     try:
-        async with get_db_connection() as conn:
+        async with get_traced_db_cursor() as conn:
             if conn is None:
                 log.error(action="db_connection_failed", trace_info="system", message="Database connection failed during table creation", secure=False)
                 raise RuntimeError("Database connection failed during table creation")

@@ -6,7 +6,6 @@ import uuid
 import datetime as dt
 from hmac import compare_digest
 import asyncio, json, smtplib, time
-from contextlib import asynccontextmanager
 from datetime import datetime
 from email.mime.text import MIMEText
 from functools import wraps
@@ -20,6 +19,7 @@ from cryptography.fernet import Fernet
 # Local Imports
 from config import config
 from utils.helpers.logger import log
+from utils.mysql.database_utils import get_traced_db_cursor
 
 load_dotenv()
 
@@ -416,13 +416,6 @@ async def send_sms(phone: str, msg: str) -> bool:
 
 # ─── Database Functions ──────────────────────────────────────────────────────
 
-@asynccontextmanager
-async def get_db_context():
-    """Database connection context manager"""
-    from utils.mysql.database_utils import get_db_connection
-    async with get_db_connection() as conn:
-        yield conn
-
 async def get_email(fullname: str, phone: str) -> Optional[str]:
     """Get user email with caching"""
     cache_key = f"email:{fullname}:{phone}"
@@ -430,57 +423,69 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
     if cached_email:
         return cached_email
     
-    async with get_db_context() as conn:
+    async with get_traced_db_cursor() as cursor:
         try:
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.otel_utils import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
-                await cursor.execute(
-                    "SELECT email FROM global.users WHERE fullname = %s AND phone = %s",
-                    (fullname, phone)
-                )
-                result = await cursor.fetchone()
-                
-                email = result['email'] if result else None
-                if email:
-                    await set_cached_data(cache_key, email, ttl=3600)  # Cache for 1 hour
-                return email
+            await cursor.execute(
+                "SELECT email FROM global.users WHERE fullname = %s AND phone = %s",
+                (fullname, phone)
+            )
+            result = await cursor.fetchone()
+            
+            email = result['email'] if result else None
+            if email:
+                await set_cached_data(cache_key, email, ttl=3600)  # Cache for 1 hour
+            return email
         except Exception as e:
             log.critical(action="db_error with get_email", trace_info=phone, message=str(e), secure=True)
             return None
 
-async def get_id(formatted_phone: str, fullname: str, table_name: str, madrasa_name: str | None= None) -> Optional[int]:
+async def get_id(formatted_phone: str, fullname: str, madrasa_name: str) -> Optional[int]:
     """Get user ID with caching"""
-    cache_key = f"user_id:{formatted_phone}:{fullname}:{table_name}"
+    cache_key = f"user_id:{formatted_phone}:{fullname}:{madrasa_name}"
     cached_id = await get_cached_data(cache_key)
     if cached_id:
         return cached_id
-
-    if table_name == 'users':
-        table = "global.users"
-    else:
-        table = f"{madrasa_name}.{table_name}"
     
-    async with get_db_context() as conn:
+    async with get_traced_db_cursor() as cursor:
         try:
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.otel_utils import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
-                await cursor.execute(
-                    f"SELECT user_id FROM {table} WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+            await cursor.execute(
+                f"SELECT user_id FROM {madrasa_name}.peoples WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                     (formatted_phone, fullname)
                 )
-                result = await cursor.fetchone()
-                
-                user_id = result['user_id'] if result else None
-                if user_id:
-                    await set_cached_data(cache_key, user_id, ttl=3600)  # Cache for 1 hour
-                return user_id
+            result = await cursor.fetchone()
+            
+            user_id = result['user_id'] if result else None
+            if user_id:
+                await set_cached_data(cache_key, user_id, ttl=3600)  # Cache for 1 hour
+            return user_id
         except Exception as e:
             log.critical(action="get_id_error", trace_info=formatted_phone,message=str(e), secure=True)
             return None
 
-async def upsert_translation(conn, translation_text: str, madrasa_name: str, context: str, table_name: str, 
+async def get_global_id(formatted_phone: str, fullname: str) -> Optional[int]:
+    """Get user ID with caching"""
+    cache_key = f"user_id:{formatted_phone}:{fullname}"
+    cached_id = await get_cached_data(cache_key)
+    if cached_id:
+        return cached_id
+    
+    async with get_traced_db_cursor() as cursor:
+        try:
+            await cursor.execute(
+                "SELECT user_id FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    (formatted_phone, fullname)
+                )
+            result = await cursor.fetchone()
+            
+            user_id = result['user_id'] if result else None
+            if user_id:
+                await set_cached_data(cache_key, user_id, ttl=3600)  # Cache for 1 hour
+            return user_id
+        except Exception as e:
+            log.critical(action="get_global_id_error", trace_info=formatted_phone,message=str(e), secure=True)
+            return None
+
+async def upsert_translation(translation_text: str, madrasa_name: str, context: str, table_name: str, 
                              bn_text: str | None= None, ar_text: str | None= None) -> str | None:
     """
     Insert or update a translation entry in the global.translations table
@@ -491,9 +496,7 @@ async def upsert_translation(conn, translation_text: str, madrasa_name: str, con
         
     translation_text = translation_text.strip()
     
-    async with conn.cursor(aiomysql.DictCursor) as _cursor:
-        from utils.otel.otel_utils import TracedCursorWrapper
-        cursor = TracedCursorWrapper(_cursor)
+    async with get_traced_db_cursor() as cursor:
         # Upsert translation entry
         sql = f"""
             INSERT INTO {madrasa_name}.translations (translation_text, bn_text, ar_text, context, table_name)
@@ -507,7 +510,7 @@ async def upsert_translation(conn, translation_text: str, madrasa_name: str, con
         await cursor.execute(sql, (translation_text, bn_text, ar_text, context, table_name))
         return translation_text
 
-async def process_multilingual_field(conn, field_base: str, data: dict, madrasa_name: str, context: str, table_name: str) -> Optional[str]:
+async def process_multilingual_field(field_base: str, data: dict, madrasa_name: str, context: str, table_name: str) -> Optional[str]:
     """
     Process multilingual field data and insert into translations table
     Returns the translation_text to use as foreign key reference
@@ -521,21 +524,21 @@ async def process_multilingual_field(conn, field_base: str, data: dict, madrasa_
         return None
         
     translation_text = translation_text.strip()
-    return await upsert_translation(conn=conn, translation_text=translation_text, bn_text=bn_text, ar_text=ar_text, 
+    return await upsert_translation(translation_text=translation_text, bn_text=bn_text, ar_text=ar_text, 
                                     madrasa_name=madrasa_name, context=context, table_name=table_name)
 
 async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str, phone: str) -> None:
     """Enhanced person insertion with translation handling and error handling"""
     fields = {k: v.strip() if isinstance(v, str) else v for k, v in fields.items()}
     
-    async with get_db_context() as conn:
+    async with get_traced_db_cursor() as cursor:
         try:
             # Handle translations first for foreign key fields
             translation_fields = {}
             
             # Process name translations
             if any(k.startswith('name_') for k in fields.keys()):
-                name_translation = await process_multilingual_field(conn=conn, field_base='name', data=fields, madrasa_name=madrasa_name, context="name", table_name="people")
+                name_translation = await process_multilingual_field(field_base='name', data=fields, madrasa_name=madrasa_name, context="name", table_name="people")
                 if name_translation:
                     translation_fields['name'] = name_translation
                     # Remove individual language fields
@@ -543,7 +546,7 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             
             # Process father name translations  
             if any(k.startswith('father_') for k in fields.keys()):
-                father_translation = await process_multilingual_field(conn=conn, field_base='father', data=fields, madrasa_name=madrasa_name, context="father", table_name="people")
+                father_translation = await process_multilingual_field(field_base='father', data=fields, madrasa_name=madrasa_name, context="father", table_name="people")
                 if father_translation:
                     translation_fields['father_name'] = father_translation
                     # Remove individual language fields
@@ -551,7 +554,7 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             
             # Process mother name translations
             if any(k.startswith('mother_') for k in fields.keys()):
-                mother_translation = await process_multilingual_field(conn=conn, field_base='mother', data=fields, madrasa_name=madrasa_name, context="mother", table_name="people")
+                mother_translation = await process_multilingual_field(field_base='mother', data=fields, madrasa_name=madrasa_name, context="mother", table_name="people")
                 if mother_translation:
                     translation_fields['mother_name'] = mother_translation
                     # Remove individual language fields
@@ -560,21 +563,21 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             # Handle address field - use present_address as the main address
             if 'present_address' in fields and fields['present_address']:
                 address_text = fields['present_address'].strip().lower()
-                address_translation = await upsert_translation(conn=conn, translation_text=address_text, madrasa_name=madrasa_name, context="present_address", table_name="people")
+                address_translation = await upsert_translation(translation_text=address_text, madrasa_name=madrasa_name, context="present_address", table_name="people")
                 if address_translation:
                     translation_fields['present_address'] = address_translation
 
             # Handle address field - use present_address as the main address
             if 'permanent_address' in fields and fields['permanent_address']:
                 address_text = fields['permanent_address'].strip().lower()
-                address_translation = await upsert_translation(conn=conn, translation_text=address_text, madrasa_name=madrasa_name, context="permanent_address", table_name="people")
+                address_translation = await upsert_translation(translation_text=address_text, madrasa_name=madrasa_name, context="permanent_address", table_name="people")
                 if address_translation:
                     translation_fields['permanent_address'] = address_translation
 
             # Handle address field - use present_address as the main address
             if 'address' in fields and fields['address']:
                 address_text = fields['address'].strip().lower()
-                address_translation = await upsert_translation(conn=conn, translation_text=address_text, madrasa_name=madrasa_name, context="address", table_name="people")
+                address_translation = await upsert_translation(translation_text=address_text, madrasa_name=madrasa_name, context="address", table_name="people")
                 if address_translation:
                     translation_fields['address'] = address_translation
             
@@ -591,9 +594,8 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                 else:
                     peoples_fields[key] = value
             
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.otel_utils import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
+            async with get_traced_db_cursor() as cursor:
+                
                 # Insert into acc_types table FIRST if user_id exists
                 if 'user_id' in peoples_fields and peoples_fields['user_id']:
                     user_id = peoples_fields['user_id']
@@ -644,7 +646,6 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
             
             log.info(action="insert_success", trace_info=phone, message="Upserted into peoples with translations", secure=True)
         except Exception as e:
-            await conn.rollback()
             log.critical(action="db_insert_error", trace_info=phone,message=str(e), secure=True)
             raise
 
@@ -653,22 +654,19 @@ async def delete_users(madrasa_name:Union[str, list[str]] | None= None, uid = No
     if not madrasa_name:
         madrasa_name = config.MADRASA_NAMES_LIST
     for madrasa in madrasa_name if isinstance(madrasa_name, list) else [madrasa_name]:
-        async with get_db_context() as conn:
+        async with get_traced_db_cursor() as cursor:
             try:
-                async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.otel_utils import TracedCursorWrapper
-                    cursor = TracedCursorWrapper(_cursor)
-                    if not uid and not acc_type:
-                        await cursor.execute(f"""
-                            SELECT u.user_id, p.acc_type 
-                            FROM global.users u
-                            JOIN {madrasa}.peoples p ON u.user_id = p.user_id
-                            WHERE u.scheduled_deletion_at IS NOT NULL
-                            AND u.scheduled_deletion_at < NOW()
-                        """)
-                        users_to_delete = await cursor.fetchall()
-                    else:
-                        users_to_delete = [{'user_id': uid, 'acc_type': acc_type}]
+                if not uid and not acc_type:
+                    await cursor.execute(f"""
+                        SELECT u.user_id, p.acc_type 
+                        FROM global.users u
+                        JOIN {madrasa}.peoples p ON u.user_id = p.user_id
+                        WHERE u.scheduled_deletion_at IS NOT NULL
+                        AND u.scheduled_deletion_at < NOW()
+                    """)
+                    users_to_delete = await cursor.fetchall()
+                else:
+                    users_to_delete = [{'user_id': uid, 'acc_type': acc_type}]
                 
                 for user in users_to_delete:
                     uid = user["user_id"]
@@ -758,10 +756,9 @@ def calculate_fees(class_name: str, gender: str, special_food: bool = False,
 async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and health"""
     
-    async with get_db_context() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT 1")
-            return {"status": "healthy", "message": "Database connection successful"}
+    async with get_traced_db_cursor() as cursor:
+        await cursor.execute("SELECT 1")
+        return {"status": "healthy", "message": "Database connection successful"}
         
 async def check_keydb_health(request: Request | None= None) -> Dict[str, Any]:
     """Check KeyDB health"""
@@ -1027,14 +1024,14 @@ def generate_code(code_length: Optional[int] = None) -> int:
     code_length = code_length or config.CODE_LENGTH
     return random.randint(10**(code_length-1), 10**code_length - 1)
 
-async def check_code(user_code: int, phone: str) -> Tuple[bool, str]:
+async def check_code(user_code: int, phone: str) -> bool:
     """Enhanced code verification with security features"""
     from utils.mysql.database_utils import get_db_connection
     
     try:
-        async with get_db_connection() as conn:
+        async with get_traced_db_cursor() as conn:
             async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.otel_utils import TracedCursorWrapper
+                
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute("""
                     SELECT code, created_at FROM global.verifications
@@ -1045,7 +1042,7 @@ async def check_code(user_code: int, phone: str) -> Tuple[bool, str]:
                 result = await cursor.fetchone()
                 
                 if not result:
-                    return False, "No verification code found"
+                    raise AppError("No verification code found", error_code="400")
                 
                 db_code = result["code"]
                 created_at = result["created_at"]
@@ -1053,27 +1050,27 @@ async def check_code(user_code: int, phone: str) -> Tuple[bool, str]:
                 
                 # Check expiration
                 if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
-                    return False, "Verification code expired"
+                    raise AppError("Verification code expired", error_code="400")
                 
                 # Constant-time comparison
                 if int(user_code) == db_code:
                     await delete_code()
-                    return True, ""
+                    return True
                 else:
                     log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
-                    return False, "Verification code mismatch"
+                    raise AppError("Verification code mismatch", error_code="400")
     
     except Exception as e:
         log.critical(action="verification_error", trace_info=phone, message=str(e), secure=True)
-        return False, f"Error: {str(e)}"
+        raise AppError(f"Error: {str(e)}", error_code="500")
 
 async def delete_code() -> None:
     """Delete expired verification codes"""
     from utils.mysql.database_utils import get_db_connection
     
-    async with get_db_connection() as conn:
+    async with get_traced_db_cursor() as conn:
         async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.otel_utils import TracedCursorWrapper
+            
             cursor = TracedCursorWrapper(_cursor)
             await cursor.execute("""
                 DELETE FROM global.verifications
@@ -1082,10 +1079,10 @@ async def delete_code() -> None:
 
 # ─── Validation Functions ────────────────────────────────────────────────────
 
-def format_phone_number(phone: str) -> Tuple[Optional[str], str]:
+def format_phone_number(phone: str) -> str:
     """Format and validate phone number to international E.164 format"""
     if not phone:
-        return None, "Phone number is required"
+        raise AppError("Phone number is required", error_code="400")
     phone = phone.strip().replace(" ", "").replace("-", "")
 
     # Normalize BD formats
@@ -1094,26 +1091,26 @@ def format_phone_number(phone: str) -> Tuple[Optional[str], str]:
     elif phone.startswith("01") and len(phone) == 11:
         phone = "+88" + phone
     elif not phone.startswith("+"):
-        return None, "Phone number must start with + or be a valid local format"
+        raise AppError("Phone number must start with + or be a valid local format", error_code="400")
 
     try:
         number = phonenumbers.parse(phone, None)
         if not phonenumbers.is_valid_number(number):
             log.error(action="invalid_phone_number", trace_info=phone, message="Invalid phone number format", secure=True)
-            return None, "Invalid phone number"
+            raise AppError("Invalid phone number", error_code="400")
 
         number_type = phonenumbers.number_type(number)
         if number_type not in [phonenumbers.PhoneNumberType.MOBILE, phonenumbers.PhoneNumberType.FIXED_LINE_OR_MOBILE]:
-            return None, "Phone number must be a mobile or landline number"
+            raise AppError("Phone number must be a mobile or landline number", error_code="400")
         formatted = phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)
-        return formatted, ""
+        return formatted
 
     except phonenumbers.NumberParseException:
         log.error(action="invalid_phone_number", trace_info=phone, message="Invalid phone number format", secure=True)
-        return None, "Invalid phone number format"
+        raise AppError("Invalid phone number format", error_code="400")
 
 
-def validate_fullname(fullname: str) -> Tuple[bool, str]:
+def validate_fullname(fullname: str) -> bool:
     """Enhanced fullname validation with comprehensive checks"""
     # Allow letters, spaces, apostrophes, and hyphens
     _FULLNAME_RE = re.compile(
@@ -1124,12 +1121,12 @@ def validate_fullname(fullname: str) -> Tuple[bool, str]:
     )
     fullname = fullname.strip()
     if re.search(r'\d', fullname):
-        return False, "Fullname shouldn't contain digits"
+        raise AppError("Fullname shouldn't contain digits", error_code="400")
     if re.search(r'[!@#$%^&*()_+=-]', fullname):
-        return False, "Fullname shouldn't contain special characters"
+        raise AppError("Fullname shouldn't contain special characters", error_code="400")
     if not _FULLNAME_RE.match(fullname):
-        return False, "Fullname must be words starting with uppercase, followed by lowercase letters, apostrophes, or hyphens"
-    return True, ""
+        raise AppError("Fullname must be words starting with uppercase, followed by lowercase letters, apostrophes, or hyphens", error_code="400")
+    return True
 
 async def validate_device_info(device_id: str, ip_address: str, device_brand: str, device_model: str, device_os: str) -> Tuple[bool, str]:
     """Validate device information for security"""
@@ -1228,52 +1225,52 @@ security_manager = SecurityManager()
 
 # ─── Advanced Validation Functions ──────────────────────────────────────────
 
-def validate_email(email: str) -> Tuple[bool, str]:
+def validate_email(email: str) -> bool:
     """Validate email format with comprehensive checks"""
     if not email:
-        return False, "Email is required"
+        raise AppError("Email is required", error_code="400")
     
     # Basic email pattern
     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(email_pattern, email):
-        return False, "Invalid email format"
+        raise AppError("Invalid email format", error_code="400")
     # Disallow consecutive dots and leading/trailing dots in local or domain part
     local, _, domain = email.partition('@')
     if '..' in local or '..' in domain:
-        return False, "Email cannot contain consecutive dots"
+        raise AppError("Email cannot contain consecutive dots", error_code="400")
     if local.startswith('.') or local.endswith('.') or domain.startswith('.') or domain.endswith('.'):
-        return False, "Email cannot start or end with a dot"
+        raise AppError("Email cannot start or end with a dot", error_code="400")
     # Check for suspicious patterns
     if security_manager.detect_xss(email):
-        return False, "Email contains suspicious content"
+        raise AppError("Email contains suspicious content", error_code="400")
     
-    return True, ""
+    return True
 
-def validate_password_strength(password: str) -> Tuple[bool, str]:
+def validate_password_strength(password: str) -> bool:
     """Enhanced password strength validation"""
     password = security_manager.sanitize_inputs(password)
     
     if len(password) < config.PASSWORD_MIN_LENGTH:
-        return False, f"Password must be at least {config.PASSWORD_MIN_LENGTH} characters long"
+        raise AppError(f"Password must be at least {config.PASSWORD_MIN_LENGTH} characters long", error_code="400")
     
     if not re.search(r'[A-Z]', password):
-        return False, "Password must contain at least one uppercase letter"
+        raise AppError("Password must contain at least one uppercase letter", error_code="400")
     
     if not re.search(r'[a-z]', password):
-        return False, "Password must contain at least one lowercase letter"
+        raise AppError("Password must contain at least one lowercase letter", error_code="400")
     
     if not re.search(r'\d', password):
-        return False, "Password must contain at least one digit"
+        raise AppError("Password must contain at least one digit", error_code="400")
     
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-        return False, "Password must contain at least one special character"
+        raise AppError("Password must contain at least one special character", error_code="400")
     
     # Check for common weak passwords
     weak_passwords = ['password', '123456', 'qwerty', 'admin', 'user']
     if password.lower() in weak_passwords:
-        return False, "Password is too common"
+        raise AppError("Password is too common", error_code="400")
     
-    return True, ""
+    return True
 
 
 async def validate_file_upload(file, allowed_extensions: List[str], request: Request, max_size: int | None= None) -> Tuple[bool, str]:
@@ -1311,14 +1308,14 @@ async def validate_file_upload(file, allowed_extensions: List[str], request: Req
     
     return True, ""
 
-# ──── User Login Limits ──────────────────────────────────────────────────── # TODO: Check full
-async def check_device_limit(device_id: str, ip_address: str, request: Request | None= None) -> Tuple[bool, str]:
+# ──── User Login Limits ────────────────────────────────────────────────────
+async def validate_device_limit(device_id: str, ip_address: str, request: Request | None= None) -> bool:
     """Check if user has reached device limit"""
     from utils.keydb.keydb_utils import get_keydb_from_app    
     pool = get_keydb_from_app(request)
     if not pool:
         # If KeyDB not available, allow by default (or raise an error if strict)
-        return True, ""
+        return True
 
     # Construct a key for this device + IP
     cache_key = f"device_limit:{device_id}:{ip_address}"
@@ -1330,12 +1327,13 @@ async def check_device_limit(device_id: str, ip_address: str, request: Request |
         await pool.expire(cache_key, config.DEVICE_REGISTRATION_WINDOW)
 
     if attempts > config.MAX_DEVICES_PER_USER:
-        return False, f"Maximum devices ({config.MAX_DEVICES_PER_USER}) reached. Please remove an existing device to add this one."
+        log.critical(action="device_limit_exceeded", trace_info=ip_address, message=f"Maximum devices ({config.MAX_DEVICES_PER_USER}) reached for device: {device_id}", secure=False)
+        raise AppError(f"Maximum devices ({config.MAX_DEVICES_PER_USER}) reached. Please remove an existing device to add this one.", error_code="400")
 
-    return True, ""
+    return True
             
 
-async def check_login_attempts(formatted_phone: str, fullname: str, request: Optional[Request] = None) -> Tuple[bool, int]:
+async def validate_login_attempts(formatted_phone: str, fullname: str, request: Optional[Request] = None) -> bool:
     """
     Check login attempts in KeyDB and return (allowed, remaining).
     """
@@ -1343,16 +1341,16 @@ async def check_login_attempts(formatted_phone: str, fullname: str, request: Opt
     pool = get_keydb_from_app(request)
     if not pool:
         # KeyDB unavailable, allow login
-        return True, config.AUTH_ATTEMPTS_LIMIT
+        return True
 
     raw = await pool.get(f"login_attempts:{formatted_phone}:{fullname}")
     attempts = int(raw or 0)
 
-    allowed = attempts < config.AUTH_ATTEMPTS_LIMIT
-    remaining = max(config.AUTH_ATTEMPTS_LIMIT - attempts, 0)
+    if attempts >= config.AUTH_ATTEMPTS_LIMIT:
+        log.critical(action="login_attempts_exceeded", trace_info=formatted_phone, message=f"Login attempts exceeded for: {fullname}", secure=True)
+        raise AppError(f"Login attempts exceeded for: {fullname}", error_code="400")
 
-    return allowed, remaining
-
+    return True
 
 async def record_login_attempt(
     formatted_phone: str, fullname: str, success: bool, request: Optional[Request] = None
@@ -1519,9 +1517,8 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
 
 # ─── MADRASA NAME VALIDATION ───────────────────────────────────────────────────
 
-def validate_madrasa_name(madrasa_name: str, trace_info: str) -> bool:
+def validate_madrasa_name(madrasa_name: str, trace_info: str, secure: bool = False) -> None:
     """Validate madrasa name"""
     if madrasa_name not in config.MADRASA_NAMES_LIST:
-        log.critical(action="invalid_madrasa_name", trace_info=trace_info, message=f"Invalid madrasa name configured: {madrasa_name}", secure=False)
-        return False
-    return True
+        log.critical(action="invalid_madrasa_name", trace_info=trace_info, message=f"Invalid madrasa name configured: {madrasa_name}", secure=secure)
+        raise AppError(f"Invalid madrasa name configured: {madrasa_name}", error_code="400")

@@ -11,13 +11,13 @@ from collections import defaultdict
 
 from fastapi import Request, HTTPException, Depends, Header
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_429_TOO_MANY_REQUESTS
 from starlette.requests import Request as StarletteRequest
 
 # Local Imports
 from config import config
-from .helpers import security_manager
+from .helpers import security_manager, validate_madrasa_name, format_phone_number
 from .improved_functions import get_env_var
 from .logger import log
 from utils.keydb.keydb_utils import get_keydb_from_app
@@ -166,6 +166,18 @@ class BaseAuthRequest(BaseModel):
             raise ValueError(f"Invalid input detected in {info.field_name}")
         return v
 
+    # phone formatting
+    @field_validator('phone')
+    @classmethod
+    def format_phone(cls, v):
+        return format_phone_number(v)
+
+    # madrasa name validation
+    @model_validator(mode="after")
+    def validate_madrasa_with_phone(self):
+        if self.madrasa_name:
+            validate_madrasa_name(self.madrasa_name, self.phone, secure=True)
+        return self
 
 # ─── Device Validation Dependency ─────────────────────────────────────────── # TODO: Unknown
 async def validate_device_dependency(request: Request, client_info: ClientInfo = Depends(get_client_info)):

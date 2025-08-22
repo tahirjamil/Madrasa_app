@@ -12,17 +12,16 @@ from pydantic import validator
 from werkzeug.utils import secure_filename
 
 from utils.helpers.improved_functions import get_env_var, send_json_response
-from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, handle_async_errors, rate_limit
+from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_device_dependency, rate_limit
 
 # Local imports
 from routes.api import api
-from utils.mysql.database_utils import get_db_connection
+from utils.mysql.database_utils import get_traced_db_cursor
 from config import config
 from utils.helpers.helpers import (
-    format_phone_number, get_client_info as get_client_info_helper, get_id, insert_person, get_cache_key,
-    cache_with_invalidation, security_manager, set_cached_data, get_cached_data,
-    encrypt_sensitive_data, hash_sensitive_data,
-    validate_file_upload, validate_fullname, validate_madrasa_name, validate_request_origin
+    format_phone_number, get_id, insert_person, get_cache_key,
+    cache_with_invalidation, security_manager, set_cached_data, get_cached_data, handle_async_errors,
+    encrypt_sensitive_data, hash_sensitive_data, validate_fullname, validate_madrasa_name, validate_request_origin
 )
 from utils.helpers.logger import log
 
@@ -149,10 +148,7 @@ async def add_person(
             return JSONResponse(content=response, status_code=status)
         
         # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone_input)
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
-            return JSONResponse(content=response, status_code=status)
+        formatted_phone = format_phone_number(phone_input)
         
         # Normalize account type
         if not acc_type_input or not acc_type_input.endswith('s'):
@@ -364,10 +360,7 @@ async def add_person(
         await insert_person(madrasa_name, fields, acc_type_input, formatted_phone)
         
         # Get image path for response
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                from utils.otel.otel_utils import TracedCursorWrapper
-                cursor = TracedCursorWrapper(_cursor)
+        async with get_traced_db_cursor() as cursor:
                 await cursor.execute(
                     f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
                     (fullname.lower(), formatted_phone)
@@ -392,7 +385,7 @@ async def add_person(
 @handle_async_errors
 async def get_info(request: Request) -> JSONResponse:
     """Get member information with caching and incremental updates"""
-    async with get_db_connection() as conn:
+    async with get_traced_db_cursor() as cursor:
         # Get request data from request body
         try:
             data = await request.json()
@@ -456,13 +449,9 @@ async def get_info(request: Request) -> JSONResponse:
         
         if cached_members is not None:
             return JSONResponse(content=cached_members, status_code=200)
-        
-        
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.otel_utils import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute(sql, params)
-            members = await cursor.fetchall()
+
+        await cursor.execute(sql, params)
+        members = await cursor.fetchall()
         
         # Cache the result
         result_data = {
@@ -539,10 +528,7 @@ async def get_routine(request: Request) -> JSONResponse:
     if cached_routines is not None:
         return JSONResponse(content=cached_routines, status_code=200)
     
-    async with get_db_connection() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.otel_utils import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
+    async with get_traced_db_cursor() as cursor:
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
     
@@ -612,12 +598,9 @@ async def events(request: Request) -> JSONResponse:
     if cached_events is not None:
         return JSONResponse(content=cached_events, status_code=200)
     
-    async with get_db_connection() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.otel_utils import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            await cursor.execute(sql, params)
-            rows = await cursor.fetchall()
+    async with get_traced_db_cursor() as cursor:
+        await cursor.execute(sql, params)
+        rows = await cursor.fetchall()
         
         # Process events with date classification
         now_dhaka = datetime.now(DHAKA)
@@ -718,10 +701,7 @@ async def get_exams(request: Request) -> JSONResponse:
     if cached_exams is not None:
         return JSONResponse(content=cached_exams, status_code=200)
     
-    async with get_db_connection() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            from utils.otel.otel_utils import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
+    async with get_traced_db_cursor() as cursor:
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
         

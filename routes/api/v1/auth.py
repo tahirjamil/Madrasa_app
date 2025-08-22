@@ -5,22 +5,22 @@ import datetime as dt
 from typing import Any, Dict, Tuple, Optional
 
 import aiomysql
-from fastapi import HTTPException, Request, Depends
+from fastapi import Request, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import field_validator
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from utils.helpers.improved_functions import get_env_var, send_json_response, get_project_root
+from utils.helpers.improved_functions import get_env_var, send_json_response
 
 # Local imports
 from routes.api import api
-from utils.mysql.database_utils import get_db_connection
+from utils.mysql.database_utils import get_traced_db_cursor
 from config import config
 from utils.helpers.helpers import (
-    check_code, check_device_limit, check_login_attempts, format_phone_number, generate_code, get_id, 
+    check_code, get_global_id, validate_device_limit, format_phone_number, generate_code, get_id, 
     record_login_attempt, send_sms, send_email, 
     get_email, encrypt_sensitive_data, hash_sensitive_data,
-    handle_async_errors, validate_email, validate_fullname, validate_password_strength, validate_madrasa_name,
+    validate_email, validate_login_attempts, validate_password_strength,
     handle_async_errors
 )
 from utils.helpers.logger import log
@@ -38,17 +38,13 @@ class RegisterRequest(BaseAuthRequest):
     
     @field_validator('password')
     def validate_password_field(cls, v):
-        is_valid, error = validate_password_strength(v)
-        if not is_valid:
-            raise ValueError(error)
+        validate_password_strength(v)
         return v
     
     @field_validator('email')
     def validate_email_field(cls, v):
         if v:
-            is_valid, error = validate_email(v)
-            if not is_valid:
-                raise ValueError(error)
+            validate_email(v)
         return v
 
 # Add more Pydantic models for the remaining endpoints
@@ -66,6 +62,12 @@ class ResetPasswordRequest(BaseAuthRequest):
     old_password: Optional[str] = None
     new_password: Optional[str] = None
     code: Optional[int] = None
+
+    @field_validator('new_password')
+    def validate_new_password_field(cls, v):
+        if v:
+            validate_password_strength(v)
+        return v
 
 class AccountCheckRequest(BaseAuthRequest):
     """Account check request"""
@@ -128,63 +130,25 @@ async def register(
         phone = data.phone
         password = data.password
         user_code = data.code
-        device_id = client_info.device_id
         ip_address = client_info.ip_address
-        
-        # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone)
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate fullname
-        is_valid_fullname, fullname_error = validate_fullname(fullname)
-        if not is_valid_fullname:
-            response, status = send_json_response(fullname_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate password strength
-        is_valid_password, password_error = validate_password_strength(password)
-        if not is_valid_password:
-            response, status = send_json_response(password_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate email if provided
-        if email:
-            is_valid_email, email_error = validate_email(email)
-            if not is_valid_email:
-                response, status = send_json_response(email_error, 400)
-                return JSONResponse(content=response, status_code=status)
-        
+        madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
+
         # Verify code
-        verification_result, verification_error = await check_code(user_code, formatted_phone)
-        if not verification_result:
-            response, status = send_json_response(verification_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
+        await check_code(user_code, phone)
+
         # Hash password with salt
         hashed_password = generate_password_hash(str(password))
-        hashed_phone = hash_sensitive_data(formatted_phone)
-        encrypted_phone = encrypt_sensitive_data(formatted_phone)
+        hashed_phone = hash_sensitive_data(phone)
+        encrypted_phone = encrypt_sensitive_data(phone)
         encrypted_email = encrypt_sensitive_data(email) if email else None
         hashed_email = hash_sensitive_data(email) if email else None
                 
         # Insert user into database
-        madrasa_name = get_env_var("MADRASA_NAME")
-        # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, ip_address):
-            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return JSONResponse(content=response, status_code=status)
-        
         
         try:
-            async with get_db_connection() as conn:
-                async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                    from utils.otel.otel_utils import TracedCursorWrapper
-                    cursor = TracedCursorWrapper(_cursor)
-
+            async with get_traced_db_cursor() as cursor:
                 # Check if user already exists
-                existing_user = await get_id(formatted_phone, fullname, 'users')
+                existing_user = await get_global_id(phone, fullname)
                 if existing_user:
                     log.warning(action="register_user_exists", trace_info=ip_address, message=f"User already exists: {fullname}", secure=False)
                     response, status = send_json_response(ERROR_MESSAGES['user_already_exists'], 409)
@@ -196,20 +160,12 @@ async def register(
                     (fullname, phone, phone_hash, phone_encrypted, password_hash, 
                     email, email_hash, email_encrypted, ip_address) 
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    (fullname, formatted_phone, hashed_phone, encrypted_phone, 
+                    (fullname, phone, hashed_phone, encrypted_phone, 
                     hashed_password, email, hashed_email, encrypted_email, ip_address)
                 )
                 
                 # Get new user ID
-                user_id = await get_id(formatted_phone, fullname, 'users')
-                
-                # Check device limit for new user
-                if user_id:
-                    is_device_allowed, device_limit_error = await check_device_limit(device_id, ip_address, request)
-                    if not is_device_allowed:
-                        log.warning(action="register_device_limit_exceeded", trace_info=ip_address, message=f"Device limit exceeded during registration for: {fullname}", secure=False)
-                        response, status = send_json_response(device_limit_error, 403)
-                        return JSONResponse(content=response, status_code=status)
+                user_id = await get_global_id(phone, fullname)
                 
                 # Get user profile information
                 await cursor.execute(
@@ -228,7 +184,7 @@ async def register(
                         JOIN global.translations tfather ON tfather.translation_text = p.father_name
                         LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
                         WHERE LOWER(p.name) = LOWER(%s) AND p.phone = %s""",
-                    (fullname, formatted_phone)
+                    (fullname, phone)
                 )
                 people_result = await cursor.fetchone()
                 
@@ -236,7 +192,7 @@ async def register(
                 if people_result:
                     await cursor.execute(
                         "UPDATE peoples SET user_id = %s WHERE LOWER(name) = LOWER(%s) AND phone = %s",
-                        (user_id, fullname, formatted_phone)
+                        (user_id, fullname, phone)
                     )
                 
                 # Log successful registration
@@ -286,67 +242,43 @@ async def login(
     device_id = client_info.device_id
     ip_address = client_info.ip_address
     
-    # Validate and format phone number
-    formatted_phone, phone_error = format_phone_number(phone)
-    if not formatted_phone:
-        response, status = send_json_response(phone_error, 400)
-        return JSONResponse(content=response, status_code=status)
-        
     # Check login attempts
-    is_allowed, remaining_attempts = await check_login_attempts(formatted_phone, fullname, request)
-    
-    if not is_allowed:
-        log.warning(action="login_rate_limited", trace_info=formatted_phone, message=f"Login rate limited for: {fullname} remaining attempts: {remaining_attempts}", secure=True)
-        response, status = send_json_response(ERROR_MESSAGES['rate_limit_exceeded'], 429)
-        return JSONResponse(content=response, status_code=status)
-    
-    # Authenticate user
-    madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
-    # SECURITY: Validate madrasa_name is in allowed list  
-    if not validate_madrasa_name(madrasa_name, formatted_phone):
-        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return JSONResponse(content=response, status_code=status)
-    
+    await validate_login_attempts(phone, fullname, request)    
     
     try: 
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with get_traced_db_cursor() as cursor:
                 # Get user by phone and fullname
                 await cursor.execute(
                     "SELECT * FROM people WHERE phone = %s AND fullname = %s",
-                    (formatted_phone, fullname)
+                    (phone, fullname)
                 )
                 user = await cursor.fetchone()
                 
                 if not user:
-                    await record_login_attempt(formatted_phone, fullname, False)
-                    log.error(action="login_user_not_found", trace_info=formatted_phone, message=f"User not found: {fullname}", secure=True)
+                    await record_login_attempt(phone, fullname, False)
+                    log.error(action="login_user_not_found", trace_info=phone, message=f"User not found: {fullname}", secure=True)
                     response, status = send_json_response(ERROR_MESSAGES['account_not_found'], 404)
                     return JSONResponse(content=response, status_code=status)
                 
                 # Check password
                 if not check_password_hash(user["password_hash"], password or ""):
-                    await record_login_attempt(formatted_phone, fullname, False)
-                    log.warning(action="login_incorrect_password", trace_info=formatted_phone, message="Incorrect password", secure=True)
+                    await record_login_attempt(phone, fullname, False)
+                    log.warning(action="login_incorrect_password", trace_info=phone, message="Incorrect password", secure=True)
                     response, status = send_json_response(ERROR_MESSAGES['invalid_credentials'], 401)
                     return JSONResponse(content=response, status_code=status)
                 
                 # Check if account is deactivated
                 if user["deactivated_at"] is not None:
-                    log.warning(action="login_account_deactivated", trace_info=formatted_phone, message="Account is deactivated", secure=True)
+                    log.warning(action="login_account_deactivated", trace_info=phone, message="Account is deactivated", secure=True)
                     response, status = send_json_response(ERROR_MESSAGES['account_deactivated'], 403)
                     response.update({"action": "deactivate"})
                     return JSONResponse(content=response, status_code=status)
                 
                 # Check device limit
-                is_device_allowed, device_limit_error = await check_device_limit(device_id, ip_address, request)
-                if not is_device_allowed:
-                    log.warning(action="login_device_limit_exceeded", trace_info=formatted_phone, message=f"Device limit exceeded for user: {fullname}", secure=True)
-                    response, status = send_json_response(device_limit_error, 403)
-                    return JSONResponse(content=response, status_code=status)
+                await validate_device_limit(device_id, ip_address, request)
                 
                 # Record successful login
-                await record_login_attempt(formatted_phone, fullname, True)
+                await record_login_attempt(phone, fullname, True)
                 
                 # Get user's profile information
                 await cursor.execute(
@@ -356,7 +288,7 @@ async def login(
                 profile = await cursor.fetchone()
                 
                 if not profile:
-                    log.critical(action="login_profile_not_found", trace_info=formatted_phone, message="User profile not found", secure=True)
+                    log.critical(action="login_profile_not_found", trace_info=phone, message="User profile not found", secure=True)
                     response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
                     return JSONResponse(content=response, status_code=status)
                                 
@@ -367,17 +299,17 @@ async def login(
                 profile.pop("password", None)
                 profile.pop("password_hash", None)
                 
-                # Update last login
-                await cursor.execute(
-                    "UPDATE people SET last_login = %s WHERE user_id = %s",
-                    (datetime.now(timezone.utc), user["user_id"])
-                )
+                # TODO: Update last login
+                # await cursor.execute(
+                #     "UPDATE people SET last_login = %s WHERE user_id = %s",
+                #     (datetime.now(timezone.utc), user["user_id"])
+                # )
                 
-                # Track device
-                await cursor.execute("""
-                    INSERT INTO device_interactions (user_id, device_id, interaction_type, ip_address)
-                    VALUES (%s, %s, 'login', %s)
-                """, (user["user_id"], device_id, ip_address))
+                # TODO: Track device
+                # await cursor.execute("""
+                #     INSERT INTO device_interactions (user_id, device_id, interaction_type, ip_address)
+                #     VALUES (%s, %s, 'login', %s)
+                # """, (user["user_id"], device_id, ip_address))
                 
                 log.info(action="login_successful", trace_info=ip_address, message=f"User logged in successfully: {fullname}", secure=False)
                 
@@ -415,59 +347,26 @@ async def send_verification_code(
         email = data.email
         ip_address = client_info.ip_address
         madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
-        
-        # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone)
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate fullname if provided
-        is_valid_name, name_error = validate_fullname(fullname)
-        if not is_valid_name:
-            response, status = send_json_response(name_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate password if provided
-        if password:
-            is_valid_password, password_error = validate_password_strength(password)
-            if not is_valid_password:
-                response, status = send_json_response(password_error, 400)
-                return JSONResponse(content=response, status_code=status)
-        
-        # Validate email if provided
-        if email:
-            is_valid_email, email_error = validate_email(email)
-            if not is_valid_email:
-                response, status = send_json_response(email_error, 400)
-                return JSONResponse(content=response, status_code=status)
-        else:
-            email = await get_email(phone=formatted_phone, fullname=fullname)
+
+        if not email:
+            email = await get_email(phone=phone, fullname=fullname)
         
         # Check if user already exists
-        async with get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                if fullname and password:
-                    # Check if user exists (for registration)
-                    existing_user = await get_id(formatted_phone, fullname, 'peoples', madrasa_name)
-                    await cursor.execute(
-                        "SELECT user_id FROM people WHERE phone = %s AND fullname = %s",
-                        (formatted_phone, fullname)
-                    )
-                    existing_user = await cursor.fetchone()
-                    
-                    if existing_user:
-                        log.warning(action="send_code_user_exists", trace_info=ip_address, message=f"User already exists: {fullname}", secure=False)
-                        response, status = send_json_response(ERROR_MESSAGES['user_already_exists'], 409)
-                        return JSONResponse(content=response, status_code=status)
+        async with get_traced_db_cursor() as cursor:
+                # Check if user exists (for registration)
+                existing_user = await get_id(phone, fullname, madrasa_name)
+                if existing_user:
+                    log.warning(action="send_code_user_exists", trace_info=ip_address, message=f"User already exists: {fullname}", secure=False)
+                    response, status = send_json_response(ERROR_MESSAGES['user_already_exists'], 409)
+                    return JSONResponse(content=response, status_code=status)
                 
                 # Check rate limit for verification codes
                 await cursor.execute("""
                     SELECT COUNT(*) as count
-                    FROM sms_logs
+                    FROM global.verifications
                     WHERE phone = %s
                     AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-                """, (formatted_phone,))
+                """, (phone,))
                 
                 result = await cursor.fetchone()
                 count = result[0] if result else 0
@@ -475,7 +374,7 @@ async def send_verification_code(
                 # Check rate limits
                 max_limit = max(config.SMS_LIMIT_PER_HOUR, config.EMAIL_LIMIT_PER_HOUR)
                 if count >= max_limit:
-                    log.warning(action="send_code_rate_limited", trace_info=ip_address, message=f"Rate limit exceeded for phone: {formatted_phone}", secure=False)
+                    log.warning(action="send_code_rate_limited", trace_info=ip_address, message=f"Rate limit exceeded for phone: {phone}", secure=False)
                     response, status = send_json_response(ERROR_MESSAGES['rate_limit_exceeded'], 429)
                     return JSONResponse(content=response, status_code=status)
                 
@@ -485,20 +384,20 @@ async def send_verification_code(
                 # Try SMS first
                 if count < config.SMS_LIMIT_PER_HOUR:
                     sms_sent = await send_sms(
-                        phone=formatted_phone,
+                        phone=phone,
                         msg=f"Your verification code is: {code}"
                     )
                     
                     if sms_sent:
                         # Store in database
                         await cursor.execute("""
-                            INSERT INTO sms_logs (phone, code, ip_address, expires_at)
+                            INSERT INTO global.verifications (phone, code, ip_address, expires_at)
                             VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
-                        """, (formatted_phone, code, ip_address))
+                        """, (phone, code, ip_address))
                         
-                        log.info(action="verification_code_sent_sms", trace_info=ip_address, message=f"Verification code sent via SMS to: {formatted_phone}", secure=False)
+                        log.info(action="verification_code_sent_sms", trace_info=ip_address, message=f"Verification code sent via SMS to: {phone}", secure=False)
                         
-                        response, status = send_json_response(f"Verification code sent to {formatted_phone}", 200)
+                        response, status = send_json_response(f"Verification code sent to {phone}", 200)
                         return JSONResponse(content=response, status_code=status)
                 
                 # Try email if SMS failed or limit reached
@@ -512,9 +411,9 @@ async def send_verification_code(
                     if email_sent:
                         # Store in database
                         await cursor.execute("""
-                            INSERT INTO sms_logs (phone, code, ip_address, expires_at)
+                            INSERT INTO global.verifications (phone, code, ip_address, expires_at)
                             VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
-                        """, (formatted_phone, code, ip_address))
+                        """, (phone, code, ip_address))
                         
                         log.info(action="verification_code_sent_email", trace_info=ip_address, message=f"Verification code sent via email to: {email}", secure=False)
                         
@@ -531,7 +430,7 @@ async def send_verification_code(
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
         return JSONResponse(content=response, status_code=status)
 
-@api.post("/reset_password") # TODO: fucked up
+@api.post("/reset_password")
 @handle_async_errors
 async def reset_password(
     request: Request,
@@ -549,68 +448,34 @@ async def reset_password(
         code = data.code
         device_id = client_info.device_id
         ip_address = client_info.ip_address
-        
-        
-        # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone)
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
+                
         # If old password is not provided, use code verification
         if not old_password:
-            if code:
-                # Verify code
-                validate_code, error_message = await check_code(code, formatted_phone)
-                if not validate_code:
-                    response, status = send_json_response(error_message, 400)
-                    return JSONResponse(content=response, status_code=status)
-                elif not new_password:
-                    response, status = send_json_response("Code successfully matched", 200)
-                    return JSONResponse(content=response, status_code=status)
+            await check_code(code or 0, phone)
+            if not new_password:
+                response, status = send_json_response("Code successfully matched", 200)
+                return JSONResponse(content=response, status_code=status)        
         
-        # Validate new password if provided
-        if new_password:
-            is_valid_password, password_error = validate_password_strength(new_password)
-            if not is_valid_password:
-                response, status = send_json_response(password_error, 400)
-                return JSONResponse(content=response, status_code=status)
-        
-        # Authenticate user and update password
-        
-        # Validate madrasa name
-        madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
-        # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, ip_address):
-            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return JSONResponse(content=response, status_code=status)
-        
-        
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
                     "SELECT * FROM people WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
-                    (formatted_phone, fullname)
+                    (phone, fullname)
                 )
                 user = await cursor.fetchone()
                 
                 if not user:
-                    log.error(action="reset_password_user_not_found", trace_info=formatted_phone, message=f"User not found: {fullname}", secure=True)
+                    log.error(action="reset_password_user_not_found", trace_info=phone, message=f"User not found: {fullname}", secure=True)
                     response, status = send_json_response(ERROR_MESSAGES['account_not_found'], 404)
                     return JSONResponse(content=response, status_code=status)
                 
                 # Check device limit
-                is_device_allowed, device_limit_error = await check_device_limit(user["user_id"], device_id)
-                if not is_device_allowed:
-                    log.warning(action="reset_password_device_limit_exceeded", trace_info=formatted_phone, message=f"Device limit exceeded during password reset for user: {fullname}", secure=True)
-                    response, status = send_json_response(device_limit_error, 403)
-                    return JSONResponse(content=response, status_code=status)
+                await validate_device_limit(device_id, ip_address, request)
                 
                 # If old password is provided, verify it
                 if old_password:
                     if not check_password_hash(user['password_hash'], old_password):
-                        log.warning(action="reset_password_incorrect_old_password", trace_info=formatted_phone, message="Incorrect old password", secure=True)
+                        log.warning(action="reset_password_incorrect_old_password", trace_info=phone, message="Incorrect old password", secure=True)
                         response, status = send_json_response("Incorrect old password", 401)
                         return JSONResponse(content=response, status_code=status)
                 
@@ -658,7 +523,7 @@ async def manage_account(
 ) -> JSONResponse:
     """Manage account (deactivate/delete) with enhanced security"""
     # Validate page type
-    if page_type not in ("remove", "deactivate", "delete"):
+    if page_type not in ("deactivate", "delete"):
         response, status = send_json_response("Invalid page type", 400)
         return JSONResponse(content=response, status_code=status)
     
@@ -670,14 +535,10 @@ async def manage_account(
         password = data.password 
         
         # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone)
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
-            return JSONResponse(content=response, status_code=status)
+        formatted_phone = format_phone_number(phone)
         
         # Authenticate user
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
                     "SELECT * FROM people WHERE phone = %s AND fullname = %s",
@@ -707,10 +568,6 @@ async def manage_account(
                 # Send confirmation via email if available
                 email = await get_email(fullname=fullname, phone=formatted_phone)
                 if email:
-                    is_valid_email, email_error = validate_email(email)
-                    if not is_valid_email:
-                        response, status = send_json_response(email_error, 400)
-                        return JSONResponse(content=response, status_code=status)
                     if not await send_email(to_email=email, subject=subject, body=msg):
                         errors += 1
                 else:
@@ -772,30 +629,14 @@ async def undo_remove(
         phone = data.phone
         fullname = data.fullname
         ip_address = client_info.ip_address
-        
-        # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone)
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Reactivate account
-        
-        # Validate madrasa name
         madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
-        # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, ip_address):
-            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return JSONResponse(content=response, status_code=status)
         
-        
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with get_traced_db_cursor() as cursor:
                 # Get deactivated user
                 await cursor.execute(
                     """SELECT * FROM people 
                     WHERE phone = %s AND fullname = %s AND deactivated_at IS NOT NULL""",
-                    (formatted_phone, fullname)
+                    (phone, fullname)
                 )
                 user = await cursor.fetchone()
                 
@@ -861,20 +702,9 @@ async def get_account_status(
         student_id = data.student_id
         birth_date = data.birth_date
         join_date = data.join_date
+        madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
         
         # Validate madrasa name
-        madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
-        # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, ip_address):
-            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate and format phone number
-        formatted_phone, phone_error = format_phone_number(phone)
-        if not formatted_phone:
-            response, status = send_json_response(phone_error, 400)
-            response.update({"action": "logout"})
-            return JSONResponse(content=response, status_code=status)
         
         # Define fields to check
         checks = {
@@ -893,12 +723,11 @@ async def get_account_status(
         
         # Validate account in database
         
-        async with get_db_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
+        async with get_traced_db_cursor() as cursor:
                 # Get user record
                 await cursor.execute(
                     "SELECT * FROM people WHERE phone = %s AND fullname = %s",
-                    (formatted_phone, fullname)
+                    (phone, fullname)
                 )
                 record = await cursor.fetchone()
                 
@@ -945,12 +774,7 @@ async def get_account_status(
                             return JSONResponse(content=response, status_code=status)
                 
                 # Check device limit
-                is_device_allowed, device_limit_error = await check_device_limit(record["user_id"], device_id)
-                if not is_device_allowed:
-                    log.warning(action="account_check_device_limit_exceeded", trace_info=record["user_id"], message=f"Device limit exceeded during account check for user: {record['user_id']}", secure=False)
-                    response, status = send_json_response(device_limit_error, 403)
-                    response.update({"action": "logout"})
-                    return JSONResponse(content=response, status_code=status)
+                await validate_device_limit(device_id, ip_address, request)
                 
                 # Track device interaction
                 await cursor.execute(

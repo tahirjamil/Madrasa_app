@@ -449,12 +449,17 @@ async def get_email(fullname: str, phone: str) -> Optional[str]:
             log.critical(action="db_error with get_email", trace_info=phone, message=str(e), secure=True)
             return None
 
-async def get_id(phone: str, fullname: str) -> Optional[int]:
+async def get_id(formatted_phone: str, fullname: str, table_name: str, madrasa_name: str | None= None) -> Optional[int]:
     """Get user ID with caching"""
-    cache_key = f"user_id:{phone}:{fullname}"
+    cache_key = f"user_id:{formatted_phone}:{fullname}:{table_name}"
     cached_id = await get_cached_data(cache_key)
     if cached_id:
         return cached_id
+
+    if table_name == 'users':
+        table = "global.users"
+    else:
+        table = f"{madrasa_name}.{table_name}"
     
     async with get_db_context() as conn:
         try:
@@ -462,8 +467,8 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
                 from utils.otel.otel_utils import TracedCursorWrapper
                 cursor = TracedCursorWrapper(_cursor)
                 await cursor.execute(
-                    "SELECT user_id FROM global.users WHERE phone = %s AND fullname = %s",
-                    (phone, fullname)
+                    f"SELECT user_id FROM {table} WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    (formatted_phone, fullname)
                 )
                 result = await cursor.fetchone()
                 
@@ -472,7 +477,7 @@ async def get_id(phone: str, fullname: str) -> Optional[int]:
                     await set_cached_data(cache_key, user_id, ttl=3600)  # Cache for 1 hour
                 return user_id
         except Exception as e:
-            log.critical(action="get_id_error", trace_info=phone,message=str(e), secure=True)
+            log.critical(action="get_id_error", trace_info=formatted_phone,message=str(e), secure=True)
             return None
 
 async def upsert_translation(conn, translation_text: str, madrasa_name: str, context: str, table_name: str, 
@@ -1022,7 +1027,7 @@ def generate_code(code_length: Optional[int] = None) -> int:
     code_length = code_length or config.CODE_LENGTH
     return random.randint(10**(code_length-1), 10**code_length - 1)
 
-async def check_code(user_code: str, phone: str) -> None:
+async def check_code(user_code: int, phone: str) -> Tuple[bool, str]:
     """Enhanced code verification with security features"""
     from utils.mysql.database_utils import get_db_connection
     
@@ -1040,7 +1045,7 @@ async def check_code(user_code: str, phone: str) -> None:
                 result = await cursor.fetchone()
                 
                 if not result:
-                    raise HTTPException(status_code=404, detail="No verification code found")
+                    return False, "No verification code found"
                 
                 db_code = result["code"]
                 created_at = result["created_at"]
@@ -1048,19 +1053,19 @@ async def check_code(user_code: str, phone: str) -> None:
                 
                 # Check expiration
                 if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
-                    raise HTTPException(status_code=410, detail="Verification code expired")
+                    return False, "Verification code expired"
                 
                 # Constant-time comparison
                 if int(user_code) == db_code:
                     await delete_code()
-                    return None
+                    return True, ""
                 else:
                     log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
-                    raise HTTPException(status_code=400, detail="Verification code mismatch")
+                    return False, "Verification code mismatch"
     
     except Exception as e:
         log.critical(action="verification_error", trace_info=phone, message=str(e), secure=True)
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+        return False, f"Error: {str(e)}"
 
 async def delete_code() -> None:
     """Delete expired verification codes"""
@@ -1246,6 +1251,8 @@ def validate_email(email: str) -> Tuple[bool, str]:
 
 def validate_password_strength(password: str) -> Tuple[bool, str]:
     """Enhanced password strength validation"""
+    password = security_manager.sanitize_inputs(password)
+    
     if len(password) < config.PASSWORD_MIN_LENGTH:
         return False, f"Password must be at least {config.PASSWORD_MIN_LENGTH} characters long"
     
@@ -1305,69 +1312,71 @@ async def validate_file_upload(file, allowed_extensions: List[str], request: Req
     return True, ""
 
 # ──── User Login Limits ──────────────────────────────────────────────────── # TODO: Check full
-async def check_device_limit(user_id: int, device_id: str) -> Tuple[bool, str]:
+async def check_device_limit(device_id: str, ip_address: str, request: Request | None= None) -> Tuple[bool, str]:
     """Check if user has reached device limit"""
-    from utils.mysql.database_utils import get_db_connection
+    from utils.keydb.keydb_utils import get_keydb_from_app    
+    pool = get_keydb_from_app(request)
+    if not pool:
+        # If KeyDB not available, allow by default (or raise an error if strict)
+        return True, ""
 
-    async with get_db_connection() as conn:
-        async with conn.cursor() as _cursor:
-            from utils.otel.otel_utils import TracedCursorWrapper
-            cursor = TracedCursorWrapper(_cursor)
-            # Check if this device is already registered for this user
-            await cursor.execute(
-                "SELECT device_id FROM global.interactions WHERE user_id = %s AND device_id = %s LIMIT 1",
-                (user_id, device_id)
-            )
-            existing_device = await cursor.fetchone()
-            
-            if existing_device:
-                return True, ""  # Device already registered, allow access
-            
-            # Count total devices for this user
-            await cursor.execute(
-                "SELECT COUNT(*) as device_count FROM global.interactions WHERE user_id = %s",
-                (user_id,)
-            )
-            result = await cursor.fetchone()
-            device_count = result['device_count'] if result else 0
-            
-            # Import config here to avoid circular import
-            from config import config
-            if device_count >= config.MAX_DEVICES_PER_USER:
-                return False, f"Maximum devices ({config.MAX_DEVICES_PER_USER}) reached. Please remove an existing device to add this one."
-            
-            return True, ""
-    
+    # Construct a key for this device + IP
+    cache_key = f"device_limit:{device_id}:{ip_address}"
 
-async def check_login_attempts(request: Request | None, identifier: str) -> Tuple[bool, int]:
-    """Check login attempts in KeyDB and return (allowed, remaining)."""
-    cache_key = f"login_attempts:{identifier}"
+    # Use atomic operation to increment count
+    attempts = await pool.incr(cache_key)
+    # Set expiry if this is the first time
+    if attempts == 1:
+        await pool.expire(cache_key, config.DEVICE_REGISTRATION_WINDOW)
+
+    if attempts > config.MAX_DEVICES_PER_USER:
+        return False, f"Maximum devices ({config.MAX_DEVICES_PER_USER}) reached. Please remove an existing device to add this one."
+
+    return True, ""
+            
+
+async def check_login_attempts(formatted_phone: str, fullname: str, request: Optional[Request] = None) -> Tuple[bool, int]:
+    """
+    Check login attempts in KeyDB and return (allowed, remaining).
+    """
     from utils.keydb.keydb_utils import get_keydb_from_app
     pool = get_keydb_from_app(request)
-    raw = await pool.get(cache_key) if pool else 0
-    attempts = int(raw)
-    # Import config here to avoid circular import
-    from config import config
-    if attempts >= config.LOGIN_ATTEMPTS_LIMIT:
-        return False, 0
-    return True, config.LOGIN_ATTEMPTS_LIMIT - attempts
+    if not pool:
+        # KeyDB unavailable, allow login
+        return True, config.AUTH_ATTEMPTS_LIMIT
 
-async def record_login_attempt(request: Request | None, identifier: str, success: bool) -> None:
-    """Record login attempt in KeyDB (increment on failure, clear on success)."""
-    cache_key = f"login_attempts:{identifier}"
+    raw = await pool.get(f"login_attempts:{formatted_phone}:{fullname}")
+    attempts = int(raw or 0)
+
+    allowed = attempts < config.AUTH_ATTEMPTS_LIMIT
+    remaining = max(config.AUTH_ATTEMPTS_LIMIT - attempts, 0)
+
+    return allowed, remaining
+
+
+async def record_login_attempt(
+    formatted_phone: str, fullname: str, success: bool, request: Optional[Request] = None
+) -> None:
+    """
+    Record login attempt in KeyDB.
+    - On success: delete counter.
+    - On failure: increment counter with expiration.
+    """
     from utils.keydb.keydb_utils import get_keydb_from_app
     pool = get_keydb_from_app(request)
-    if pool:
-        if success:
-            await pool.delete(cache_key)
-        else:
-            raw = await pool.get(cache_key)
-            attempts = int(raw or 0) + 1
-            # Import config here to avoid circular import
-            from config import config
-            await pool.set(cache_key, attempts, ex=int(config.LOGIN_LOCKOUT_MINUTES * 60))
-    return
+    if not pool:
+        return
 
+    key = f"login_attempts:{formatted_phone}:{fullname}"
+
+    if success:
+        await pool.delete(key)
+    else:
+        # Atomic increment
+        attempts = await pool.incr(key)
+        # Set expiration only if key was newly created
+        if attempts == 1:
+            await pool.expire(key, int(config.AUTH_LOCKOUT_MINUTES * 60))
 
 # ─── Utility Functions ─────────────────────────────────────────────────────
 def hash_sensitive_data(data: str) -> str:
@@ -1510,9 +1519,9 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
 
 # ─── MADRASA NAME VALIDATION ───────────────────────────────────────────────────
 
-def validate_madrasa_name(madrasa_name: str, ip_address: str) -> bool:
+def validate_madrasa_name(madrasa_name: str, trace_info: str) -> bool:
     """Validate madrasa name"""
     if madrasa_name not in config.MADRASA_NAMES_LIST:
-        log.critical(action="invalid_madrasa_name", trace_info=ip_address, message=f"Invalid madrasa name configured: {madrasa_name}", secure=False)
+        log.critical(action="invalid_madrasa_name", trace_info=trace_info, message=f"Invalid madrasa name configured: {madrasa_name}", secure=False)
         return False
     return True

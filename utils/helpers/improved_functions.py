@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Tuple, Any, Dict, Optional, Union
+from typing import Tuple, Any, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,13 +25,21 @@ def get_project_root(marker_files: Tuple[str, ...] = ("pyproject.toml", "app.py"
             return parent
     raise FileNotFoundError("Project root not found")
 
-def send_json_response(message: str, status_code: int, details: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
+def send_json_response(
+    message: str,
+    status_code: int,
+    details: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None
+) -> Tuple[Dict[str, Any], int]:
     """Send a JSON response with a status code."""
     success: bool = 200 <= status_code < 300
-    error: bool = not success
-    return {
+    response: Dict[str, Any] = {
         "success": success,
-        "error": error,
+        "error": not success,
         "message": message,
-        "details": details
-    }, status_code
+    }
+    if details is not None:
+        response["details"] = details
+    if data is not None:
+        response["data"] = data
+    return response, status_code

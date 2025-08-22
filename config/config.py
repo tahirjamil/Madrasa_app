@@ -133,6 +133,7 @@ class MadrasaConfig:
     PASSWORD_MIN_LENGTH = 8
     SESSION_TIMEOUT_HOURS = 24
     MAX_DEVICES_PER_USER = 3
+    DEVICE_REGISTRATION_WINDOW = 60 * 60 * 24  # 24 hours
     
     # Account Management
     ACCOUNT_DELETION_DAYS = 30
@@ -146,8 +147,8 @@ class MadrasaConfig:
     # Rate Limiting for Authentication
     SMS_LIMIT_PER_HOUR = 5
     EMAIL_LIMIT_PER_HOUR = 15
-    LOGIN_ATTEMPTS_LIMIT = 5
-    LOGIN_LOCKOUT_MINUTES = 15
+    AUTH_ATTEMPTS_LIMIT = 5
+    AUTH_LOCKOUT_MINUTES = 15
     
     # ============================================================================
     # BUSINESS CONFIGURATION

@@ -34,7 +34,7 @@ async def require_api_key(api_key: Optional[str] = Depends(api_key_header)) -> s
             detail="API key required"
         )
     
-    if api_key not in config.API_KEYS:
+    if api_key not in list(config.API_KEYS):
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="Invalid API key"
@@ -63,18 +63,44 @@ async def get_client_info(
     api_key: Optional[str] = Depends(api_key_header)
 ) -> ClientInfo:
     """Extract client information from headers"""
+    from .helpers import get_ip_address, validate_request_headers, validate_device_fingerprint
+    from utils.keydb.keydb_utils import get_keydb_from_app
     # Get IP address
-    ip_address = request.headers.get("X-Forwarded-For", 
-                                    request.client.host if request.client else "unknown")
+    ip_address = get_ip_address(request)
+    device_id = x_device_id or "unknown"
+    cache_key = f"client:{ip_address}:{device_id}"
+
+    # Check Redis cache
+    pool = get_keydb_from_app(request)
+    cached = await pool.get(cache_key) if pool else None
+    if cached:
+        info = json.loads(cached)
+        request.state.client_info = info
+        return info
     
-    return ClientInfo(
-        ip_address=ip_address,
-        device_id=x_device_id or "unknown",
-        device_model=x_device_model or "unknown",
-        device_os=x_device_os or "unknown",
-        device_brand=x_device_brand or "unknown",
-        api_key=api_key
-    )
+    # Validate headers & fingerprint
+    if not await validate_request_headers(request):
+        raise HTTPException(status_code=400, detail="Invalid headers")
+    
+    info = {
+        "ip_address": ip_address,
+        "device_id": x_device_id,
+        "device_model": x_device_model,
+        "device_os": x_device_os,
+        "device_brand": x_device_brand,
+        "api_key": api_key
+    }
+
+    if not await validate_device_fingerprint(device_data=info, request=request):
+        raise HTTPException(status_code=403, detail="Invalid device fingerprint")
+    
+    # Store in Redis with TTL (10 minutes)
+    if pool:
+        await pool.set(cache_key, json.dumps(info), ex=600)
+
+    # Cache for this request
+    request.state.client_info = ClientInfo(**info)
+    return request.state.client_info
 
 
 # ─── Rate Limiting ───────────────────────────────────────────
@@ -142,11 +168,19 @@ class BaseAuthRequest(BaseModel):
 
 
 # ─── Device Validation Dependency ─────────────────────────────────────────── # TODO: Unknown
-async def validate_device_dependency(client_info: ClientInfo = Depends(get_client_info)):
-    """Validate device information"""
-    # Import here to avoid circular imports
+async def validate_device_dependency(request: Request, client_info: ClientInfo = Depends(get_client_info)):
     from .helpers import validate_device_info
+    redis = get_keydb_from_app(request)  # get your Redis/KeyDB instance
+    cache_key = f"device_valid:{client_info.device_id}:{client_info.ip_address}"
     
+    cached = await redis.get(cache_key) if redis else None
+    if cached is not None:
+        if cached == b"1":
+            return client_info
+        else:
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Invalid device (cached)")
+
+    # Validate device
     is_valid, error = await validate_device_info(
         device_id=client_info.device_id,
         ip_address=client_info.ip_address,
@@ -154,19 +188,14 @@ async def validate_device_dependency(client_info: ClientInfo = Depends(get_clien
         device_os=client_info.device_os or "unknown",
         device_brand=client_info.device_brand or "unknown"
     )
-    
+
+    # Cache the result for 5 minutes
+    if redis:
+        await redis.set(cache_key, "1" if is_valid else "0", ex=300)
+
     if not is_valid:
-        log.warning(
-            action="invalid_device",
-            trace_info=client_info.ip_address,
-            message=f"Invalid device: {error}",
-            secure=False
-        )
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail=error
-        )
-    
+        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=error)
+
     return client_info
 
 
@@ -179,16 +208,6 @@ templates = Jinja2Templates(directory="templates")
 # Add custom globals to templates
 def setup_template_globals():
     """Setup custom globals for templates"""
-    
-    def get_flashed_messages():
-        """FastAPI compatible flash messages - returns empty list for now"""
-        # In FastAPI, flash messages are typically passed as template context
-        # This is a placeholder that returns empty to prevent template errors
-        # TODO: Implement actual flash message handling if needed with keydb
-        return []
-    
-    # Add the functions as globals to the template environment
-    templates.env.globals["get_flashed_messages"] = get_flashed_messages
     templates.env.globals.update({
     "home_path": "/",
     "donate_path": "/donate",

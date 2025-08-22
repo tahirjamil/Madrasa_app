@@ -1409,29 +1409,35 @@ def decrypt_sensitive_data(encrypted_data: str) -> str:
 
 # ─── Client Request Info ───────────────────────────────────────────────────
 
-SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie"}
+SENSITIVE_HEADERS = {
+    "authorization", "cookie", "set-cookie", 
+    "proxy-authorization", "x-api-key", 
+    "x-auth-token", "x-csrf-token", "x-xsrf-token"
+}
 
 def redact_headers(headers: dict) -> dict:
     out = {}
     for k, v in headers.items():
-        if k.lower() in SENSITIVE_HEADERS:
+        key_lower = k.lower()
+        if key_lower in SENSITIVE_HEADERS or "token" in key_lower or "secret" in key_lower:
             out[k] = "[REDACTED]"
         else:
             out[k] = v
     return out
 
+TRUST_PROXY = True  # Set to False if you don't have a reverse proxy
+
 def get_ip_address(request: Request) -> str:
-    """Extract client IP address from request headers"""
-    forwarded_for = request.headers.get('X-Forwarded-For')
-    if forwarded_for:
-        return forwarded_for.split(',')[0].strip()
-    real_ip = request.headers.get('X-Real-IP')
-    if real_ip:
-        return real_ip
-    # In FastAPI, client info is in request.client
-    if request.client:
-        return request.client.host
-    return "unknown"
+    """Extract client IP address safely"""
+    if TRUST_PROXY:
+        forwarded_for = request.headers.get('X-Forwarded-For')
+        if forwarded_for:
+            return forwarded_for.split(',')[0].strip()
+        real_ip = request.headers.get('X-Real-IP')
+        if real_ip:
+            return real_ip
+
+    return request.client.host if request.client else "unknown"
 
 async def validate_device_fingerprint(device_data: Dict[str, Any], request: Request) -> bool:
     """Validate device fingerprint for security"""
@@ -1448,7 +1454,9 @@ async def validate_device_fingerprint(device_data: Dict[str, Any], request: Requ
         r'[<>"\']',
         r'\.\.',
         r'javascript:',
-        r'<script'
+        r'<script',
+        r'\s',   # whitespace in ID
+        r'[\x00-\x1F]'  # control chars
     ]
     
     for pattern in suspicious_patterns:
@@ -1456,10 +1464,8 @@ async def validate_device_fingerprint(device_data: Dict[str, Any], request: Requ
             await security_manager.track_suspicious_activity(device_data['ip_address'], "Suspicious device identifier detected")
             return False
     
-    # TODO: validate_request_origin requires request object which is not available in this context
-    # This check has been removed. Consider passing request as parameter if needed.
-    # if not await validate_request_origin(request):
-    #     print("Suspicious referer")
+    if not await validate_request_origin(request):
+        raise HTTPException(status_code=403, detail="Suspicious referer")
     
     return True
 

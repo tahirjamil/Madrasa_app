@@ -13,7 +13,7 @@ from threading import Lock
 from typing import Any, Awaitable, Dict, List, Optional, Tuple, Callable, Union
 from aiomysql import IntegrityError
 from dotenv import load_dotenv
-from fastapi import Request, Response, HTTPException
+from fastapi import Request, Response, HTTPException, UploadFile
 from cryptography.fernet import Fernet
 
 # Local Imports
@@ -22,6 +22,9 @@ from utils.helpers.logger import log
 from utils.mysql.database_utils import get_traced_db_cursor
 
 load_dotenv()
+
+# Global variables
+_cached_fernet = None
 
 # ---------- Cache Functions ----------
 def get_cache_key(prefix: str, **kwargs) -> str:
@@ -560,26 +563,19 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                     # Remove individual language fields
                     fields = {k: v for k, v in fields.items() if not k.startswith('mother_')}
             
-            # Handle address field - use present_address as the main address
-            if 'present_address' in fields and fields['present_address']:
-                address_text = fields['present_address'].strip().lower()
-                address_translation = await upsert_translation(translation_text=address_text, madrasa_name=madrasa_name, context="present_address", table_name="people")
-                if address_translation:
-                    translation_fields['present_address'] = address_translation
-
-            # Handle address field - use present_address as the main address
-            if 'permanent_address' in fields and fields['permanent_address']:
-                address_text = fields['permanent_address'].strip().lower()
-                address_translation = await upsert_translation(translation_text=address_text, madrasa_name=madrasa_name, context="permanent_address", table_name="people")
-                if address_translation:
-                    translation_fields['permanent_address'] = address_translation
-
-            # Handle address field - use present_address as the main address
-            if 'address' in fields and fields['address']:
-                address_text = fields['address'].strip().lower()
-                address_translation = await upsert_translation(translation_text=address_text, madrasa_name=madrasa_name, context="address", table_name="people")
-                if address_translation:
-                    translation_fields['address'] = address_translation
+            # Handle address fields
+            address_fields = ['present_address', 'permanent_address', 'address']
+            for field in address_fields:
+                if field in fields and fields[field]:
+                    address_text = fields[field].strip().lower()
+                    address_translation = await upsert_translation(
+                        translation_text=address_text, 
+                        madrasa_name=madrasa_name, 
+                        context=field, 
+                        table_name="people"
+                    )
+                    if address_translation:
+                        translation_fields[field] = address_translation
             
             # Merge translation fields with other fields
             fields.update(translation_fields)
@@ -594,55 +590,52 @@ async def insert_person(madrasa_name: str, fields: Dict[str, Any], acc_type: str
                 else:
                     peoples_fields[key] = value
             
-            async with get_traced_db_cursor() as cursor:
+            # Insert into acc_types table FIRST if user_id exists
+            if 'user_id' in peoples_fields and peoples_fields['user_id']:
+                user_id = peoples_fields['user_id']
                 
-                # Insert into acc_types table FIRST if user_id exists
-                if 'user_id' in peoples_fields and peoples_fields['user_id']:
-                    user_id = peoples_fields['user_id']
-                    
-                    # Use boolean values from route (they already have correct defaults)
-                    acc_type_data = {
-                        'user_id': user_id,
-                        'main_type': acc_type,
-                        'teacher': int(acc_type_fields.get('teacher', False)),
-                        'student': int(acc_type_fields.get('student', False)),
-                        'staff': int(acc_type_fields.get('staff', False)),
-                        'donor': int(acc_type_fields.get('donor', False)),
-                        'badri_member': int(acc_type_fields.get('badri_member', False)),
-                        'special_member': int(acc_type_fields.get('special_member', False))
-                    }
-                    
-                    acc_columns = ', '.join(acc_type_data.keys())
-                    acc_placeholders = ', '.join(['%s'] * len(acc_type_data))
-                    acc_updates = ', '.join([f"{col} = VALUES({col})" for col in acc_type_data.keys() if col != 'user_id'])
-                    
-                    # UPSERT for acc_types
-                    acc_sql = f"""
-                        INSERT INTO global.acc_types ({acc_columns})
-                        VALUES ({acc_placeholders}) AS new
-                        ON DUPLICATE KEY UPDATE {acc_updates}
-                    """
-                    await cursor.execute(acc_sql, list(acc_updates.replace('VALUES(', 'new.')))
+                # Use boolean values from route (they already have correct defaults)
+                acc_type_data = {
+                    'user_id': user_id,
+                    'main_type': acc_type,
+                    'teacher': int(acc_type_fields.get('teacher', False)),
+                    'student': int(acc_type_fields.get('student', False)),
+                    'staff': int(acc_type_fields.get('staff', False)),
+                    'donor': int(acc_type_fields.get('donor', False)),
+                    'badri_member': int(acc_type_fields.get('badri_member', False)),
+                    'special_member': int(acc_type_fields.get('special_member', False))
+                }
                 
-                # Insert into peoples table AFTER acc_types
-                columns = ', '.join(peoples_fields.keys())
-                placeholders = ', '.join(['%s'] * len(peoples_fields))
+                acc_columns = ', '.join(acc_type_data.keys())
+                acc_placeholders = ', '.join(['%s'] * len(acc_type_data))
+                acc_updates = ', '.join([f"{col} = VALUES({col})" for col in acc_type_data.keys() if col != 'user_id'])
                 
-                # Only update non-identity or safe fields
-                updatable_fields = [
-                    col for col in peoples_fields.keys() 
-                    if col not in ('user_id', 'created_at', 'updated_at')
-                ]
-                updates = ', '.join([f"{col} = VALUES({col})" for col in updatable_fields])
-                
-                # UPSERT for peoples
-                sql = f"""
-                    INSERT INTO {madrasa_name}.peoples ({columns}) 
-                    VALUES ({placeholders}) AS new
-                    ON DUPLICATE KEY UPDATE {updates.replace('VALUES(', 'new.')}
+                # UPSERT for acc_types
+                acc_sql = f"""
+                    INSERT INTO global.acc_types ({acc_columns})
+                    VALUES ({acc_placeholders}) AS new
+                    ON DUPLICATE KEY UPDATE {acc_updates}
                 """
-                await cursor.execute(sql, list(peoples_fields.values()))
-                
+                await cursor.execute(acc_sql, list(acc_type_data.values()))
+            
+            # Insert into peoples table AFTER acc_types
+            columns = ', '.join(peoples_fields.keys())
+            placeholders = ', '.join(['%s'] * len(peoples_fields))
+            
+            # Only update non-identity or safe fields
+            updatable_fields = [
+                col for col in peoples_fields.keys() 
+                if col not in ('user_id', 'created_at', 'updated_at')
+            ]
+            updates = ', '.join([f"{col} = new.{col}" for col in updatable_fields])
+            
+            # UPSERT for peoples
+            sql = f"""
+                INSERT INTO {madrasa_name}.peoples ({columns}) 
+                VALUES ({placeholders}) AS new
+                ON DUPLICATE KEY UPDATE {updates}
+            """
+            await cursor.execute(sql, list(peoples_fields.values()))
             
             log.info(action="insert_success", trace_info=phone, message="Upserted into peoples with translations", secure=True)
         except Exception as e:
@@ -1017,6 +1010,45 @@ async def _send_security_notifications(ip_address: str, device_id: str, info: st
                         @An-Nur.app"""
                         )
 
+async def check_account_security_status(user_id: int) -> Dict[str, Any]: # TODO: implement this
+    """Check account security status and return security metrics"""
+    try:
+        # Get recent login attempts
+        from utils.helpers.helpers import get_cached_data
+        login_attempts = await get_cached_data(f"login_attempts:{user_id}", default=0)
+        
+        # Get recent activities
+        recent_activities = []
+        for activity_type in ['login', 'logout', 'password_change', 'account_modification']:
+            activity_data = await get_cached_data(f"user_activity:{user_id}:{activity_type}", default=None)
+            if activity_data:
+                recent_activities.append(activity_data)
+        
+        # Calculate security score
+        security_score = 100
+        
+        if login_attempts > 3:
+            security_score -= 20
+        
+        if len(recent_activities) > 10:
+            security_score -= 10
+        
+        return {
+            'security_score': max(0, security_score),
+            'login_attempts': login_attempts,
+            'recent_activities': len(recent_activities),
+            'last_activity': recent_activities[-1] if recent_activities else None
+        }
+        
+    except Exception as e:
+        log.critical(action="security_status_check_error", trace_info="system", message=f"Error checking security status: {str(e)}", secure=False)
+        return {
+            'security_score': 0,
+            'login_attempts': 0,
+            'recent_activities': 0,
+            'last_activity': None
+        }
+
 # ─── Verification Functions ───────────────────────────────────────────────────
 
 def generate_code(code_length: Optional[int] = None) -> int:
@@ -1025,40 +1057,35 @@ def generate_code(code_length: Optional[int] = None) -> int:
     return random.randint(10**(code_length-1), 10**code_length - 1)
 
 async def check_code(user_code: int, phone: str) -> bool:
-    """Enhanced code verification with security features"""
-    from utils.mysql.database_utils import get_db_connection
-    
+    """Enhanced code verification with security features"""    
     try:
-        async with get_traced_db_cursor() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as _cursor:
-                
-                cursor = TracedCursorWrapper(_cursor)
-                await cursor.execute("""
-                    SELECT code, created_at FROM global.verifications
-                    WHERE phone = %s
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """, (phone,))
-                result = await cursor.fetchone()
-                
-                if not result:
-                    raise AppError("No verification code found", error_code="400")
-                
-                db_code = result["code"]
-                created_at = result["created_at"]
-                now = datetime.now()
-                
-                # Check expiration
-                if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
-                    raise AppError("Verification code expired", error_code="400")
-                
-                # Constant-time comparison
-                if int(user_code) == db_code:
-                    await delete_code()
-                    return True
-                else:
-                    log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
-                    raise AppError("Verification code mismatch", error_code="400")
+        async with get_traced_db_cursor() as cursor:
+            await cursor.execute("""
+                SELECT code, created_at FROM global.verifications
+                WHERE phone = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (phone,))
+            result = await cursor.fetchone()
+            
+            if not result:
+                raise AppError("No verification code found", error_code="400")
+            
+            db_code = result["code"]
+            created_at = result["created_at"]
+            now = datetime.now()
+            
+            # Check expiration
+            if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
+                raise AppError("Verification code expired", error_code="400")
+            
+            # Constant-time comparison
+            if int(user_code) == db_code:
+                await delete_code()
+                return True
+            else:
+                log.warning(action="verification_failed", trace_info=phone, message="Code mismatch", secure=True)
+                raise AppError("Verification code mismatch", error_code="400")
     
     except Exception as e:
         log.critical(action="verification_error", trace_info=phone, message=str(e), secure=True)
@@ -1066,12 +1093,7 @@ async def check_code(user_code: int, phone: str) -> bool:
 
 async def delete_code() -> None:
     """Delete expired verification codes"""
-    from utils.mysql.database_utils import get_db_connection
-    
-    async with get_traced_db_cursor() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as _cursor:
-            
-            cursor = TracedCursorWrapper(_cursor)
+    async with get_traced_db_cursor() as cursor:
             await cursor.execute("""
                 DELETE FROM global.verifications
                 WHERE created_at < NOW() - INTERVAL 1 DAY
@@ -1273,22 +1295,27 @@ def validate_password_strength(password: str) -> bool:
     return True
 
 
-async def validate_file_upload(file, allowed_extensions: List[str], request: Request, max_size: int | None= None) -> Tuple[bool, str]:
+async def validate_file_upload(
+    file: UploadFile, 
+    allowed_extensions: List[str], 
+    request: Request, 
+    max_size: int | None= None
+    ) -> None:
     """Enhanced file upload validation with security checks"""
     if not file or not file.filename:
-        return False, "No file provided"
+        raise AppError("No file provided", error_code="400")
     
     # Check file extension
     if '.' not in file.filename:
-        return False, "Invalid file format"
+        raise AppError("Invalid file format", error_code="400")
     
     extension = file.filename.rsplit('.', 1)[1].lower()
     if extension not in allowed_extensions:
-        return False, f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
+        raise AppError(f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}", error_code="400")
     
     # Check file size
-    if max_size and file.content_length and file.content_length > max_size:
-        return False, f"File size exceeds maximum allowed size ({max_size / 1024 / 1024} MB)"
+    if max_size and file.size and file.size > max_size:
+        raise AppError(f"File size exceeds maximum allowed size ({max_size / 1024 / 1024} MB)", error_code="400")
     
     # Check for suspicious filename patterns
     suspicious_patterns = [
@@ -1304,9 +1331,9 @@ async def validate_file_upload(file, allowed_extensions: List[str], request: Req
                 message=f"Suspicious filename detected: {file.filename}",
                 secure=False
             )
-            return False, "Invalid filename"
+            raise AppError("Invalid filename", error_code="400")
     
-    return True, ""
+    return
 
 # ──── User Login Limits ────────────────────────────────────────────────────
 async def validate_device_limit(device_id: str, ip_address: str, request: Request | None= None) -> bool:

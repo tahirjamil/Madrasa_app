@@ -1,14 +1,12 @@
 import os
-import re
 from datetime import datetime, date, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
-import aiomysql
 from PIL import Image
 from fastapi import Request, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
-from pydantic import validator
+from pydantic import BaseModel, field_validator
 from werkzeug.utils import secure_filename
 
 from utils.helpers.improved_functions import get_env_var, send_json_response
@@ -19,13 +17,22 @@ from routes.api import api
 from utils.mysql.database_utils import get_traced_db_cursor
 from config import config
 from utils.helpers.helpers import (
-    format_phone_number, get_id, insert_person, get_cache_key,
+    format_phone_number, get_global_id, get_id, insert_person, get_cache_key,
     cache_with_invalidation, security_manager, set_cached_data, get_cached_data, handle_async_errors,
-    encrypt_sensitive_data, hash_sensitive_data, validate_fullname, validate_madrasa_name, validate_request_origin
+    encrypt_sensitive_data, hash_sensitive_data, validate_file_upload, validate_fullname, validate_madrasa_name, validate_request_origin
 )
 from utils.helpers.logger import log
 
 # ─── Pydantic Models ───────────────────────────────────────────────
+class BaseRouteData(BaseModel):
+    madrasa_name: str
+    updatedSince: Optional[str] = None
+
+    @field_validator('madrasa_name')
+    def validate_madrasa_name(cls, v):
+        validate_madrasa_name(v, "system", secure=False)
+        return v
+
 class PersonData(BaseAuthRequest):
     """Person data model for adding/updating people"""
     student_id: Optional[str] = None
@@ -39,11 +46,9 @@ class PersonData(BaseAuthRequest):
     class_name: Optional[str] = None
     monthly_fee: Optional[float] = None
     
-    @validator('name')
+    @field_validator('name')
     def validate_name_field(cls, v):
-        is_valid, error = validate_fullname(v)
-        if not is_valid:
-            raise ValueError(error)
+        validate_fullname(v)
         return v
 
 class ProfileUpdateRequest(BaseAuthRequest):
@@ -122,47 +127,32 @@ async def add_person(
             return JSONResponse(content=response, status_code=status)
         
         # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, client_info.ip_address):
+        if not validate_madrasa_name(madrasa_name, phone, secure=True):
             response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Validate required fields using enhanced validation
-        if not name_en or not phone or not acc_type:
-            missing_fields = []
-            if not name_en: missing_fields.append('name_en')
-            if not phone: missing_fields.append('phone')
-            if not acc_type: missing_fields.append('acc_type')
-            log.warning(action="add_people_missing_fields", trace_info=client_info.ip_address, message=f"Missing required fields: {missing_fields}", secure=False)
-            response, status = send_json_response(f"Missing required fields: {', '.join(missing_fields)}", 400)
             return JSONResponse(content=response, status_code=status)
         
         # Extract and validate basic fields with sanitization
         fullname = name_en
-        phone_input = phone
-        acc_type_input = acc_type
         
         # Validate fullname
-        is_valid_name, name_error = validate_fullname(fullname)
-        if not is_valid_name:
-            response, status = send_json_response(name_error, 400)
-            return JSONResponse(content=response, status_code=status)
+        validate_fullname(fullname)
         
         # Validate and format phone number
-        formatted_phone = format_phone_number(phone_input)
+        formatted_phone = format_phone_number(phone)
         
         # Normalize account type
-        if not acc_type_input or not acc_type_input.endswith('s'):
-            acc_type_input = f"{acc_type_input}s"
+        if not acc_type or not acc_type.endswith('s'):
+            acc_type = f"{acc_type}s"
         
         VALID_ACCOUNT_TYPES = [
             'admins', 'students', 'teachers', 'staffs', 
             'others', 'badri_members', 'donors'
         ]
-        if acc_type_input not in VALID_ACCOUNT_TYPES:
-            acc_type_input = 'others'
+        if acc_type not in VALID_ACCOUNT_TYPES:
+            acc_type = 'others'
         
         # Get user ID
-        person_id = await get_id(formatted_phone, fullname.lower())
+        person_id = await get_global_id(formatted_phone, fullname)
         if not person_id:
             log.error(action="add_people_id_not_found", trace_info=formatted_phone, message="User ID not found", secure=True)
             response, status = send_json_response("ID not found", 404)
@@ -173,25 +163,22 @@ async def add_person(
         
         # Set account type boolean fields
         fields.update({
-            "teacher": teacher == '1' or acc_type_input == 'teachers',
-            "student": student == '1' or acc_type_input == 'students',
-            "staff": staff == '1' or acc_type_input == 'staffs',
-            "donor": donor == '1' or acc_type_input == 'donors',
-            "badri_member": badri_member == '1' or acc_type_input == 'badri_members',
+            "teacher": teacher == '1' or acc_type == 'teachers',
+            "student": student == '1' or acc_type == 'students',
+            "staff": staff == '1' or acc_type == 'staffs',
+            "donor": donor == '1' or acc_type == 'donors',
+            "badri_member": badri_member == '1' or acc_type == 'badri_members',
             "special_member": special_member == '1'
         })
         
         # Handle image upload with enhanced security
         if image and image.filename:
             # Validate file upload
-            is_valid_file, file_error = await validate_file_upload(
+            await validate_file_upload(
                 file=image,
                 allowed_extensions=list(config.ALLOWED_PROFILE_IMG_EXTENSIONS),
+                request=request
             )
-            
-            if not is_valid_file:
-                response, status = send_json_response(file_error, 400)
-                return JSONResponse(content=response, status_code=status)
             
             # Generate secure filename
             filename_base = f"{person_id}_{os.path.splitext(secure_filename(image.filename))[0]}"
@@ -211,11 +198,10 @@ async def add_person(
                     img = img.convert('RGB')
                 
                 # Save as WebP for better compression
-                img.save(image_path, "WEBP", quality=85)
+                img.save(image_path, "WEBP", quality=config.PROFILE_IMG_QUALITY)
                 
                 # Set image path
-                BASE_URL = config.BASE_URL
-                fields["image_path"] = f"{BASE_URL}/uploads/profile_pics/{filename}"
+                fields["image_path"] = f"{config.BASE_URL}/uploads/profile_pics/{filename}"
                 
             except Exception as e:
                 log.critical(action="image_processing_error", trace_info=client_info.ip_address, message=f"Failed to process image: {str(e)}", secure=False)
@@ -255,7 +241,7 @@ async def add_person(
             'title2': title2,
             'degree': degree,
             'father_or_spouse': father_or_spouse,
-            'phone': phone_input
+            'phone': phone
         }
         
         # Helper function to get form data
@@ -264,7 +250,7 @@ async def add_person(
             return value.strip() if value else default
         
         # Validate and fill fields based on account type
-        if acc_type_input == 'students':
+        if acc_type == 'students':
             required_fields = [
                 'name_en', 'name_bn', 'name_ar', 'date_of_birth',
                 'birth_certificate', 'blood_group', 'gender',
@@ -282,7 +268,7 @@ async def add_person(
             
             fields.update({field: get_field(field) for field in required_fields})
             
-        elif acc_type_input in ['teachers', 'admins']:
+        elif acc_type in ['teachers', 'admins']:
             required_fields = [
                 'name_en', 'name_bn', 'name_ar', 'date_of_birth',
                 'national_id', 'blood_group', 'gender',
@@ -304,7 +290,7 @@ async def add_person(
             optional_fields = ["degree"]
             fields.update({field: get_field(field) for field in optional_fields if get_field(field)})
             
-        elif acc_type_input == 'staffs':
+        elif acc_type == 'staffs':
             required_fields = [
                 'name_en', 'name_bn', 'name_ar', 'date_of_birth',
                 'national_id', 'blood_group',
@@ -357,7 +343,7 @@ async def add_person(
                 fields[field] = hash_sensitive_data(str(fields[field]))
         
         # Insert into database (madrasa_name is guaranteed to be not None at this point)
-        await insert_person(madrasa_name, fields, acc_type_input, formatted_phone)
+        await insert_person(madrasa_name, fields, acc_type, formatted_phone)
         
         # Get image path for response
         async with get_traced_db_cursor() as cursor:
@@ -383,22 +369,12 @@ async def add_person(
 @api.post('/members')
 @cache_with_invalidation
 @handle_async_errors
-async def get_info(request: Request) -> JSONResponse:
+async def get_info(data: BaseRouteData, client_info: ClientInfo = Depends(validate_device_dependency)) -> JSONResponse:
     """Get member information with caching and incremental updates"""
     async with get_traced_db_cursor() as cursor:
         # Get request data from request body
-        try:
-            data = await request.json()
-        except:
-            data = {}
-        
-        madrasa_name = get_env_var("MADRASA_NAME")
-        lastfetched = data.get('updatedSince')
-        
-        # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
-            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return JSONResponse(content=response, status_code=status)
+        madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
+        lastfetched = data.updatedSince
 
         # Process timestamp using enhanced validation
         corrected_time = None
@@ -406,7 +382,7 @@ async def get_info(request: Request) -> JSONResponse:
             try:
                 corrected_time = lastfetched.replace("T", " ").replace("Z", "")
             except Exception as e:
-                log.warning(action="timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
+                log.warning(action="timestamp_processing_error", trace_info=client_info.ip_address, message=f"Error processing timestamp: {lastfetched}", secure=False)
                 response, status = send_json_response("Invalid timestamp format", 400)
                 return JSONResponse(content=response, status_code=status)
         
@@ -443,13 +419,6 @@ async def get_info(request: Request) -> JSONResponse:
         
         sql += " ORDER BY p.member_id"
         
-        # Execute query with enhanced cache management
-        cache_key = get_cache_key("members", lastfetched=lastfetched)
-        cached_members = await get_cached_data(cache_key)
-        
-        if cached_members is not None:
-            return JSONResponse(content=cached_members, status_code=200)
-
         await cursor.execute(sql, params)
         members = await cursor.fetchall()
         
@@ -457,47 +426,23 @@ async def get_info(request: Request) -> JSONResponse:
         result_data = {
             "members": members,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        }
-        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
-        
-        # Log successful retrieval
-        log.info(action="get_members", trace_info=data.get("ip_address", ""), message=f"Members retrieved successfully", secure=False)
-        
+        }        
         return JSONResponse(content=result_data, status_code=200)
         
 
 @api.post("/routines")
 @cache_with_invalidation
 @handle_async_errors
-async def get_routine(request: Request) -> JSONResponse:
+async def get_routine(data: BaseRouteData, client_info: ClientInfo = Depends(validate_device_dependency)) -> JSONResponse:
     """Get routine information with caching and incremental updates"""
     # Get request data from request body
-    try:
-        data = await request.json()
-    except:
-        data = {}
-    
-    madrasa_name = get_env_var("MADRASA_NAME")
-    lastfetched = data.get("updatedSince")
-    
-    # SECURITY: Validate madrasa_name is in allowed list
-    if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
-        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return JSONResponse(content=response, status_code=status)
+    madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
+    lastfetched = data.updatedSince
 
     # Process timestamp using enhanced validation
-    corrected_time = None
+    cutoff = None
     if lastfetched:
-        if not validate_timestamp_format(lastfetched):
-            log.warning(action="invalid_routine_timestamp", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp format: {lastfetched}", secure=False)
-            response, status = send_json_response("Invalid timestamp format", 400)
-            return JSONResponse(content=response, status_code=status)
-        try:
-            corrected_time = lastfetched.replace("T", " ").replace("Z", "")
-        except Exception as e:
-            log.warning(action="routine_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-            response, status = send_json_response("Invalid timestamp format", 400)
-            return JSONResponse(content=response, status_code=status)
+        cutoff =  validate_timestamp_format(lastfetched, client_info.ip_address)
     
     # Build SQL query
     sql = f"""
@@ -515,54 +460,33 @@ async def get_routine(request: Request) -> JSONResponse:
     """
     
     params = []
-    if corrected_time:
+    if cutoff:
         sql += " WHERE r.updated_at > %s"
-        params.append(corrected_time)
+        params.append(cutoff)
     
     sql += " ORDER BY r.class_level, r.weekday, r.serial"
-    
-    # Execute query with enhanced cache management
-    cache_key = get_cache_key("routines", lastfetched=lastfetched)
-    cached_routines = await get_cached_data(cache_key)
-    
-    if cached_routines is not None:
-        return JSONResponse(content=cached_routines, status_code=200)
     
     async with get_traced_db_cursor() as cursor:
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
     
-    # Cache the result
-        result_data = {
-            "routines": result,
-            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        }
-        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
-        
-        # Log successful retrieval
-        log.info(action="get_routines", trace_info=data.get("ip_address", ""), message=f"Routines retrieved successfully", secure=False)
-        
-        return JSONResponse(content=result_data, status_code=200)
+    result_data = {
+        "routines": result,
+        "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    }
+            
+    return JSONResponse(content=result_data, status_code=200)
 
 @api.post('/events')
 @cache_with_invalidation
 @handle_async_errors
-async def events(request: Request) -> JSONResponse:
+async def events(data: BaseRouteData, client_info: ClientInfo = Depends(validate_device_dependency)) -> JSONResponse:
     """Get events with enhanced date processing and status classification"""
     # Get request data from request body
-    try:
-        data = await request.json()
-    except:
-        data = {}
-    madrasa_name = get_env_var("MADRASA_NAME")
-    lastfetched = data.get('updatedSince')
+    madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
+    lastfetched = data.updatedSince
     DHAKA = ZoneInfo("Asia/Dhaka")
     
-    # SECURITY: Validate madrasa_name is in allowed list
-    if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
-        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return JSONResponse(content=response, status_code=status)
-
     # Build SQL query
     sql = f"""
         SELECT 
@@ -576,27 +500,11 @@ async def events(request: Request) -> JSONResponse:
     
     params = []
     if lastfetched:
-        if not validate_timestamp_format(lastfetched):
-            log.error(action="get_events_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
-            response, status = send_json_response("Invalid updatedSince format", 400)
-            return JSONResponse(content=response, status_code=status)
-        try:
-            cutoff = datetime.fromisoformat(lastfetched.replace("Z", "+00:00"))
-            sql += " WHERE e.created_at > %s"
-            params.append(cutoff)
-        except ValueError as e:
-            log.error(action="events_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-            response, status = send_json_response("Invalid updatedSince format", 400)
-            return JSONResponse(content=response, status_code=status)
+        cutoff = validate_timestamp_format(lastfetched, client_info.ip_address)
+        sql += " WHERE e.created_at > %s"
+        params.append(cutoff)
     
     sql += " ORDER BY e.event_id DESC"
-    
-    # Execute query with enhanced cache management
-    cache_key = get_cache_key("events", lastfetched=lastfetched)
-    cached_events = await get_cached_data(cache_key)
-    
-    if cached_events is not None:
-        return JSONResponse(content=cached_events, status_code=200)
     
     async with get_traced_db_cursor() as cursor:
         await cursor.execute(sql, params)
@@ -635,45 +543,29 @@ async def events(request: Request) -> JSONResponse:
             "events": rows,
             "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         }
-        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
         
         # Log successful retrieval
-        log.info(action="get_events", trace_info=data.get("ip_address", ""), message=f"Events retrieved successfully", secure=False)
+        log.info(action="get_events", trace_info=client_info.ip_address, message=f"Events retrieved successfully", secure=False)
         
         return JSONResponse(content=result_data, status_code=200)
 
 @api.post('/exams')
 @cache_with_invalidation
 @handle_async_errors
-async def get_exams(request: Request) -> JSONResponse:
+async def get_exams(data: BaseRouteData, client_info: ClientInfo = Depends(validate_device_dependency)) -> JSONResponse:
     """Get exam information with enhanced validation and error handling"""
     # Get request data from request body
-    try:
-        data = await request.json()
-    except:
-        data = {}
+    madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
+    lastfetched = data.updatedSince
     
-    madrasa_name = get_env_var("MADRASA_NAME")
-    lastfetched = data.get("updatedSince")
-    
-    # SECURITY: Validate madrasa_name is in allowed list
-    if not validate_madrasa_name(madrasa_name, data.get("ip_address", "")):
-        response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-        return JSONResponse(content=response, status_code=status)
-
     # Process timestamp using enhanced validation
     cutoff = None
     if lastfetched:
-        if not validate_timestamp_format(lastfetched):
-            log.error(action="get_exams_failed", trace_info=data.get("ip_address", ""), message=f"Invalid timestamp: {lastfetched}", secure=False)
-            response, status = send_json_response("Invalid updatedSince format", 400)
-            return JSONResponse(content=response, status_code=status)
+        cutoff = validate_timestamp_format(lastfetched, client_info.ip_address)
         try:
             cutoff = lastfetched.replace("T", " ").replace("Z", "")
         except Exception as e:
-            log.error(action="exams_timestamp_processing_error", trace_info=data.get("ip_address", ""), message=f"Error processing timestamp: {lastfetched}", secure=False)
-            response, status = send_json_response("Invalid updatedSince format", 400)
-            return JSONResponse(content=response, status_code=status)
+            log.error(action="exams_timestamp_processing_error", trace_info=client_info.ip_address, message=f"Error processing timestamp: {lastfetched}", secure=False)
     
     # Build SQL query
     sql = f"""
@@ -694,49 +586,17 @@ async def get_exams(request: Request) -> JSONResponse:
     
     sql += " ORDER BY e.exam_id"
     
-    # Execute query with enhanced cache management
-    cache_key = get_cache_key("exams", lastfetched=lastfetched)
-    cached_exams = await get_cached_data(cache_key)
-    
-    if cached_exams is not None:
-        return JSONResponse(content=cached_exams, status_code=200)
-    
     async with get_traced_db_cursor() as cursor:
             await cursor.execute(sql, params)
             result = await cursor.fetchall()
         
-        # Cache the result
-        result_data = {
-            "exams": result,
-            "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        }
-        await set_cached_data(cache_key, result_data, ttl=config.SHORT_CACHE_TTL)
-        
-        # Log successful retrieval
-        log.info(action="get_exams", trace_info=data.get("ip_address", ""), message=f"Exams retrieved successfully", secure=False)
-        
-        return JSONResponse(content=result_data, status_code=200)
-
-
-
-# ─── Request Processing Middleware ───────────────────────────────────────────
-
-async def process_request_middleware(request: Request) -> Tuple[bool, str]:
-    """Process request with security and validation checks"""
-    # Validate request origin
-    if not validate_request_origin(request):
-        return False, "Invalid request origin"
+    result_data = {
+        "exams": result,
+        "lastSyncedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    }
     
-    # Check for suspicious activity
-    client_info = await get_client_info_helper() or {}
-    if security_manager.detect_sql_injection(str(request.url)):
-        await security_manager.track_suspicious_activity(
-            client_info["ip_address"], 
-            "SQL injection in URL"
-        )
-        return False, "Suspicious request detected"
-    
-    return True, ""
+    return JSONResponse(content=result_data, status_code=200)
+
 
 # ─── Response Enhancement ─────────────────────────────────────────────────────
 
@@ -753,14 +613,11 @@ def enhance_response_headers(response: Response) -> Response:
 
 # ─── Database Connection Management ───────────────────────────────────────────
 
-def validate_timestamp_format(timestamp: str) -> bool:
+def validate_timestamp_format(timestamp: str, ip_address: str) -> str:
     """Validate timestamp format"""
     try:
         datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        return True
+        return timestamp.replace("T", " ").replace("Z", "")
     except ValueError:
-        return False
-
-def validate_folder_access(folder: str, allowed_folders: List[str]) -> bool:
-    """Validate folder access permissions"""
-    return folder in allowed_folders
+        log.error(action="get_exams_failed", trace_info=ip_address, message=f"Invalid timestamp: {timestamp}", secure=False)
+        raise

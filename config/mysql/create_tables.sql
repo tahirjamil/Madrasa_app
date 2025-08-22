@@ -88,24 +88,6 @@ CREATE TABLE IF NOT EXISTS books (
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;                           
 
 
-CREATE TABLE IF NOT EXISTS logs (
-                log_id     INT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-                action     VARCHAR(100) NOT NULL,
-                trace_info      VARCHAR(255),
-                trace_info_hash  CHAR(64) NULL,
-                trace_info_encrypted VARCHAR(255) NULL,
-                level      VARCHAR(10)  NOT NULL CHECK (level IN ('info','warning','error','critical')) DEFAULT 'info',
-                message    TEXT NOT NULL,
-                metadata   JSON,
-
-                INDEX idx_logs_trace_info (trace_info),
-                INDEX idx_logs_action (action),
-                INDEX idx_logs_created_at (created_at)
-                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;            
-
-
 CREATE TABLE IF NOT EXISTS interactions (
                 interaction_id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id             INT NULL,
@@ -318,4 +300,39 @@ CREATE TABLE IF NOT EXISTS events (
                 INDEX idx_events_type (type),
                 INDEX idx_events_title (title),
                 FOREIGN KEY (title) REFERENCES translations(translation_text) ON DELETE RESTRICT ON UPDATE CASCADE
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+---------------------------------------------- LOG TABLES ----------------------------------------------
+
+-- Create logs database if it doesn't exist  
+CREATE DATABASE IF NOT EXISTS logs;
+USE logs;
+
+CREATE TABLE IF NOT EXISTS logs (
+                log_id     INT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                action     VARCHAR(100) NOT NULL,
+                trace_info      VARCHAR(255),
+                trace_info_hash  CHAR(64) NULL,
+                trace_info_encrypted VARCHAR(255) NULL,
+                level      VARCHAR(10)  NOT NULL CHECK (level IN ('info','warning','error','critical')) DEFAULT 'info',
+                message    TEXT NOT NULL,
+                metadata   JSON,
+
+                INDEX idx_logs_trace_info (trace_info),
+                INDEX idx_logs_action (action),
+                INDEX idx_logs_created_at (created_at)
+                ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;            
+
+CREATE TABLE IF NOT EXISTS password_reset_logs (
+                password_reset_log_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                user_id INT NOT NULL,
+                ip_address VARCHAR(255) NOT NULL,
+                reset_method VARCHAR(255) NOT NULL,
+
+                INDEX idx_password_reset_logs_user_id (user_id),
+                INDEX idx_password_reset_logs_reset_method (reset_method)
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

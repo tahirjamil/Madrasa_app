@@ -1,8 +1,7 @@
-import asyncio
-import os
+from enum import Enum
 from datetime import datetime, timedelta, timezone
 import datetime as dt
-from typing import Any, Dict, Tuple, Optional
+from typing import Optional
 
 import aiomysql
 from fastapi import Request, Depends
@@ -71,10 +70,40 @@ class ResetPasswordRequest(BaseAuthRequest):
 
 class AccountCheckRequest(BaseAuthRequest):
     """Account check request"""
-    student_id: Optional[str] = None
-    birth_date: Optional[str] = None
-    join_date: Optional[str] = None
-    madrasa_name: Optional[str] = None
+    email: Optional[str] = None
+    member_id: Optional[int] = None
+    student_id: str | int | None = None
+    name_en: Optional[str] = None
+    name_bn: Optional[str] = None
+    name_ar: Optional[str] = None
+    date_of_birth: datetime | str | None = None
+    birth_certificate: str | int | None = None
+    national_id: str | int | None = None
+    blood_group: Optional[str] = None
+    gender: Optional[str] = None
+    title1: Optional[str] = None
+    title2: Optional[str] = None
+    source: Optional[str] = None
+    present_address: Optional[str] = None
+    address_en: Optional[str] = None
+    address_bn: Optional[str] = None
+    address_ar: Optional[str] = None
+    permanent_address: Optional[str] = None
+    father_or_spouse: Optional[str] = None
+    father_en: Optional[str] = None
+    father_bn: Optional[str] = None
+    father_ar: Optional[str] = None
+    mother_en: Optional[str] = None
+    mother_bn: Optional[str] = None
+    mother_ar: Optional[str] = None
+    class_name: Optional[str] = None
+    guardian_number: Optional[str] = None
+    degree: Optional[str] = None
+    image_path: Optional[str] = None
+
+class ManageAccountPageType(str, Enum):
+    deactivate = "deactivate"
+    delete = "delete"
 
 class ManageAccountRequest(BaseAuthRequest):
     """Manage account request (deactivate/delete)"""
@@ -241,6 +270,7 @@ async def login(
     password = data.password
     device_id = client_info.device_id
     ip_address = client_info.ip_address
+    madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
     
     # Check login attempts
     await validate_login_attempts(phone, fullname, request)    
@@ -249,7 +279,7 @@ async def login(
         async with get_traced_db_cursor() as cursor:
                 # Get user by phone and fullname
                 await cursor.execute(
-                    "SELECT * FROM people WHERE phone = %s AND fullname = %s",
+                    f"SELECT * FROM {madrasa_name}.people WHERE phone = %s AND fullname = %s",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -282,7 +312,7 @@ async def login(
                 
                 # Get user's profile information
                 await cursor.execute(
-                    "SELECT * FROM people WHERE user_id = %s",
+                    f"SELECT * FROM {madrasa_name}.people WHERE user_id = %s",
                     (user["user_id"],)
                 )
                 profile = await cursor.fetchone()
@@ -448,6 +478,7 @@ async def reset_password(
         code = data.code
         device_id = client_info.device_id
         ip_address = client_info.ip_address
+        madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
                 
         # If old password is not provided, use code verification
         if not old_password:
@@ -459,7 +490,7 @@ async def reset_password(
         async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
-                    "SELECT * FROM people WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    f"SELECT * FROM {madrasa_name}.people WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -496,11 +527,11 @@ async def reset_password(
                     (hashed_password, datetime.now(timezone.utc), user['user_id'])
                 )
                 
-                # Track password reset event
-                await cursor.execute("""
-                    INSERT INTO password_reset_logs (user_id, ip_address, reset_method)
-                    VALUES (%s, %s, %s)
-                """, (user['user_id'], ip_address, 'code' if code else 'old_password'))
+                # TODO: Track password reset event
+                # await cursor.execute("""
+                #     INSERT INTO logs.password_reset_logs (user_id, ip_address, reset_method)
+                #     VALUES (%s, %s, %s)
+                # """, (user['user_id'], ip_address, 'code' if code else 'old_password'))
                 
                 log.info(action="password_reset_successful", trace_info=ip_address, message=f"Password reset successful for: {fullname}", secure=False)
                 
@@ -516,44 +547,35 @@ async def reset_password(
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def manage_account(
-    page_type: str,
-    request: Request,
+    page_type: ManageAccountPageType,
     data: ManageAccountRequest,
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Manage account (deactivate/delete) with enhanced security"""
-    # Validate page type
-    if page_type not in ("deactivate", "delete"):
-        response, status = send_json_response("Invalid page type", 400)
-        return JSONResponse(content=response, status_code=status)
-    
-    # Handle POST request
     try:
         # Extract and sanitize data
         phone = data.phone
         fullname = data.fullname
-        password = data.password 
-        
-        # Validate and format phone number
-        formatted_phone = format_phone_number(phone)
-        
+        password = data.password
+        madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
+
         # Authenticate user
         async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
-                    "SELECT * FROM people WHERE phone = %s AND fullname = %s",
-                    (formatted_phone, fullname)
+                    f"SELECT * FROM {madrasa_name}.people WHERE phone = %s AND fullname = %s",
+                    (phone, fullname)
                 )
                 user = await cursor.fetchone()
                 
                 if not user or not check_password_hash(user["password_hash"], password or ""):
-                    log.error(action="manage_account_invalid_credentials", trace_info=formatted_phone, message="Invalid credentials for account management", secure=True)
+                    log.error(action="manage_account_invalid_credentials", trace_info=phone, message="Invalid credentials for account management", secure=True)
                     response, status = send_json_response("Invalid login details", 401)
                     return JSONResponse(content=response, status_code=status)
                 
                 # Prepare confirmation message
                 deletion_days = config.ACCOUNT_DELETION_DAYS
-                if page_type in ["remove", "delete"]:
+                if page_type == ManageAccountPageType.delete:
                     subject = "Account Deletion Confirmation"
                     msg = f"Your account will be permanently deleted in {deletion_days} days. To cancel, log in and reactivate."
                 else:
@@ -562,11 +584,11 @@ async def manage_account(
                 
                 # Send confirmation via SMS
                 errors = 0
-                if not await send_sms(phone=formatted_phone, msg=msg):
+                if not await send_sms(phone=phone, msg=msg):
                     errors += 1
                 
                 # Send confirmation via email if available
-                email = await get_email(fullname=fullname, phone=formatted_phone)
+                email = await get_email(fullname=fullname, phone=phone)
                 if email:
                     if not await send_email(to_email=email, subject=subject, body=msg):
                         errors += 1
@@ -574,16 +596,16 @@ async def manage_account(
                     errors += 1
                 
                 if errors > 1:
-                    log.critical(action="manage_account_notification_failed", trace_info=formatted_phone, message="Could not send confirmation notifications", secure=True)
+                    log.critical(action="manage_account_notification_failed", trace_info=phone, message="Could not send confirmation notifications", secure=True)
                     response, status = send_json_response("Could not send confirmation. Try again later.", 500)
                     return JSONResponse(content=response, status_code=status)
                 
                 # Schedule deactivation/deletion
                 now = datetime.now(timezone.utc)
-                scheduled_deletion = now + timedelta(days=deletion_days) if page_type in ["remove", "delete"] else None
+                scheduled_deletion = now + timedelta(days=deletion_days) if page_type == ManageAccountPageType.delete else None
                 
                 await cursor.execute(
-                    """UPDATE people SET 
+                    f"""UPDATE {madrasa_name}.people SET 
                     deactivated_at = %s, 
                     scheduled_deletion_at = %s,
                     updated_at = %s
@@ -591,21 +613,21 @@ async def manage_account(
                     (now, scheduled_deletion, now, user["user_id"])
                 )
                 
-                # Log the action
-                action = "delete" if page_type in ["remove", "delete"] else "deactivate"
-                await cursor.execute(
-                    """INSERT INTO account_actions (user_id, action_type, ip_address)
-                    VALUES (%s, %s, %s)""",
-                    (user["user_id"], action, client_info.ip_address)
-                )
+                # TODO: Log the action
+                # action = "delete" if page_type == ManageAccountPageType.delete else "deactivate"
+                # await cursor.execute(
+                #     """INSERT INTO account_actions (user_id, action_type, ip_address)
+                #     VALUES (%s, %s, %s)""",
+                #     (user["user_id"], action, client_info.ip_address)
+                # )
                 
                 
-                if page_type in ["remove", "delete"]:
-                    log.warning(action="account_deletion_scheduled", trace_info=formatted_phone, message=f"User {hash_sensitive_data(fullname)} scheduled for deletion", secure=True)
+                if page_type == ManageAccountPageType.delete:
+                    log.warning(action="account_deletion_scheduled", trace_info=phone, message=f"User {hash_sensitive_data(fullname)} scheduled for deletion", secure=True)
                     response, status = send_json_response("Account deletion initiated. Check your messages.", 200)
                     return JSONResponse(content=response, status_code=status)
                 else:
-                    log.warning(action="account_deactivated", trace_info=formatted_phone, message=f"User {hash_sensitive_data(fullname)} deactivated", secure=True)
+                    log.warning(action="account_deactivated", trace_info=phone, message=f"User {hash_sensitive_data(fullname)} deactivated", secure=True)
                     response, status = send_json_response("Account deactivated successfully.", 200)
                     return JSONResponse(content=response, status_code=status)
                     
@@ -617,13 +639,11 @@ async def manage_account(
 @api.post("/account/reactivate")
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
-async def undo_remove(
-    request: Request,
+async def reactivate_account(
     data: BaseAuthRequest,
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Reactivate a deactivated account with enhanced validation"""
-    
     try:
         # Extract and sanitize data
         phone = data.phone
@@ -634,7 +654,7 @@ async def undo_remove(
         async with get_traced_db_cursor() as cursor:
                 # Get deactivated user
                 await cursor.execute(
-                    """SELECT * FROM people 
+                    f"""SELECT * FROM {madrasa_name}.people 
                     WHERE phone = %s AND fullname = %s AND deactivated_at IS NOT NULL""",
                     (phone, fullname)
                 )
@@ -654,7 +674,7 @@ async def undo_remove(
                 
                 # Reactivate account
                 await cursor.execute(
-                    """UPDATE people SET 
+                    f"""UPDATE {madrasa_name}.people SET 
                     deactivated_at = NULL, 
                     scheduled_deletion_at = NULL,
                     updated_at = %s
@@ -663,12 +683,12 @@ async def undo_remove(
                 )
                 
                 
-                # Log the reactivation
-                await cursor.execute(
-                    """INSERT INTO account_actions (user_id, action_type, ip_address)
-                    VALUES (%s, 'reactivate', %s)""",
-                    (user["user_id"], ip_address)
-                )
+                # TODO: Log the reactivation
+                # await cursor.execute(
+                #     f"""INSERT INTO {madrasa_name}.account_actions (user_id, action_type, ip_address)
+                #     VALUES (%s, 'reactivate', %s)""",
+                #     (user["user_id"], ip_address)
+                # )
                 
                 
                 log.info(action="account_reactivated_successfully", trace_info=ip_address, message=f"Account reactivated successfully for: {fullname}", secure=False)
@@ -689,7 +709,6 @@ async def get_account_status(
     client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Check account status and validate session with enhanced security"""
-    
     try:
         # Extract and validate device information
         device_id = client_info.device_id
@@ -699,23 +718,47 @@ async def get_account_status(
         # Get other fields
         phone = data.phone
         fullname = data.fullname
-        student_id = data.student_id
-        birth_date = data.birth_date
-        join_date = data.join_date
         madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
         
         # Validate madrasa name
         
         # Define fields to check
         checks = {
-            "student_id": student_id,
-            "birth_date": birth_date,
-            "join_date": join_date
+            "email": data.email,
+            "member_id": data.member_id,
+            "student_id": data.student_id,
+            "name_en": fullname,
+            "name_bn": data.name_bn,
+            "name_ar": data.name_ar,
+            "date_of_birth": data.date_of_birth,
+            "birth_certificate": data.birth_certificate,
+            "national_id": data.national_id,
+            "blood_group": data.blood_group,
+            "gender": data.gender,
+            "title1": data.title1,
+            "title2": data.title2,
+            "source": data.source,
+            "present_address": data.present_address,
+            "address_en": data.address_en,
+            "address_bn": data.address_bn,
+            "address_ar": data.address_ar,
+            "permanent_address": data.permanent_address,
+            "father_or_spouse": data.father_or_spouse,
+            "father_en": data.father_en,
+            "father_bn": data.father_bn,
+            "father_ar": data.father_ar,
+            "mother_en": data.mother_en,
+            "mother_bn": data.mother_bn,
+            "mother_ar": data.mother_ar,
+            "class": data.class_name,
+            "guardian_number": data.guardian_number,
+            "degree": data.degree,
+            "image_path": data.image_path,
         }
         
-        # Validate all required fields are present
+        # Check for missing required fields (properly handle None vs empty string)
         for field_name, field_value in checks.items():
-            if not field_value:
+            if field_value is None or field_value == "":
                 log.info(action="account_check_missing_field", trace_info=ip_address, message=f"Field {field_name} is missing", secure=False)
                 response, status = send_json_response("Session invalidated. Please log in again.", 400)
                 response.update({"action": "logout"})
@@ -725,10 +768,20 @@ async def get_account_status(
         
         async with get_traced_db_cursor() as cursor:
                 # Get user record
-                await cursor.execute(
-                    "SELECT * FROM people WHERE phone = %s AND fullname = %s",
-                    (phone, fullname)
-                )
+                await cursor.execute(f"""
+                SELECT u.deactivated_at, u.email, p.*, 
+                    tname.translation_text AS name_en, tname.bn_text AS name_bn, tname.ar_text AS name_ar,
+                    taddress.translation_text AS address_en, taddress.bn_text AS address_bn, taddress.ar_text AS address_ar,
+                    tfather.translation_text AS father_en, tfather.bn_text AS father_bn, tfather.ar_text AS father_ar,
+                    tmother.translation_text AS mother_en, tmother.bn_text AS mother_bn, tmother.ar_text AS mother_ar
+                    FROM global.users u
+                    JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id
+                    JOIN global.translations tname ON tname.translation_text = p.name
+                    LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
+                    LEFT JOIN global.translations tfather ON tfather.translation_text = p.father_name
+                    LEFT JOIN global.translations tmother ON tmother.translation_text = p.mother_name
+                    WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s)
+            """, (phone, fullname))
                 record = await cursor.fetchone()
                 
                 if not record:
@@ -746,13 +799,16 @@ async def get_account_status(
                 
                 # Compare provided fields with database values
                 for col, provided in checks.items():
+                    if provided is None:
+                        continue  # skip fields not sent by client
+                    
                     db_val = record.get(col)
                     
-                    # Handle date comparisons
-                    if "_date" in col and provided:
+                    # Special handling for dates: compare only date part
+                    if col == "date_of_birth" and isinstance(db_val, (dt.datetime, dt.date)):
                         try:
-                            provided_date = datetime.strptime(provided, "%Y-%m-%d").date()
-                        except ValueError:
+                            provided_date = datetime.fromisoformat(provided).date()
+                        except Exception:
                             log.error(action="account_check_bad_date", trace_info=record["user_id"], message=f"Bad date format: {provided}", secure=False)
                             response, status = send_json_response("Session invalidated. Please log in again.", 401)
                             response.update({"action": "logout"})
@@ -778,10 +834,26 @@ async def get_account_status(
                 
                 # Track device interaction
                 await cursor.execute(
-                    """INSERT INTO device_interactions (user_id, device_id, interaction_type, ip_address)
-                    VALUES (%s, %s, 'check', %s)""",
-                    (record["user_id"], device_id, ip_address)
+                    "SELECT open_times FROM global.interactions WHERE device_id = %s AND device_brand = %s AND user_id = %s LIMIT 1",
+                    (device_id, device_brand, record["user_id"])
                 )
+                open_times = await cursor.fetchone()
+                
+                if not open_times:
+                    # Create new interaction record
+                    await cursor.execute("""
+                        INSERT INTO global.interactions 
+                        (device_id, ip_address, device_brand, user_id)
+                        VALUES (%s, %s, %s, %s)
+                    """, (device_id, ip_address, device_brand, record["user_id"]))
+                else:
+                    # Update existing interaction record
+                    opened = open_times['open_times'] if open_times else 0
+                    opened += 1
+                    await cursor.execute("""
+                        UPDATE global.interactions SET open_times = %s
+                        WHERE device_id = %s AND device_brand = %s AND user_id = %s
+                    """, (opened, device_id, device_brand, record["user_id"]))
                 
                 
                 log.info(action="account_check_successful", trace_info=ip_address, message=f"Account check successful for user: {record['user_id']}", secure=False)
@@ -797,88 +869,5 @@ async def get_account_status(
 
 # ─── Advanced Security and Monitoring Functions ─────────────────────────────────
 
-def validate_session_security(session_data: Dict[str, Any]) -> Tuple[bool, str]:
-    """Validate session security parameters"""
-    required_fields = ['user_id', 'device_id', 'ip_address']
-    
-    for field in required_fields:
-        if not session_data.get(field):
-            return False, f"Missing required session field: {field}"
-    
-    # Validate session age
-    session_timestamp = session_data.get('timestamp')
-    if session_timestamp:
-        try:
-            session_time = datetime.fromisoformat(session_timestamp.replace('Z', '+00:00'))
-            if (datetime.now(timezone.utc) - session_time).total_seconds() > config.SESSION_TIMEOUT_HOURS * 3600:
-                return False, "Session has expired"
-        except ValueError:
-            return False, "Invalid session timestamp"
-    
-    return True, ""
-
-async def track_user_activity(user_id: int, activity_type: str, details: Dict[str, Any]) -> None:
-    """Track user activity for security monitoring"""
-    try:
-        activity_data = {
-            'user_id': user_id,
-            'activity_type': activity_type,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'ip_address': None,  # No request context available in this helper function
-            'details': details or {}
-        }
-        
-        # Log activity for monitoring
-        log.info(
-            action=f"user_activity_{activity_type}",
-            trace_info=activity_data['ip_address'],
-            message=f"User activity: {activity_type}",
-            **activity_data
-        )
-        
-        # Store in cache for rate limiting using KeyDB-backed helper
-        from utils.helpers.helpers import set_cached_data
-        cache_key = f"user_activity:{user_id}:{activity_type}"
-        await set_cached_data(cache_key, activity_data, ttl=3600)
-        
-    except Exception as e:
-                log.critical(action="activity_tracking_error", trace_info="system", message=f"Error tracking user activity: {str(e)}", secure=False)
-
-async def check_account_security_status(user_id: int) -> Dict[str, Any]:
-    """Check account security status and return security metrics"""
-    try:
-        # Get recent login attempts
-        from utils.helpers.helpers import get_cached_data
-        login_attempts = await get_cached_data(f"login_attempts:{user_id}", default=0)
-        
-        # Get recent activities
-        recent_activities = []
-        for activity_type in ['login', 'logout', 'password_change', 'account_modification']:
-            activity_data = await get_cached_data(f"user_activity:{user_id}:{activity_type}", default=None)
-            if activity_data:
-                recent_activities.append(activity_data)
-        
-        # Calculate security score
-        security_score = 100
-        
-        if login_attempts > 3:
-            security_score -= 20
-        
-        if len(recent_activities) > 10:
-            security_score -= 10
-        
-        return {
-            'security_score': max(0, security_score),
-            'login_attempts': login_attempts,
-            'recent_activities': len(recent_activities),
-            'last_activity': recent_activities[-1] if recent_activities else None
-        }
-        
-    except Exception as e:
-        log.critical(action="security_status_check_error", trace_info="system", message=f"Error checking security status: {str(e)}", secure=False)
-        return {
-            'security_score': 0,
-            'login_attempts': 0,
-            'recent_activities': 0,
-            'last_activity': None
-        }
+# TODO: Track user activity
+# async def track_user_activity(user_id: int, activity_type: str, details: Dict[str, Any]) -> None:

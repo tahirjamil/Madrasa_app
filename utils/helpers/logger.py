@@ -71,7 +71,7 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
                     "message": message
                 })
 
-                sql: str = "INSERT INTO logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                sql: str = "INSERT INTO logs.logs (action, trace_info, message, level, metadata, trace_info_hash, trace_info_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s)"
                 params: list[str | None] = [action, trace_info, message, level, json.dumps(log_metadata)]
 
                 if secure:
@@ -93,7 +93,7 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
                 async with log_count_lock:
                     if log_count > 500:
                         # Enhanced auto-prune with better performance
-                        await cursor.execute("SELECT COUNT(*) AS total FROM logs")
+                        await cursor.execute("SELECT COUNT(*) AS total FROM logs.logs")
                         result = await cursor.fetchone()
                         total = result['total'] if result else 0
 
@@ -102,10 +102,10 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
                         if total > 1000:
                             
                             await cursor.execute("""
-                                DELETE FROM logs 
+                                DELETE FROM logs.logs 
                                 WHERE log_id IN (
                                     SELECT log_id FROM (
-                                        SELECT log_id FROM logs 
+                                        SELECT log_id FROM logs.logs 
                                         ORDER BY created_at ASC 
                                         LIMIT %s
                                     ) AS old_logs

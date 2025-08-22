@@ -1,14 +1,14 @@
 import re
-from fastapi import Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import Request
+from fastapi.responses import HTMLResponse
 
 from config import config
-from utils.helpers.fastapi_helpers import handle_async_errors, templates
-from utils.helpers.helpers import rate_limit
+from utils.helpers.fastapi_helpers import templates
+from utils.helpers.helpers import handle_async_errors
 import os
 import markdown
 from datetime import datetime
-from routes.web_routes import web_routes, url_for
+from routes.web_routes import web_routes
 from utils.helpers.improved_functions import get_env_var
 
 @web_routes.get("/", response_class=HTMLResponse, name="home")

@@ -203,6 +203,7 @@ class MadrasaConfig:
 
     # Upload Limits
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max
+    PROFILE_IMG_QUALITY = 90
     
     # Base Directories
     BASE_UPLOAD_FOLDER = os.path.join('uploads')

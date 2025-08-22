@@ -1,6 +1,0 @@
-config
-routes
-static
-translations
-uploads
-utils

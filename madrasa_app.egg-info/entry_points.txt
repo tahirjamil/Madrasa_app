@@ -1,6 +1,0 @@
-[console_scripts]
-madrasa-admin = maintenance:main
-madrasa-app = run_server:main
-
-[gui_scripts]
-madrasa-gui = gui:main

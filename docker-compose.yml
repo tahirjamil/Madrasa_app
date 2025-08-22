@@ -1,4 +1,76 @@
 services:
+  # FastAPI App
+  app:
+    build: .
+    container_name: madrasa_app
+    restart: unless-stopped
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+      - ./static:/app/static
+      - ./templates:/app/templates
+    expose:
+      - "8000"  # Only expose to internal network, not host
+    networks:
+      - app_network
+      - observability_network
+    depends_on:
+      keydb:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+      start_period: 30s
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: madrasa_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"   # HTTP
+      - "443:443" # HTTPS (for future SSL)
+    volumes:
+      - ./config/hosting/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/app/static:ro  # Mount static files for direct serving
+      - ./uploads:/app/uploads:ro  # Mount uploads for direct serving
+      - ./logs/nginx:/var/log/nginx  # Nginx logs
+    networks:
+      - app_network
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+      start_period: 10s
+
+  # # MySQL Database
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: madrasa_mysql
+  #   restart: unless-stopped
+  #   expose:
+  #     - "3306"  # Only expose to internal network
+  #   volumes:
+  #     - mysql_data:/var/lib/mysql
+  #     - ./config/mysql:/docker-entrypoint-initdb.d:ro
+  #   networks:
+  #     - app_network
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword"]
+  #     timeout: 10s
+  #     retries: 10
+  #     interval: 30s
+  #     start_period: 30s
+  #   command: --default-authentication-plugin=mysql_native_password
+
   # KeyDB for caching and session storage
   keydb:
     image: eqalpha/keydb:latest
@@ -13,16 +85,15 @@ services:
     networks:
       - observability_network
     healthcheck:
-      test: ["CMD", "keydb-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "keydb-cli", "ping"]
       timeout: 10s
       retries: 5
       interval: 30s
-    environment:
-      - KEYDB_PASSWORD=password
+      start_period: 10s
 
   # OpenTelemetry Collector
   otel-collector:
-    image: otel/opentelemetry-collector:latest
+    image: otel/opentelemetry-collector-contrib:latest
     container_name: madrasa_otel_collector
     restart: unless-stopped
     command: ["--config", "/etc/otel-collector-config.yaml"]
@@ -36,9 +107,11 @@ services:
     networks:
       - observability_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133"]
+      test: ["CMD", "curl", "-f", "http://localhost:13133/"]
       timeout: 20s
       retries: 10
+      start_period: 30s
+      interval: 15s
     depends_on:
       - jaeger
 
@@ -60,6 +133,8 @@ services:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686"]
       timeout: 20s
       retries: 10
+      start_period: 20s
+      interval: 15s
 
   # Prometheus for metrics collection
   prometheus:
@@ -84,6 +159,8 @@ services:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       timeout: 20s
       retries: 10
+      start_period: 20s
+      interval: 15s
     depends_on:
       - otel-collector
 
@@ -92,7 +169,11 @@ volumes:
     driver: local
   keydb_data:
     driver: local
+  mysql_data:
+    driver: local
 
 networks:
+  app_network:
+    driver: bridge
   observability_network:
     driver: bridge

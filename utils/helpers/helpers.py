@@ -1101,6 +1101,15 @@ async def delete_code() -> None:
 
 # ─── Validation Functions ────────────────────────────────────────────────────
 
+def validate_timestamp_format(timestamp: str, ip_address: str) -> str:
+    """Validate timestamp format"""
+    try:
+        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return timestamp.replace("T", " ").replace("Z", "")
+    except ValueError:
+        log.error(action="get_exams_failed", trace_info=ip_address, message=f"Invalid timestamp: {timestamp}", secure=False)
+        raise
+
 def format_phone_number(phone: str) -> str:
     """Format and validate phone number to international E.164 format"""
     if not phone:

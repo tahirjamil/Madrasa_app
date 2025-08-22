@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, date, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
 from PIL import Image
@@ -17,9 +17,9 @@ from routes.api import api
 from utils.mysql.database_utils import get_traced_db_cursor
 from config import config
 from utils.helpers.helpers import (
-    format_phone_number, get_global_id, get_id, insert_person, get_cache_key,
-    cache_with_invalidation, security_manager, set_cached_data, get_cached_data, handle_async_errors,
-    encrypt_sensitive_data, hash_sensitive_data, validate_file_upload, validate_fullname, validate_madrasa_name, validate_request_origin
+    format_phone_number, get_global_id, insert_person, validate_timestamp_format,
+    cache_with_invalidation, handle_async_errors,
+    encrypt_sensitive_data, hash_sensitive_data, validate_file_upload, validate_fullname, validate_madrasa_name
 )
 from utils.helpers.logger import log
 
@@ -118,27 +118,16 @@ async def add_person(
 ) -> JSONResponse:
     """Add a new person to the system with comprehensive validation and security """
     try:
-        # Use the provided madrasa_name or get from env
+        # Get madrasa_name
         madrasa_name = madrasa_name or get_env_var("MADRASA_NAME")
         
-        # Ensure madrasa_name is not None before validation
-        if not madrasa_name:
-            response, status = send_json_response("Madrasa name is required", 400)
-            return JSONResponse(content=response, status_code=status)
+        # Validate madrasa_name
+        validate_madrasa_name(madrasa_name or '', phone, secure=True)
         
-        # SECURITY: Validate madrasa_name is in allowed list
-        if not validate_madrasa_name(madrasa_name, phone, secure=True):
-            response, status = send_json_response(ERROR_MESSAGES['unauthorized'], 401)
-            return JSONResponse(content=response, status_code=status)
-        
-        # Extract and validate basic fields with sanitization
+        # Validate fullname and format phone number
         fullname = name_en
-        
-        # Validate fullname
         validate_fullname(fullname)
-        
-        # Validate and format phone number
-        formatted_phone = format_phone_number(phone)
+        phone = format_phone_number(phone)
         
         # Normalize account type
         if not acc_type or not acc_type.endswith('s'):
@@ -152,9 +141,9 @@ async def add_person(
             acc_type = 'others'
         
         # Get user ID
-        person_id = await get_global_id(formatted_phone, fullname)
+        person_id = await get_global_id(phone, fullname)
         if not person_id:
-            log.error(action="add_people_id_not_found", trace_info=formatted_phone, message="User ID not found", secure=True)
+            log.error(action="add_people_id_not_found", trace_info=phone, message="User ID not found", secure=True)
             response, status = send_json_response("ID not found", 404)
             return JSONResponse(content=response, status_code=status)
         
@@ -342,20 +331,20 @@ async def add_person(
             if field in fields and fields[field]:
                 fields[field] = hash_sensitive_data(str(fields[field]))
         
-        # Insert into database (madrasa_name is guaranteed to be not None at this point)
-        await insert_person(madrasa_name, fields, acc_type, formatted_phone)
+        # Insert into database
+        await insert_person(madrasa_name or '', fields, acc_type, phone)
         
         # Get image path for response
         async with get_traced_db_cursor() as cursor:
                 await cursor.execute(
                     f"SELECT image_path FROM {madrasa_name}.peoples WHERE LOWER(name) = %s AND phone = %s",
-                    (fullname.lower(), formatted_phone)
+                    (fullname.lower(), phone)
                 )
                 row = await cursor.fetchone()
                 img_path = row["image_path"] if row else None
         
         # Log successful addition
-        log.info(action="add_person", trace_info=formatted_phone, message=f"User {fullname} added successfully", secure=True)
+        log.info(action="add_person", trace_info=phone, message=f"User {fullname} added successfully", secure=True)
         
         response, status = send_json_response(f"{acc_type} profile added successfully", 201)
         response.update({"user_id": person_id, "info": img_path})
@@ -562,10 +551,6 @@ async def get_exams(data: BaseRouteData, client_info: ClientInfo = Depends(valid
     cutoff = None
     if lastfetched:
         cutoff = validate_timestamp_format(lastfetched, client_info.ip_address)
-        try:
-            cutoff = lastfetched.replace("T", " ").replace("Z", "")
-        except Exception as e:
-            log.error(action="exams_timestamp_processing_error", trace_info=client_info.ip_address, message=f"Error processing timestamp: {lastfetched}", secure=False)
     
     # Build SQL query
     sql = f"""
@@ -610,14 +595,3 @@ def enhance_response_headers(response: Response) -> Response:
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
-
-# ─── Database Connection Management ───────────────────────────────────────────
-
-def validate_timestamp_format(timestamp: str, ip_address: str) -> str:
-    """Validate timestamp format"""
-    try:
-        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        return timestamp.replace("T", " ").replace("Z", "")
-    except ValueError:
-        log.error(action="get_exams_failed", trace_info=ip_address, message=f"Invalid timestamp: {timestamp}", secure=False)
-        raise

@@ -26,7 +26,7 @@ exporters:
 
   # Send traces to Jaeger via OTLP HTTP
   otlphttp:
-    endpoint: "http://jaeger:4318/v1/traces"
+    endpoint: "http://jaeger:4318"
     tls:
       insecure: true
 

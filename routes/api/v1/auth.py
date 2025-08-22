@@ -279,7 +279,7 @@ async def login(
         async with get_traced_db_cursor() as cursor:
                 # Get user by phone and fullname
                 await cursor.execute(
-                    f"SELECT * FROM {madrasa_name}.people WHERE phone = %s AND fullname = %s",
+                    f"SELECT * FROM {madrasa_name}.peoples WHERE phone = %s AND fullname = %s",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -312,7 +312,7 @@ async def login(
                 
                 # Get user's profile information
                 await cursor.execute(
-                    f"SELECT * FROM {madrasa_name}.people WHERE user_id = %s",
+                    f"SELECT * FROM {madrasa_name}.peoples WHERE user_id = %s",
                     (user["user_id"],)
                 )
                 profile = await cursor.fetchone()
@@ -490,7 +490,7 @@ async def reset_password(
         async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
-                    f"SELECT * FROM {madrasa_name}.people WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    f"SELECT * FROM {madrasa_name}.peoples WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -563,7 +563,7 @@ async def manage_account(
         async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
-                    f"SELECT * FROM {madrasa_name}.people WHERE phone = %s AND fullname = %s",
+                    f"SELECT * FROM s WHERE phone = %s AND fullname = %s",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -605,7 +605,7 @@ async def manage_account(
                 scheduled_deletion = now + timedelta(days=deletion_days) if page_type == ManageAccountPageType.delete else None
                 
                 await cursor.execute(
-                    f"""UPDATE {madrasa_name}.people SET 
+                    f"""UPDATE {madrasa_name}.peoples SET 
                     deactivated_at = %s, 
                     scheduled_deletion_at = %s,
                     updated_at = %s
@@ -654,7 +654,7 @@ async def reactivate_account(
         async with get_traced_db_cursor() as cursor:
                 # Get deactivated user
                 await cursor.execute(
-                    f"""SELECT * FROM {madrasa_name}.people 
+                    f"""SELECT * FROM {madrasa_name}.peoples 
                     WHERE phone = %s AND fullname = %s AND deactivated_at IS NOT NULL""",
                     (phone, fullname)
                 )
@@ -674,7 +674,7 @@ async def reactivate_account(
                 
                 # Reactivate account
                 await cursor.execute(
-                    f"""UPDATE {madrasa_name}.people SET 
+                    f"""UPDATE {madrasa_name}.peoples SET 
                     deactivated_at = NULL, 
                     scheduled_deletion_at = NULL,
                     updated_at = %s

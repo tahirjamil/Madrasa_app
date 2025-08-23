@@ -181,21 +181,21 @@ class MadrasaConfig:
     MYSQL_TIMEOUT = 60.0
 
     # ============================================================================
-    # REDIS CONFIGURATION
+    # KEYDB CONFIGURATION
     # ============================================================================
 
     # Redis Connection Settings
-    REDIS_HOST = get_env_var("REDIS_HOST", "localhost")
-    REDIS_PORT = int(get_env_var("REDIS_PORT", 6379))
-    REDIS_PASSWORD = get_env_var("REDIS_PASSWORD", None, required=False) # REMINDER: ADD THIS IN PRODUCTION
-    REDIS_DB = int(get_env_var("REDIS_DB", 0))
-    REDIS_SSL = get_env_var("REDIS_SSL", "false")
-    REDIS_MINSIZE = 1
-    REDIS_MAXSIZE = 10
-    REDIS_TIMEOUT = 10.0
-    REDIS_ENCODING = "utf-8"
-    REDIS_PREFIX = "madrasa"
-    USE_REDIS_CACHE = get_env_var("USE_REDIS_CACHE", "false").lower() in ("1", "true", "yes", "on")
+    KEYDB_HOST = get_env_var("KEYDB_HOST", "localhost")
+    KEYDB_PORT = int(get_env_var("KEYDB_PORT", 6379))
+    KEYDB_PASSWORD = get_env_var("KEYDB_PASSWORD", None, required=False) # REMINDER: ADD THIS IN PRODUCTION
+    KEYDB_DB = int(get_env_var("KEYDB_DB", 0))
+    KEYDB_SSL = get_env_var("KEYDB_SSL", "false")
+    KEYDB_MINSIZE = 1
+    KEYDB_MAXSIZE = 10
+    KEYDB_TIMEOUT = 10.0
+    KEYDB_ENCODING = "utf-8"
+    KEYDB_PREFIX = "madrasa"
+    USE_KEYDB_CACHE = get_env_var("USE_KEYDB_CACHE", "false")
 
     # ============================================================================
     # FILE UPLOAD AND STORAGE
@@ -323,8 +323,8 @@ class MadrasaConfig:
             warnings.append("SESSION_COOKIE_SECURE is False in non-development mode. This is a security risk!")
             
         # Redis password warning
-        if not self.REDIS_PASSWORD and not self.is_development():
-            warnings.append("REDIS_PASSWORD not set in non-development mode. Redis may be unsecured!")
+        if not self.KEYDB_PASSWORD and not self.is_development():
+            warnings.append("KEYDB_PASSWORD not set in non-development mode. Redis may be unsecured!")
         
         # Log warnings using logger instead of print
         for warning in warnings:
@@ -356,12 +356,12 @@ class MadrasaConfig:
         """Generate keydb connection URL."""
         try:
             url = "redis://"
-            if self.REDIS_PASSWORD:
+            if self.KEYDB_PASSWORD:
                 if include_password:
-                    url += f":{self.REDIS_PASSWORD}@"
+                    url += f":{self.KEYDB_PASSWORD}@"
                 else:
                     url += f":***@"
-            url += f"{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+            url += f"{self.KEYDB_HOST}:{self.KEYDB_PORT}/{self.KEYDB_DB}"
             return url
         except Exception as e:
             logger.error(f"Error generating keydb connection URL: {e}")

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # FastAPI App
   app:
@@ -68,10 +66,10 @@ services:
     container_name: madrasa_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
-      MYSQL_DATABASE: ${MYSQL_DB:-madrasa}
-      MYSQL_USER: ${MYSQL_USER:-user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     expose:
       - ${MYSQL_PORT:-3306}
     ports:
@@ -82,7 +80,7 @@ services:
     networks:
       - app_network
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD:-rootpass} || exit 1"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD} || exit 1"]
       timeout: 10s
       retries: 10
       interval: 30s
@@ -110,7 +108,7 @@ services:
       interval: 30s
       start_period: 10s
     environment:
-      KEYDB_PASSWORD: ${KEYDB_PASSWORD:-secret}
+      KEYDB_PASSWORD: ${KEYDB_PASSWORD}
 
   # OpenTelemetry Collector
   otel-collector:

@@ -40,11 +40,11 @@ def test_config_loading() -> bool:
     print("-" * 50)
     try:
         print("✅ Config loaded successfully")
-        print(f"   REDIS_HOST: {config.REDIS_HOST}")
-        print(f"   REDIS_PORT: {config.REDIS_PORT}")
-        print(f"   REDIS_DB:   {config.REDIS_DB}")
-        print(f"   REDIS_SSL:  {config.REDIS_SSL}")
-        print(f"   REDIS_PASSWORD: {_mask(config.REDIS_PASSWORD)}")
+        print(f"   KEYDB_HOST: {config.KEYDB_HOST}")
+        print(f"   KEYDB_PORT: {config.KEYDB_PORT}")
+        print(f"   KEYDB_DB:   {config.KEYDB_DB}")
+        print(f"   KEYDB_SSL:  {config.KEYDB_SSL}")
+        print(f"   KEYDB_PASSWORD: {_mask(config.KEYDB_PASSWORD)}")
         return True
     except Exception as e:
         print(f"❌ Config loading failed: {e}")
@@ -55,9 +55,9 @@ def test_environment_variables() -> bool:
     print("\n🌍 Testing Environment Variables for KeyDB...")
     print("-" * 50)
     required = [
-        "REDIS_HOST",
-        "REDIS_PORT",
-        "REDIS_DB",
+        "KEYDB_HOST",
+        "KEYDB_PORT",
+        "KEYDB_DB",
     ]
     missing = []
     for var in required:
@@ -78,7 +78,7 @@ def test_url_generation() -> bool:
     print("\n🔗 Testing KeyDB URL Generation...")
     print("-" * 50)
     try:
-        # Clear cache to reflect current REDIS_* values
+        # Clear cache to reflect current KEYDB_* values
         try:
             config.get_keydb_url.cache_clear()  # type: ignore[attr-defined]
         except Exception:
@@ -114,7 +114,7 @@ async def _try_connect_direct_via_url() -> bool:
 
         client = redis.from_url(
             url,
-            db=config.REDIS_DB,
+            db=config.KEYDB_DB,
             encoding="utf-8",
             decode_responses=True,
             socket_connect_timeout=2.0,
@@ -154,18 +154,18 @@ async def _try_connect_direct_via_address(bogus: bool = False) -> bool:
     try:
         import redis.asyncio as redis
 
-        host = "invalid.host.local" if bogus else config.REDIS_HOST
-        port = 6390 if bogus else config.REDIS_PORT
+        host = "invalid.host.local" if bogus else config.KEYDB_HOST
+        port = 6390 if bogus else config.KEYDB_PORT
 
-        password = config.REDIS_PASSWORD or None
+        password = config.KEYDB_PASSWORD or None
         client = redis.Redis(
             host=host,
             port=port,
-            db=config.REDIS_DB,
+            db=config.KEYDB_DB,
             password=password,
             encoding="utf-8",
             decode_responses=True,
-            ssl=str(config.REDIS_SSL).lower() in ("1", "true", "yes", "on"),
+            ssl=str(config.KEYDB_SSL).lower() in ("1", "true", "yes", "on"),
             socket_connect_timeout=1.0 if bogus else 2.0,
         )
         pong = await client.ping()

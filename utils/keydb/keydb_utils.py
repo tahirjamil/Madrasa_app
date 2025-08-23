@@ -3,7 +3,6 @@ from typing import Any, Optional, Tuple, TypedDict, Union
 from fastapi import Request
 import redis.asyncio as redis
 
-from utils.helpers.improved_functions import get_env_var
 from utils.helpers.logger import log
 
 from config import config
@@ -30,31 +29,31 @@ def get_keydb_config() -> RedisConnectConfig | None:
     from config import config
     
     # Check if Redis cache is enabled
-    use_redis_cache = get_env_var('USE_REDIS_CACHE', 'false').lower() in ('1', 'true', 'yes', 'on')
-    if not use_redis_cache:
+    use_redis_cache = config.USE_KEYDB_CACHE or "true"
+    if not use_redis_cache.lower() in ("1", "true", "yes", "on") or not use_redis_cache:
         log.info(action="redis_cache_disabled", trace_info="system", message="Redis cache is disabled", secure=False)
         return None
     
     # URL first (supports redis://, rediss://)
     url = config.get_keydb_url(include_password=True)  # Only include password for actual connection
-    password = config.REDIS_PASSWORD if config.REDIS_PASSWORD else None
+    password = config.KEYDB_PASSWORD if config.KEYDB_PASSWORD else None
 
     # DB index
-    db_idx = config.REDIS_DB if config.REDIS_DB else 0
+    db_idx = config.KEYDB_DB if config.KEYDB_DB else 0
 
     # Host/Port fallbacks if URL not provided
-    host = config.REDIS_HOST
-    port = config.REDIS_PORT
+    host = config.KEYDB_HOST
+    port = config.KEYDB_PORT
 
     # SSL toggle (for rediss or TLS proxies)
-    ssl_flag_raw = config.REDIS_SSL
+    ssl_flag_raw = config.KEYDB_SSL
     ssl_flag = str(ssl_flag_raw).lower() in ("1", "true", "yes", "on")
 
     # Pool sizing and timeout
-    minsize = config.REDIS_MINSIZE or 1
-    maxsize = config.REDIS_MAXSIZE or 10
-    timeout = config.REDIS_TIMEOUT or 10.0
-    encoding = config.REDIS_ENCODING or "utf-8"
+    minsize = config.KEYDB_MINSIZE or 1
+    maxsize = config.KEYDB_MAXSIZE or 10
+    timeout = config.KEYDB_TIMEOUT or 10.0
+    encoding = config.KEYDB_ENCODING or "utf-8"
 
     cfg: RedisConnectConfig = {
         "db": db_idx,

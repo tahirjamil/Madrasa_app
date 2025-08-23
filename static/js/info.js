@@ -100,6 +100,19 @@
         ? `<pre class="json-block">${escapeHtml(JSON.stringify(e.res_json, null, 2))}</pre>`
         : '<span class="text-muted">—</span>';
 
+      // Create error cell
+      let errorCell = '<span class="text-muted">—</span>';
+      if (e.error) {
+        const errorBadge = `<span class="badge bg-danger mb-1">HTTP ${e.error.status_code}</span>`;
+        let errorDetails = '';
+        
+        if (e.error.details) {
+          errorDetails = `<pre class="json-block error-json">${escapeHtml(JSON.stringify(e.error.details, null, 2))}</pre>`;
+        }
+        
+        errorCell = `<div class="error-details">${errorBadge}${errorDetails}</div>`;
+      }
+
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><small class="text-muted">${escapeHtml(e.time)}</small></td>
@@ -108,6 +121,7 @@
         <td><code class="text-dark">${escapeHtml(e.path)}</code></td>
         <td>${reqCell}</td>
         <td>${resCell}</td>
+        <td>${errorCell}</td>
       `;
       tableBody.appendChild(tr);
     });

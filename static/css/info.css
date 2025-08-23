@@ -154,3 +154,27 @@ code {
   margin-bottom: 1rem;
   opacity: 0.5;
 }
+
+/* Error details styling */
+.error-details {
+  font-size: 11px;
+}
+
+.error-json {
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+  color: #721c24;
+  font-size: 10px;
+  max-height: 150px;
+}
+
+.error-json:hover {
+  background-color: #f1b0b7;
+  border-color: #ed969e;
+}
+
+/* Status code badges */
+.status-2xx { background-color: #198754 !important; }
+.status-3xx { background-color: #0dcaf0 !important; }
+.status-4xx { background-color: #fd7e14 !important; }
+.status-5xx { background-color: #dc3545 !important; }

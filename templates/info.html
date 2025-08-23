@@ -74,8 +74,9 @@
               <th style="width: 120px;">IP</th>
               <th style="width: 80px;">Method</th>
               <th style="width: 200px;">Path</th>
-              <th style="width: 300px;">Request JSON</th>
-              <th style="width: 300px;">Response JSON</th>
+              <th style="width: 250px;">Request JSON</th>
+              <th style="width: 250px;">Response JSON</th>
+              <th style="width: 200px;">Error Details</th>
             </tr>
           </thead>
           <tbody>
@@ -114,6 +115,18 @@
               <td>
                 {% if e.res_json is not none %}
                   <pre class="json-block">{{ e.res_json|tojson(indent=2) }}</pre>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if e.error is defined and e.error %}
+                  <div class="error-details">
+                    <span class="badge bg-danger mb-1">HTTP {{ e.error.status_code }}</span>
+                    {% if e.error.details is defined %}
+                      <pre class="json-block error-json">{{ e.error.details|tojson(indent=2) }}</pre>
+                    {% endif %}
+                  </div>
                 {% else %}
                   <span class="text-muted">—</span>
                 {% endif %}

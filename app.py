@@ -65,6 +65,21 @@ def content_type_starts_with(request: Request, prefix: str) -> bool:
     ct = request.headers.get("content-type", "")
     return ct.split(";",1)[0].strip().lower().startswith(prefix)
 
+async def get_request_body(request: Request) -> str:
+    """Safely get request body for debugging"""
+    try:
+        # Check if body has already been read
+        if hasattr(request, '_body') and request._body:
+            return request._body.decode('utf-8', errors='ignore')
+        
+        # Try to read body
+        body = await request.body()
+        if body:
+            return body.decode('utf-8', errors='ignore')
+        return "No body"
+    except Exception as e:
+        return f"Error reading body: {str(e)}"
+
 # ─── Lifespan Events ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -290,6 +305,32 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Not JSON or can't decode, leave as None
             pass
         
+        # Add error information if response indicates an error
+        if response.status_code >= 400:
+            entry["error"] = {
+                "status_code": response.status_code,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Try to capture error details from response body
+            try:
+                if hasattr(response, 'body') and response.body:
+                    if isinstance(response.body, bytes):
+                        error_body = response.body.decode('utf-8')
+                    elif isinstance(response.body, str):
+                        error_body = response.body
+                    else:
+                        error_body = None
+                    
+                    if error_body:
+                        try:
+                            error_json = json.loads(error_body)
+                            entry["error"]["details"] = error_json
+                        except json.JSONDecodeError:
+                            entry["error"]["details"] = error_body[:500]  # Truncate long error messages
+            except Exception:
+                pass
+        
         return response
 
 app.add_middleware(RequestLoggingMiddleware)
@@ -311,19 +352,98 @@ async def not_found_handler(request: Request, exc: HTTPException):
 async def bad_request_handler(request: Request, exc: HTTPException):
     logger.warning(f"400 error: {request.method} {request.url} - Detail: {exc.detail}")
     logger.debug(f"400 request headers: {redact_headers(dict(request.headers))}")
+    logger.debug(f"400 request body: {await get_request_body(request)}")
     
-    # if exc.detail and "CSRF" in str(exc.detail):
-    #     logger.warning(f"CSRF error detected: {request.url} - Detail: {exc.detail}")
-    #     return templates.TemplateResponse('admin/csrf_error.html', 
-    #                                     {'request': request, 'reason': str(exc.detail)}, 
-    #                                     status_code=400)
+    response_data = {
+        "error": "bad_request",
+        "message": "Bad request",
+        "detail": str(exc.detail) if exc.detail else "Invalid request",
+        "path": request.url.path,
+        "method": request.method,
+        "timestamp": datetime.now().isoformat()
+    }
     
-    response, status = send_json_response("Bad request", 400, str(exc.detail) if exc.detail else None)
-    return JSONResponse(content=response, status_code=status)
+    return JSONResponse(content=response_data, status_code=400)
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc):
-    return JSONResponse({"error": "validation_error", "details": exc.errors()}, status_code=422)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Enhanced Pydantic validation error handler with detailed debugging"""
+    import json
+    
+    # Log detailed validation errors
+    logger.error(f"Validation error on {request.method} {request.url}")
+    logger.error(f"Validation errors: {json.dumps(exc.errors(), indent=2)}")
+    logger.debug(f"Request headers: {redact_headers(dict(request.headers))}")
+    logger.debug(f"Request body: {await get_request_body(request)}")
+    
+    # Create detailed error response
+    error_details = []
+    for error in exc.errors():
+        error_info = {
+            "field": " -> ".join(str(loc) for loc in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"],
+            "input": str(error.get("input", "N/A"))[:200]  # Truncate long inputs
+        }
+        error_details.append(error_info)
+    
+    response_data = {
+        "error": "validation_error",
+        "message": "Request validation failed",
+        "details": error_details,
+        "path": request.url.path,
+        "method": request.method,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # Add request context in development
+    if config.is_development():
+        try:
+            response_data["request_context"] = {
+                "headers": redact_headers(dict(request.headers)),
+                "body": await get_request_body(request),
+                "query_params": dict(request.query_params)
+            }
+        except Exception as e:
+            response_data["request_context"] = {"error": f"Could not capture request context: {str(e)}"}
+    
+    return JSONResponse(content=response_data, status_code=422)
+
+@app.exception_handler(422)
+async def unprocessable_entity_handler(request: Request, exc: HTTPException):
+    """Handle 422 Unprocessable Entity errors"""
+    logger.warning(f"422 error: {request.method} {request.url} - Detail: {exc.detail}")
+    logger.debug(f"422 request headers: {redact_headers(dict(request.headers))}")
+    logger.debug(f"422 request body: {await get_request_body(request)}")
+    
+    response_data: dict = {
+        "error": "unprocessable_entity",
+        "message": "Request could not be processed",
+        "detail": str(exc.detail) if exc.detail else "Validation failed",
+        "path": request.url.path,
+        "method": request.method,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    return JSONResponse(content=response_data, status_code=422)
+
+@app.exception_handler(500)
+async def internal_server_error_handler(request: Request, exc: HTTPException):
+    """Handle 500 Internal Server Error"""
+    logger.error(f"500 error: {request.method} {request.url} - Detail: {exc.detail}")
+    logger.debug(f"500 request headers: {redact_headers(dict(request.headers))}")
+    logger.debug(f"500 request body: {await get_request_body(request)}")
+    
+    response_data: dict = {
+        "error": "internal_server_error",
+        "message": "Internal server error occurred",
+        "detail": str(exc.detail) if exc.detail else "An unexpected error occurred",
+        "path": request.url.path,
+        "method": request.method,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    return JSONResponse(content=response_data, status_code=500)
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
@@ -333,19 +453,30 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Exception type: {type(exc).__name__}")
     logger.error(f"Full traceback:\n{traceback.format_exc()}")
     logger.debug(f"Request details - Headers: {redact_headers(dict(request.headers))}, Client: {request.client.host if request.client else 'unknown'}")
+    logger.debug(f"Request body: {await get_request_body(request)}")
+    
+    # Create detailed error response
+    response_data: dict = {
+        "error": "unhandled_exception",
+        "message": "An unexpected error occurred",
+        "type": type(exc).__name__,
+        "detail": str(exc),
+        "path": request.url.path,
+        "method": request.method,
+        "timestamp": datetime.now().isoformat()
+    }
     
     # In development/test mode, include more details
     if config.is_development():
-        response, status = send_json_response("Internal server error", 500, "An unexpected error occurred. Please try again later.") 
-        response.update({
-            "error": str(exc),
-            "type": type(exc).__name__,
-            "path": request.url.path
-        })
-    else:
-        response, status = send_json_response("Internal server error", 500, "An unexpected error occurred. Please try again later.")
+        response_data["traceback"] = traceback.format_exc().split('\n')
+        response_data["request_context"] = {
+            "headers": redact_headers(dict(request.headers)),
+            "body": await get_request_body(request),
+            "query_params": dict(request.query_params),
+            "client": request.client.host if request.client else 'unknown'
+        }
     
-    return JSONResponse(content=response, status_code=status)
+    return JSONResponse(content=response_data, status_code=500)
 
 # ─── Routes ────────────────────────────────────────────
 @app.get('/favicon.ico')

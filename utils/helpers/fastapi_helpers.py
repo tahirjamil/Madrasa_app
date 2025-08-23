@@ -75,8 +75,8 @@ async def get_client_info(
     cached = await pool.get(cache_key) if pool else None
     if cached:
         info = json.loads(cached)
-        request.state.client_info = info
-        return info
+        request.state.client_info = ClientInfo(**info)
+        return request.state.client_info
     
     # Validate headers & fingerprint
     if not await validate_request_headers(request):
@@ -183,7 +183,22 @@ class BaseAuthRequest(BaseModel):
 async def validate_device_dependency(request: Request, client_info: ClientInfo = Depends(get_client_info)):
     from .helpers import validate_device_info
     redis = get_keydb_from_app(request)  # get your Redis/KeyDB instance
-    cache_key = f"device_valid:{client_info.device_id}:{client_info.ip_address}"
+    
+    # Handle both ClientInfo object and dict for backward compatibility
+    if isinstance(client_info, dict):
+        device_id = client_info.get('device_id', 'unknown')
+        ip_address = client_info.get('ip_address', 'unknown')
+        device_model = client_info.get('device_model', 'unknown')
+        device_brand = client_info.get('device_brand', 'unknown')
+        device_os = client_info.get('device_os')
+    else:
+        device_id = client_info.device_id
+        ip_address = client_info.ip_address
+        device_model = client_info.device_model or "unknown"
+        device_brand = client_info.device_brand or "unknown"
+        device_os = client_info.device_os
+    
+    cache_key = f"device_valid:{device_id}:{ip_address}"
     
     cached = await redis.get(cache_key) if redis else None
     if cached is not None:
@@ -194,11 +209,11 @@ async def validate_device_dependency(request: Request, client_info: ClientInfo =
 
     # Validate device
     is_valid, error = await validate_device_info(
-        device_id=client_info.device_id,
-        ip_address=client_info.ip_address,
-        device_model=client_info.device_model or "unknown",
-        device_brand=client_info.device_brand or "unknown",
-        device_os=client_info.device_os  # Optional now
+        device_id=device_id,
+        ip_address=ip_address,
+        device_model=device_model,
+        device_brand=device_brand,
+        device_os=device_os  # Optional now
     )
 
     # Cache the result for 5 minutes

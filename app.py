@@ -3,6 +3,7 @@ import os, time, logging, json
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
+from fastapi.dependencies.utils import solve_dependencies
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -285,7 +286,26 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         async with app.state.request_log_lock:
             app.state.request_response_log.append(entry)
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            # Capture dependency and other errors
+            logger.error(f"Error in middleware for {request.method} {request.url}: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            
+            # Update the log entry with error information
+            entry["error"] = {
+                "status_code": 500,
+                "timestamp": datetime.now().isoformat(),
+                "details": {
+                    "error": str(e),
+                    "type": type(e).__name__,
+                    "message": "Dependency or middleware error"
+                }
+            }
+            
+            # Re-raise the exception for proper handling
+            raise
         
         # Log response details
         logger.debug(f"Response status: {response.status_code}")
@@ -442,6 +462,37 @@ async def internal_server_error_handler(request: Request, exc: HTTPException):
         "method": request.method,
         "timestamp": datetime.now().isoformat()
     }
+    
+    return JSONResponse(content=response_data, status_code=500)
+
+@app.exception_handler(AttributeError)
+async def attribute_error_handler(request: Request, exc: AttributeError):
+    """Handle AttributeError (often from dependency issues)"""
+    logger.error(f"AttributeError on {request.method} {request.url}: {str(exc)}")
+    logger.debug(f"AttributeError details - Path: {request.url.path}, Error: {str(exc)}")
+    logger.debug(f"Request headers: {redact_headers(dict(request.headers))}")
+    logger.debug(f"Request body: {await get_request_body(request)}")
+    
+    response_data: dict = {
+        "error": "attribute_error",
+        "message": "Internal dependency error",
+        "detail": str(exc),
+        "type": "AttributeError",
+        "path": request.url.path,
+        "method": request.method,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # In development mode, include more details
+    if config.is_development():
+        import traceback
+        response_data["traceback"] = traceback.format_exc().split('\n')
+        response_data["request_context"] = {
+            "headers": redact_headers(dict(request.headers)),
+            "body": await get_request_body(request),
+            "query_params": dict(request.query_params),
+            "client": request.client.host if request.client else 'unknown'
+        }
     
     return JSONResponse(content=response_data, status_code=500)
 

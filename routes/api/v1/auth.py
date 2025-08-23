@@ -413,10 +413,13 @@ async def send_verification_code(
                 
                 # Try SMS first
                 if count < config.SMS_LIMIT_PER_HOUR:
+                    log.info(action="send_code_attempting_sms", trace_info=ip_address, message=f"Attempting to send SMS to: {phone}, code: {code}", secure=False)
                     sms_sent = await send_sms(
                         phone=phone,
                         msg=f"Your verification code is: {code}"
                     )
+                    
+                    log.info(action="send_code_sms_result", trace_info=ip_address, message=f"SMS send result: {sms_sent} (type: {type(sms_sent)})", secure=False)
                     
                     if sms_sent:
                         # Store in database
@@ -429,6 +432,8 @@ async def send_verification_code(
                         
                         response, status = send_json_response(f"Verification code sent to {phone}", 200)
                         return JSONResponse(content=response, status_code=status)
+                    else:
+                        log.warning(action="send_code_sms_failed", trace_info=ip_address, message=f"SMS sending failed for phone: {phone}", secure=False)
                 
                 # Try email if SMS failed or limit reached
                 if email and count < config.EMAIL_LIMIT_PER_HOUR:

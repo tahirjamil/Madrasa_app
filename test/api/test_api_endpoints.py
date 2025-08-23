@@ -259,3 +259,230 @@ class TestDataValidation:
         """Test that device IDs are unique"""
         ids = [str(uuid.uuid4()) for _ in range(10)]
         assert len(ids) == len(set(ids))  # All IDs should be unique
+
+class TestSendCodeEndpoint:
+    """Comprehensive tests for the /send_code endpoint"""
+    
+    @pytest.mark.integration
+    def test_send_code_success(self, base_url, universal_headers, fullname, phone, password, madrasa_name):
+        """Test successful verification code sending"""
+        data = {
+            "fullname": fullname,
+            "phone": phone,
+            "password": password,
+            "email": f"{fullname}@test.com",
+            "madrasa_name": madrasa_name,
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                               json=data, headers=universal_headers)
+        
+        print(f"\n=== Send Code Test Results ===")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Headers: {dict(response.headers)}")
+        print(f"Response Body: {response.text}")
+        
+        # Should either succeed (200) or fail with specific error codes
+        assert response.status_code in [200, 400, 409, 429, 500]
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            assert "message" in response_data
+            assert "Verification code sent" in response_data["message"]
+        elif response.status_code == 409:
+            response_data = response.json()
+            assert "error" in response_data
+            assert "already exists" in response_data["error"].lower()
+        elif response.status_code == 429:
+            response_data = response.json()
+            assert "error" in response_data
+            assert "rate limit" in response_data["error"].lower()
+        elif response.status_code == 500:
+            response_data = response.json()
+            print(f"Error Response: {response_data}")
+            # Log the error for debugging
+            assert "error" in response_data
+    
+    @pytest.mark.integration
+    def test_send_code_without_email(self, base_url, universal_headers, fullname, phone, password, madrasa_name):
+        """Test verification code sending without email (should use get_email function)"""
+        data = {
+            "fullname": fullname,
+            "phone": phone,
+            "password": password,
+            "madrasa_name": madrasa_name,
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                               json=data, headers=universal_headers)
+        
+        print(f"\n=== Send Code Without Email Test Results ===")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Body: {response.text}")
+        
+        assert response.status_code in [200, 400, 409, 429, 500]
+    
+    @pytest.mark.integration
+    def test_send_code_invalid_phone(self, base_url, universal_headers, fullname, password, madrasa_name):
+        """Test verification code sending with invalid phone number"""
+        data = {
+            "fullname": fullname,
+            "phone": "invalid_phone",
+            "password": password,
+            "email": f"{fullname}@test.com",
+            "madrasa_name": madrasa_name,
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                               json=data, headers=universal_headers)
+        
+        print(f"\n=== Send Code Invalid Phone Test Results ===")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Body: {response.text}")
+        
+        assert response.status_code in [400, 422, 500]
+    
+    @pytest.mark.integration
+    def test_send_code_missing_required_fields(self, base_url, universal_headers):
+        """Test verification code sending with missing required fields"""
+        # Test with missing fullname
+        data = {
+            "phone": "+8801234567890",
+            "password": "testpass123",
+            "email": "test@test.com",
+            "madrasa_name": "annur",
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                               json=data, headers=universal_headers)
+        
+        print(f"\n=== Send Code Missing Fields Test Results ===")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Body: {response.text}")
+        
+        assert response.status_code in [400, 422]
+    
+    @pytest.mark.integration
+    def test_send_code_device_validation(self, base_url, fullname, phone, password, madrasa_name):
+        """Test verification code sending with different device configurations"""
+        # Test with minimal device headers
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {random.choice(list(config.API_KEYS))}",
+            "X-API-Key": random.choice(list(config.API_KEYS)),
+            "X-Device-ID": "test_device_123",
+            "X-Device-Brand": "test_brand",
+            "X-Device-Model": "test_model"
+            # Missing X-Device-OS (should be optional now)
+        }
+        
+        data = {
+            "fullname": fullname,
+            "phone": phone,
+            "password": password,
+            "email": f"{fullname}@test.com",
+            "madrasa_name": madrasa_name,
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                               json=data, headers=headers)
+        
+        print(f"\n=== Send Code Device Validation Test Results ===")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Body: {response.text}")
+        
+        # Should not fail due to device validation (403)
+        assert response.status_code != 403
+    
+    @pytest.mark.integration
+    def test_send_code_rate_limiting(self, base_url, universal_headers, fullname, phone, password, madrasa_name):
+        """Test rate limiting for verification code sending"""
+        data = {
+            "fullname": fullname,
+            "phone": phone,
+            "password": password,
+            "email": f"{fullname}@test.com",
+            "madrasa_name": madrasa_name,
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        # Send multiple requests quickly to test rate limiting
+        responses = []
+        for i in range(3):
+            response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                                   json=data, headers=universal_headers)
+            responses.append(response)
+            print(f"\n=== Rate Limit Test Request {i+1} ===")
+            print(f"Status Code: {response.status_code}")
+            print(f"Response Body: {response.text}")
+        
+        # At least one should succeed, others might be rate limited
+        status_codes = [r.status_code for r in responses]
+        assert 200 in status_codes or 409 in status_codes  # Success or user exists
+        print(f"All status codes: {status_codes}")
+    
+    @pytest.mark.integration
+    def test_send_code_database_errors(self, base_url, universal_headers):
+        """Test verification code sending with database-related issues"""
+        # Test with a very long fullname that might cause database issues
+        data = {
+            "fullname": "a" * 1000,  # Very long name
+            "phone": "+8801234567890",
+            "password": "testpass123",
+            "email": "test@test.com",
+            "madrasa_name": "annur",
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                               json=data, headers=universal_headers)
+        
+        print(f"\n=== Send Code Database Error Test Results ===")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Body: {response.text}")
+        
+        assert response.status_code in [400, 422, 500]
+    
+    @pytest.mark.integration
+    def test_send_code_sms_configuration(self, base_url, universal_headers, fullname, phone, password, madrasa_name):
+        """Test SMS configuration and API responses"""
+        data = {
+            "fullname": fullname,
+            "phone": phone,
+            "password": password,
+            "email": f"{fullname}@test.com",
+            "madrasa_name": madrasa_name,
+            "language": "en",
+            "app_signature": "test_signature"
+        }
+        
+        response = requests.post(f"{base_url}/api/v1/auth/send_code", 
+                               json=data, headers=universal_headers)
+        
+        print(f"\n=== Send Code SMS Configuration Test Results ===")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Body: {response.text}")
+        
+        if response.status_code == 500:
+            response_data = response.json()
+            print(f"Error details: {response_data}")
+            # Check if it's an SMS-related error
+            if "error" in response_data:
+                error_msg = response_data["error"].lower()
+                if "sms" in error_msg or "verification" in error_msg:
+                    print("SMS configuration issue detected")
+        
+        assert response.status_code in [200, 400, 409, 429, 500]

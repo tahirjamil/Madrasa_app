@@ -399,17 +399,30 @@ async def _send_async_sms(phone: str, msg: str) -> bool:
 
 def _send_sms_request(phone: str, msg: str) -> bool:
     """Send SMS request (blocking)"""
-    response = requests.post(config.SERVICE_PHONE_URL, {
-        'phone': phone,
-        'message': msg,
-        'key': config.SERVICE_PHONE_API_KEY
-    })
-    
     try:
-        result = response.json()
-        return result.get("success", False)
+        log.info(action="sms_request_start", trace_info=phone, message=f"Sending SMS request to {config.SERVICE_PHONE_URL}", secure=False)
+        
+        response = requests.post(config.SERVICE_PHONE_URL, {
+            'phone': phone,
+            'message': msg,
+            'key': config.SERVICE_PHONE_API_KEY
+        })
+        
+        log.info(action="sms_response_received", trace_info=phone, message=f"SMS API response status: {response.status_code}", secure=False)
+        
+        try:
+            result = response.json()
+            log.info(action="sms_response_parsed", trace_info=phone, message=f"SMS API response: {result}", secure=False)
+            
+            success = result.get("success", False)
+            log.info(action="sms_success_check", trace_info=phone, message=f"SMS success value: {success} (type: {type(success)})", secure=False)
+            
+            return success
+        except Exception as e:
+            log.critical(action="sms_parse_error", trace_info=phone, message=f"Failed to parse SMS response: {str(e)}, Response text: {response.text}", secure=True)
+            return False
     except Exception as e:
-        log.critical(action="sms_parse_error", trace_info=phone, message=str(e), secure=True)
+        log.critical(action="sms_request_error", trace_info=phone, message=f"SMS request failed: {str(e)}", secure=True)
         return False
 
 async def send_sms(phone: str, msg: str) -> bool:

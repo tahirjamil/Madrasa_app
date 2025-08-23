@@ -1,0 +1,19 @@
+/* Admin Page Styles for Request & Response Log */
+
+.json-block {
+  max-height: 4em;
+  overflow: hidden;
+  cursor: pointer;
+  transition: max-height 0.3s ease;
+}
+
+.json-block.expanded {
+  max-height: none;
+}
+
+.scroll-top {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1000;
+}

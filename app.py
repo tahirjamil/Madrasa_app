@@ -1,5 +1,5 @@
 import asyncio
-import os, time, logging
+import os, time, logging, json
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -241,7 +241,7 @@ app.add_middleware(XSSProtectionMiddleware)
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in ["/admin/info_data"]:
+        if request.url.path in ["/info", "/info/data"]:
             return await call_next(request)
 
         req_json = None
@@ -257,7 +257,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "ip": get_ip_address(request),
             "endpoint": request.url.path,
-            # "status": "Blocked" if blocked else "Allowed",
             "method": request.method,
             "path": request.url.path,
             "req_json": req_json,
@@ -276,8 +275,20 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Log response details
         logger.debug(f"Response status: {response.status_code}")
         
-        # TODO: Capture response JSON if needed
-        # This is complex in FastAPI middleware and may need a custom approach
+        # Capture response JSON if it's a JSON response
+        try:
+            if hasattr(response, 'body') and response.body:
+                # Try to parse as JSON
+                if isinstance(response.body, bytes):
+                    res_json = json.loads(response.body.decode('utf-8'))
+                elif isinstance(response.body, str):
+                    res_json = json.loads(response.body)
+                else:
+                    res_json = None
+                entry["res_json"] = res_json
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+            # Not JSON or can't decode, leave as None
+            pass
         
         return response
 

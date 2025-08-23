@@ -1,6 +1,6 @@
 import re
 from fastapi import Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from config import config
 from utils.helpers.fastapi_helpers import templates
@@ -181,38 +181,37 @@ async def terms(request: Request):
 # TODO: Add account Management routes
 
 
-# TODO: Uncomment and implement info routes if needed
-# @web_routes.get('/info', response_class=HTMLResponse, name="info")
-# @handle_async_errors
-# @rate_limit(max_requests=500, window=60)
-# async def info_admin(request: Request):
+@web_routes.get('/info', response_class=HTMLResponse, name="info")
+@handle_async_errors
+async def info_admin(request: Request):
+    """Admin info page showing request/response logs"""
+    # Thread-safe access to request log
+    request_log = request.app.state.request_response_log
+    request_log_lock = request.app.state.request_log_lock
+    async with request_log_lock:
+        logs = list(request_log)[-100:]
 
-#     # Thread-safe access to request log
-#         request_log = request.app.state.request_response_log
-#         request_log_lock = request.app.state.request_log_lock
-#         with request_log_lock:
-#             logs = list(request_log)[-100:]
+    return templates.TemplateResponse("info.html", {"request": request, "logs": logs})
 
-#     return templates.TemplateResponse("admin/info.html", {"request": request, "logs": logs})
-
-# @web_routes.get('/info/data', name="info_data")
-# @handle_async_errors
-# async def info_data_admin(request: Request):
-
-#     # Thread-safe access to request log
-#     request_log = request.app.state.request_response_log
-#     request_log_lock = request.app.state.request_log_lock
-#     with request_log_lock:
-#         logs = list(request_log)[-100:]
-#     # serializable copy
-#     out = []
-#     for e in logs:
-#         out.append({
-#             "time":     e["time"],
-#             "ip":       e["ip"],
-#             "method":   e["method"],
-#             "path":     e["path"],
-#             "req_json": e.get("req_json"),
-#             "res_json": e.get("res_json")
-#         })
-#     return JSONResponse(content=out)
+@web_routes.get('/info/data', name="info_data")
+@handle_async_errors
+async def info_data_admin(request: Request):
+    """API endpoint for getting request/response log data"""
+    # Thread-safe access to request log
+    request_log = request.app.state.request_response_log
+    request_log_lock = request.app.state.request_log_lock
+    async with request_log_lock:
+        logs = list(request_log)[-100:]
+    
+    # serializable copy
+    out = []
+    for e in logs:
+        out.append({
+            "time":     e["time"],
+            "ip":       e["ip"],
+            "method":   e["method"],
+            "path":     e["path"],
+            "req_json": e.get("req_json"),
+            "res_json": e.get("res_json")
+        })
+    return JSONResponse(content=out)

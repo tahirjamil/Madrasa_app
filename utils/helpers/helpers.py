@@ -1132,7 +1132,7 @@ def validate_fullname(fullname: str) -> bool:
         raise AppError("Fullname must be words starting with uppercase, followed by lowercase letters, apostrophes, or hyphens", error_code="400")
     return True
 
-async def validate_device_info(device_id: str, ip_address: str, device_brand: str, device_model: str, device_os: str) -> Tuple[bool, str]:
+async def validate_device_info(device_id: str, ip_address: str, device_brand: str, device_model: Optional[str] = None, device_os: Optional[str] = None) -> Tuple[bool, str]:
     """Validate device information for security"""
     # Validate IP address format
     ip_pattern = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
@@ -1148,8 +1148,12 @@ async def validate_device_info(device_id: str, ip_address: str, device_brand: st
         r'<script'
     ]
     
+    # Check device_id, device_brand, and device_model (device_os is optional)
     for pattern in suspicious_patterns:
-        if re.search(pattern, device_id, re.IGNORECASE) or re.search(pattern, device_brand, re.IGNORECASE) or re.search(pattern, device_model, re.IGNORECASE) or re.search(pattern, device_os, re.IGNORECASE):
+        if (re.search(pattern, device_id, re.IGNORECASE) or 
+            re.search(pattern, device_brand, re.IGNORECASE) or 
+            (device_model and re.search(pattern, device_model, re.IGNORECASE)) or
+            (device_os and re.search(pattern, device_os, re.IGNORECASE))):
             await security_manager.track_suspicious_activity(ip_address, "Suspicious device identifier detected")
             return False, "Suspicious device identifier detected"
     
@@ -1457,7 +1461,7 @@ def get_ip_address(request: Request) -> str:
 
 async def validate_device_fingerprint(device_data: Dict[str, Any], request: Request) -> bool:
     """Validate device fingerprint for security"""
-    required_device_fields = ['device_id', 'device_brand', 'ip_address', 'os_version', 'app_version', 'device_model', 'device_os']
+    required_device_fields = ['device_id', 'device_brand', 'ip_address', 'device_model']
     
     for field in required_device_fields:
         if not device_data.get(field):

@@ -58,8 +58,8 @@ async def get_client_info(
     request: Request,
     x_device_id: Optional[str] = Header(None),
     x_device_model: Optional[str] = Header(None),
-    x_device_os: Optional[str] = Header(None),
     x_device_brand: Optional[str] = Header(None),
+    x_device_os: Optional[str] = Header(None),  # Made optional
     api_key: Optional[str] = Depends(api_key_header)
 ) -> ClientInfo:
     """Extract client information from headers"""
@@ -86,8 +86,8 @@ async def get_client_info(
         "ip_address": ip_address,
         "device_id": x_device_id,
         "device_model": x_device_model,
-        "device_os": x_device_os,
         "device_brand": x_device_brand,
+        "device_os": x_device_os,  # Optional now
         "api_key": api_key
     }
 
@@ -197,8 +197,8 @@ async def validate_device_dependency(request: Request, client_info: ClientInfo =
         device_id=client_info.device_id,
         ip_address=client_info.ip_address,
         device_model=client_info.device_model or "unknown",
-        device_os=client_info.device_os or "unknown",
-        device_brand=client_info.device_brand or "unknown"
+        device_brand=client_info.device_brand or "unknown",
+        device_os=client_info.device_os  # Optional now
     )
 
     # Cache the result for 5 minutes

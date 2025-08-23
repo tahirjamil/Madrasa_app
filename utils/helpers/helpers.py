@@ -764,35 +764,10 @@ async def check_keydb_health(request: Request | None= None) -> Dict[str, Any]:
     except Exception as e:
         return {"status": "unhealthy", "message": f"KeyDB error: {str(e)}"}
 
-async def check_opentelemetry_health() -> Dict[str, Any]:
-    """Check OpenTelemetry health by sending a test span."""
-    try:
-        from opentelemetry import trace
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-        
-        exporter = OTLPSpanExporter(endpoint=config.OTEL_EXPORTER_OTLP_ENDPOINT, insecure=True)
-        provider = TracerProvider()
-        processor = BatchSpanProcessor(exporter)
-        provider.add_span_processor(processor)
-        trace.set_tracer_provider(provider)
-        tracer = trace.get_tracer(__name__)
-
-        # Send a test span
-        with tracer.start_as_current_span("opentelemetry-health-check"):
-            pass
-
-        # If we made it this far, connection is likely healthy
-        return {"status": "healthy", "message": "OpenTelemetry connection successful"}
-    except Exception as e:
-        return {"status": "unhealthy", "message": f"OpenTelemetry error: {str(e)}"}
-
 async def get_system_health(request: Request | None= None) -> Dict[str, Any]:
     """Get comprehensive system health status"""
     db_health = await check_database_health()
     keydb_health = await check_keydb_health(request)
-    opentelemetry_health = await check_opentelemetry_health()
     
     # Get KeyDB cache size
     cache_size = 0
@@ -810,7 +785,6 @@ async def get_system_health(request: Request | None= None) -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat(),
         "database": db_health,
         "keydb": keydb_health,
-        "opentelemetry": opentelemetry_health,
         "maintenance_mode": config.is_maintenance(),
         "cache_size": cache_size,
         "rate_limiter_size": len(rate_limiter._requests)

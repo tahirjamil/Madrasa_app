@@ -1,0 +1,156 @@
+/* Info Page Styles */
+
+.json-block {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.json-block:hover {
+  background-color: #e9ecef;
+  border-color: #adb5bd;
+}
+
+.json-block.expanded {
+  max-height: none;
+  background-color: #fff;
+  border-color: #0d6efd;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.scroll-top {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: none;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.table-responsive {
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border: 1px solid #dee2e6;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background-color: #212529;
+  z-index: 10;
+  border-bottom: 2px solid #495057;
+}
+
+.filter-section {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 1px solid #dee2e6;
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  font-weight: 500;
+}
+
+/* Method badges */
+.method-get { background-color: #198754 !important; }
+.method-post { background-color: #0d6efd !important; }
+.method-put { background-color: #fd7e14 !important; }
+.method-delete { background-color: #dc3545 !important; }
+.method-patch { background-color: #6f42c1 !important; }
+.method-head { background-color: #6c757d !important; }
+.method-options { background-color: #6c757d !important; }
+
+/* Table improvements */
+.table-hover tbody tr:hover {
+  background-color: rgba(0,0,0,0.075);
+}
+
+.table td {
+  vertical-align: top;
+  padding: 8px;
+}
+
+/* Code styling */
+code {
+  background-color: #f8f9fa;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 0.875em;
+}
+
+/* Stats badges */
+.stats-badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .json-block {
+    font-size: 10px;
+    max-height: 150px;
+  }
+  
+  .table th,
+  .table td {
+    padding: 4px;
+    font-size: 0.875rem;
+  }
+  
+  .filter-section {
+    padding: 10px;
+  }
+}
+
+/* Loading animation */
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #0d6efd;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+}
+
+.empty-state i {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}

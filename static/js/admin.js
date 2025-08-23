@@ -84,7 +84,7 @@
   async function poll() {
     if (!autoRefresh) return;
     try {
-      const res = await fetch('/admin/info/data'); // Update this URL as needed
+      const res = await fetch('/info/data');
       if (!res.ok) throw new Error(res.statusText);
       let newData = await res.json();
       newData.reverse(); // Newest at top

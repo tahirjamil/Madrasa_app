@@ -1,94 +1,144 @@
-{% extends "admin/base.html" %}
-{% block title %}Request & Response Log{% endblock %}
+{% extends "base.html" %}
+{% block title %}Request & Response Log - Madrasa App{% endblock %}
 
 {% block extra_css %}
 <link href="/static/css/admin.css" rel="stylesheet">
+<link href="/static/css/info.css" rel="stylesheet">
 {% endblock %}
 
 {% block content %}
 <div class="container py-4">
-  <h1 class="mb-4">📊 Request & Response Log</h1>
+  <div class="row">
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0">
+          <i class="bi bi-activity me-2"></i>Request & Response Log
+        </h1>
+        <div class="d-flex gap-2">
+          <button id="pause-refresh" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-pause-circle me-1"></i>Pause Auto-Refresh
+          </button>
+          <button id="refresh-now" class="btn btn-primary btn-sm">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh Now
+          </button>
+        </div>
+      </div>
 
-  <!-- Filters -->
-  <div class="row g-2 mb-3">
-    <div class="col-md-4">
-      <input id="filter-text" type="text"
-             class="form-control"
-             placeholder="Filter by any text…">
-    </div>
-    <div class="col-md-3">
-      <input id="filter-from" type="date"
-             class="form-control"
-             placeholder="From date">
-    </div>
-    <div class="col-md-3">
-      <input id="filter-to" type="date"
-             class="form-control"
-             placeholder="To date">
-    </div>
-    <div class="col-md-2">
-      <button id="clear-filters"
-              class="btn btn-secondary w-100">
-        Clear Filters
-      </button>
-    </div>
-  </div>
+      <!-- Filters -->
+      <div class="filter-section">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label for="filter-text" class="form-label">Search</label>
+            <input id="filter-text" type="text"
+                   class="form-control form-control-sm"
+                   placeholder="Filter by any text…">
+          </div>
+          <div class="col-md-3">
+            <label for="filter-from" class="form-label">From Date</label>
+            <input id="filter-from" type="date"
+                   class="form-control form-control-sm">
+          </div>
+          <div class="col-md-3">
+            <label for="filter-to" class="form-label">To Date</label>
+            <input id="filter-to" type="date"
+                   class="form-control form-control-sm">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">&nbsp;</label>
+            <button id="clear-filters" class="btn btn-secondary btn-sm w-100">
+              <i class="bi bi-x-circle me-1"></i>Clear
+            </button>
+          </div>
+        </div>
+      </div>
 
-  <div class="d-flex align-items-center mb-2">
-    <p class="text-muted mb-0 me-3">
-    Showing last <span id="entry-count">{{ logs|length }}</span> entries.
-  </p>
-    <button id="pause-refresh" class="btn btn-outline-primary btn-sm ms-auto">Pause Auto-Refresh</button>
-  </div>
+      <!-- Stats -->
+      <div class="d-flex align-items-center mb-3">
+        <p class="text-muted mb-0 me-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Showing last <span id="entry-count" class="badge bg-primary">{{ logs|length }}</span> entries.
+        </p>
+        <div class="ms-auto">
+          <span class="badge bg-success me-2">200: <span id="success-count">0</span></span>
+          <span class="badge bg-warning me-2">4xx: <span id="client-error-count">0</span></span>
+          <span class="badge bg-danger">5xx: <span id="server-error-count">0</span></span>
+        </div>
+      </div>
 
-  <div class="table-responsive" style="max-height:70vh; overflow:auto;">
-    <table id="log-table" class="table table-sm table-striped">
-      <thead class="table-dark">
-        <tr>
-          <th>Time</th><th>IP</th><th>Method</th>
-          <th>Path</th><th>Request JSON</th><th>Response JSON</th>
-        </tr>
-      </thead>
-      <tbody>
-        {# Show newest logs at the top #}
-        {% for e in logs|reverse %}
-        <tr>
-          <td>{{ e.time }}</td>
-          <td>{{ e.ip }}</td>
-          <td>{{ e.method }}</td>
-          <td>{{ e.path }}</td>
-          <td>
-            {% if e.req_json is not none %}
-              <pre class="json-block">{{ e.req_json|tojson(indent=2) }}</pre>
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if e.res_json is not none %}
-              <pre class="json-block">{{ e.res_json|tojson(indent=2) }}</pre>
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+      <!-- Log Table -->
+      <div class="table-responsive" style="max-height:70vh; overflow:auto;">
+        <table id="log-table" class="table table-sm table-striped table-hover">
+          <thead class="table-dark">
+            <tr>
+              <th style="width: 140px;">Time</th>
+              <th style="width: 120px;">IP</th>
+              <th style="width: 80px;">Method</th>
+              <th style="width: 200px;">Path</th>
+              <th style="width: 300px;">Request JSON</th>
+              <th style="width: 300px;">Response JSON</th>
+            </tr>
+          </thead>
+          <tbody>
+            {# Show newest logs at the top #}
+            {% for e in logs|reverse %}
+            <tr>
+              <td>
+                <small class="text-muted">{{ e.time }}</small>
+              </td>
+              <td>
+                <code class="text-primary">{{ e.ip }}</code>
+              </td>
+              <td>
+                {% if e.method == 'GET' %}
+                  <span class="badge bg-success status-badge">{{ e.method }}</span>
+                {% elif e.method == 'POST' %}
+                  <span class="badge bg-primary status-badge">{{ e.method }}</span>
+                {% elif e.method == 'PUT' %}
+                  <span class="badge bg-warning status-badge">{{ e.method }}</span>
+                {% elif e.method == 'DELETE' %}
+                  <span class="badge bg-danger status-badge">{{ e.method }}</span>
+                {% else %}
+                  <span class="badge bg-secondary status-badge">{{ e.method }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <code class="text-dark">{{ e.path }}</code>
+              </td>
+              <td>
+                {% if e.req_json is not none %}
+                  <pre class="json-block">{{ e.req_json|tojson(indent=2) }}</pre>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if e.res_json is not none %}
+                  <pre class="json-block">{{ e.res_json|tojson(indent=2) }}</pre>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
+<!-- Scroll to top button -->
 <button id="scroll-top" class="btn btn-primary scroll-top">
-  ↑ Newest
+  <i class="bi bi-arrow-up"></i>
 </button>
 
+<!-- Initialize data for JavaScript -->
 <script id="init-data" type="application/json">
 {{ logs | tojson }}
 </script>
+{% endblock %}
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-
-
+{% block scripts %}
 <script src="/static/js/admin.js"></script>
+<script src="/static/js/info.js"></script>
 {% endblock %}

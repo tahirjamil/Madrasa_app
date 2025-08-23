@@ -102,7 +102,7 @@ services:
     networks:
       - observability_network
     healthcheck:
-      test: ["CMD-SHELL", "keydb-cli ping | grep PONG || exit 1"]
+      test: ["CMD-SHELL", "keydb-cli -a ${KEYDB_PASSWORD} ping | grep PONG || exit 1"]
       timeout: 10s
       retries: 5
       interval: 30s

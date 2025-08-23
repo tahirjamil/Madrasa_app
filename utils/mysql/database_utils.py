@@ -58,7 +58,7 @@ def get_db_config() -> AiomysqlConnectConfig:
         unix_cfg: AiomysqlConnectConfig = {
             "unix_socket": unix_socket,
             "user": user,
-            "password": root_password,
+            "password": password,
             "db": db,
             "autocommit": autocommit,
             "charset": charset,

@@ -452,7 +452,7 @@ async def get_id(formatted_phone: str, fullname: str, madrasa_name: str) -> Opti
     async with get_traced_db_cursor() as cursor:
         try:
             await cursor.execute(
-                f"SELECT user_id FROM {madrasa_name}.peoples WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                f"SELECT user_id FROM {madrasa_name}.peoples WHERE phone = %s AND LOWER(name) = LOWER(%s)",
                     (formatted_phone, fullname)
                 )
             result = await cursor.fetchone()

@@ -172,6 +172,7 @@ class MadrasaConfig:
     MYSQL_HOST = get_env_var("MYSQL_HOST")
     MYSQL_USER = get_env_var("MYSQL_USER")
     MYSQL_PASSWORD = get_env_var("MYSQL_PASSWORD")
+    MYSQL_ROOT_PASSWORD = get_env_var("MYSQL_ROOT_PASSWORD")
     MYSQL_DB = get_env_var("MYSQL_DB")
     MYSQL_PORT = int(get_env_var("MYSQL_PORT", 3306))
     MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None, required=False)

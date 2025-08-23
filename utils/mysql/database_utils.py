@@ -21,6 +21,7 @@ def get_db_config() -> AiomysqlConnectConfig:
         config.MYSQL_HOST,
         config.MYSQL_USER,
         config.MYSQL_PASSWORD is not None,
+        config.MYSQL_ROOT_PASSWORD is not None,
         config.MYSQL_DB
     ]):
         raise ValueError("Database configuration is incomplete. Please check your config settings.")
@@ -29,6 +30,7 @@ def get_db_config() -> AiomysqlConnectConfig:
     host: str = str(config.MYSQL_HOST)
     user: str = str(config.MYSQL_USER)
     password: str = str(config.MYSQL_PASSWORD)
+    root_password: str = str(config.MYSQL_ROOT_PASSWORD)
     db: str = str(config.MYSQL_DB)
 
     # Port (int)
@@ -56,7 +58,7 @@ def get_db_config() -> AiomysqlConnectConfig:
         unix_cfg: AiomysqlConnectConfig = {
             "unix_socket": unix_socket,
             "user": user,
-            "password": password,
+            "password": root_password,
             "db": db,
             "autocommit": autocommit,
             "charset": charset,

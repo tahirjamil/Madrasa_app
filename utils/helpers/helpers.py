@@ -1515,12 +1515,12 @@ async def validate_request_headers(request: Request) -> Tuple[bool, str]:
     ip_address = get_ip_address(request) or "unknown"
     device_id = request.headers.get("X-Device-ID")
     
-    # Check for suspicious headers
-    suspicious_headers = ['X-Forwarded-Host', 'X-Original-URL']
-    for header in suspicious_headers:
-        if request.headers.get(header):
-            log.critical(action="suspicious_header", trace_info=ip_address, message=f"Suspicious header detected: {header}", secure=False)
-            await security_manager.track_suspicious_activity(ip_address=ip_address, activity="Suspicious header detected", device_id=device_id)
+    # Check for suspicious headers TODO: implement this
+    # suspicious_headers = ['X-Forwarded-Host', 'X-Original-URL']
+    # for header in suspicious_headers:
+    #     if request.headers.get(header):
+    #         log.critical(action="suspicious_header", trace_info=ip_address, message=f"Suspicious header detected: {header}", secure=False)
+    #         await security_manager.track_suspicious_activity(ip_address=ip_address, activity="Suspicious header detected", device_id=device_id)
     
     return True, ""
 

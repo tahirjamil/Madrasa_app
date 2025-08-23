@@ -1134,15 +1134,20 @@ def validate_fullname(fullname: str) -> bool:
 
 async def validate_device_info(device_id: str, ip_address: str, device_brand: str, device_model: Optional[str] = None, device_os: Optional[str] = None) -> Tuple[bool, str]:
     """Validate device information for security"""
+    
+    # Log device information for debugging
+    log.info(action="device_validation_start", trace_info=ip_address, message=f"Validating device - ID: {device_id}, Brand: {device_brand}, Model: {device_model}, OS: {device_os}", secure=False)
+    
     # Validate IP address format
     ip_pattern = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
     if not ip_pattern.match(ip_address):
-        return False, "Invalid IP address format"
+        log.warning(action="invalid_ip_format", trace_info=ip_address, message=f"Invalid IP address format: {ip_address}", secure=False)
+        return False, f"Invalid IP address format: {ip_address}"
     
     # Check for suspicious device patterns
     suspicious_patterns = [
         r'^(test|dummy|fake|null|undefined)$',
-        r'[<>"\']',
+        # r'[<>"\']',  # Temporarily disabled - too restrictive for legitimate device names
         r'\.\.',
         r'javascript:',
         r'<script'
@@ -1150,13 +1155,27 @@ async def validate_device_info(device_id: str, ip_address: str, device_brand: st
     
     # Check device_id, device_brand, and device_model (device_os is optional)
     for pattern in suspicious_patterns:
-        if (re.search(pattern, device_id, re.IGNORECASE) or 
-            re.search(pattern, device_brand, re.IGNORECASE) or 
-            (device_model and re.search(pattern, device_model, re.IGNORECASE)) or
-            (device_os and re.search(pattern, device_os, re.IGNORECASE))):
-            await security_manager.track_suspicious_activity(ip_address, "Suspicious device identifier detected")
-            return False, "Suspicious device identifier detected"
+        if re.search(pattern, device_id, re.IGNORECASE):
+            log.warning(action="suspicious_device_id", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_id: {device_id}", secure=False)
+            await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_id pattern: {pattern}")
+            return False, f"Suspicious device_id pattern: {pattern}"
+        
+        if re.search(pattern, device_brand, re.IGNORECASE):
+            log.warning(action="suspicious_device_brand", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_brand: {device_brand}", secure=False)
+            await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_brand pattern: {pattern}")
+            return False, f"Suspicious device_brand pattern: {pattern}"
+        
+        if device_model and re.search(pattern, device_model, re.IGNORECASE):
+            log.warning(action="suspicious_device_model", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_model: {device_model}", secure=False)
+            await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_model pattern: {pattern}")
+            return False, f"Suspicious device_model pattern: {pattern}"
+        
+        if device_os and re.search(pattern, device_os, re.IGNORECASE):
+            log.warning(action="suspicious_device_os", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_os: {device_os}", secure=False)
+            await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_os pattern: {pattern}")
+            return False, f"Suspicious device_os pattern: {pattern}"
     
+    log.info(action="device_validation_passed", trace_info=ip_address, message=f"Device validation passed", secure=False)
     return True, ""
 
 # ─── Advanced Security Functions ────────────────────────────────────────────

@@ -182,6 +182,7 @@ class BaseAuthRequest(BaseModel):
 # ─── Device Validation Dependency ─────────────────────────────────────────── # TODO: Unknown
 async def validate_device_dependency(request: Request, client_info: ClientInfo = Depends(get_client_info)):
     from .helpers import validate_device_info
+    from .logger import log
     redis = get_keydb_from_app(request)  # get your Redis/KeyDB instance
     
     # Handle both ClientInfo object and dict for backward compatibility
@@ -198,13 +199,18 @@ async def validate_device_dependency(request: Request, client_info: ClientInfo =
         device_brand = client_info.device_brand or "unknown"
         device_os = client_info.device_os
     
+    # Log the values being validated
+    log.info(action="device_dependency_validation", trace_info=ip_address, message=f"Validating device dependency - ID: {device_id}, Brand: {device_brand}, Model: {device_model}, OS: {device_os}", secure=False)
+    
     cache_key = f"device_valid:{device_id}:{ip_address}"
     
     cached = await redis.get(cache_key) if redis else None
     if cached is not None:
         if cached == b"1":
+            log.info(action="device_cache_hit", trace_info=ip_address, message="Device validation cache hit", secure=False)
             return client_info
         else:
+            log.warning(action="device_cache_invalid", trace_info=ip_address, message="Device validation cache hit - invalid", secure=False)
             raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Invalid device (cached)")
 
     # Validate device
@@ -221,8 +227,10 @@ async def validate_device_dependency(request: Request, client_info: ClientInfo =
         await redis.set(cache_key, "1" if is_valid else "0", ex=300)
 
     if not is_valid:
+        log.warning(action="device_validation_failed", trace_info=ip_address, message=f"Device validation failed: {error}", secure=False)
         raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=error)
 
+    log.info(action="device_validation_success", trace_info=ip_address, message="Device validation successful", secure=False)
     return client_info
 
 

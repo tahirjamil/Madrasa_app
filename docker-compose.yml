@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   # FastAPI App
   app:
@@ -5,21 +7,21 @@ services:
     container_name: madrasa_app
     restart: unless-stopped
     environment:
-      MYSQL_HOST: ${MYSQL_HOST}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DB: ${MYSQL_DB}
-      MYSQL_PORT: ${MYSQL_PORT}
-      KEYDB_HOST: ${KEYDB_HOST}
-      KEYDB_PORT: ${KEYDB_PORT}
-      KEYDB_PASSWORD: ${KEYDB_PASSWORD}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_USER: ${MYSQL_USER:-user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
+      MYSQL_DB: ${MYSQL_DB:-madrasa}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      KEYDB_HOST: ${KEYDB_HOST:-keydb}
+      KEYDB_PORT: ${KEYDB_PORT:-6379}
+      KEYDB_PASSWORD: ${KEYDB_PASSWORD:-secret}
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./static:/app/static
       - ./templates:/app/templates
     expose:
-      - "8000"  # Only expose to internal network, not host
+      - "8000"
     networks:
       - app_network
       - observability_network
@@ -29,7 +31,7 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       timeout: 10s
       retries: 5
       interval: 30s
@@ -41,20 +43,20 @@ services:
     container_name: madrasa_nginx
     restart: unless-stopped
     ports:
-      - "80:80"   # HTTP
-      - "443:443" # HTTPS (for future SSL)
+      - "80:80"
+      - "443:443"
     volumes:
       - ./config/hosting/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./static:/app/static:ro  # Mount static files for direct serving
-      - ./uploads:/app/uploads:ro  # Mount uploads for direct serving
-      - ./logs/nginx:/var/log/nginx  # Nginx logs
+      - ./static:/app/static:ro
+      - ./uploads:/app/uploads:ro
+      - ./logs/nginx:/var/log/nginx
     networks:
       - app_network
     depends_on:
       app:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/health || exit 1"]
       timeout: 10s
       retries: 5
       interval: 30s
@@ -66,39 +68,35 @@ services:
     container_name: madrasa_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DB}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DB:-madrasa}
+      MYSQL_USER: ${MYSQL_USER:-user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
     expose:
-      - ${MYSQL_PORT}
+      - ${MYSQL_PORT:-3306}
     ports:
-      - "${MYSQL_PORT}:${MYSQL_PORT}" # Expose to host in development
+      - "${MYSQL_PORT:-3306}:${MYSQL_PORT:-3306}"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./config/mysql:/docker-entrypoint-initdb.d:ro
     networks:
       - app_network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD:-rootpass} || exit 1"]
       timeout: 10s
       retries: 10
       interval: 30s
       start_period: 30s
-    command: >
-      --default-authentication-plugin=caching_sha2_password
-      --host-cache-size=0
-      --pid-file=/tmp/mysqld.pid
 
-  # KeyDB for caching and session storage
+  # KeyDB
   keydb:
     image: eqalpha/keydb:latest
     container_name: madrasa_keydb
     restart: unless-stopped
     expose:
-      - ${KEYDB_PORT}
+      - ${KEYDB_PORT:-6379}
     ports:
-      - "${KEYDB_PORT}:${KEYDB_PORT}"
+      - "${KEYDB_PORT:-6379}:${KEYDB_PORT:-6379}"
     volumes:
       - keydb_data:/data
       - ./config/keydb/keydb.conf:/etc/keydb/keydb.conf:ro
@@ -106,13 +104,13 @@ services:
     networks:
       - observability_network
     healthcheck:
-      test: ["CMD", "keydb-cli", "ping"]
+      test: ["CMD-SHELL", "keydb-cli ping | grep PONG || exit 1"]
       timeout: 10s
       retries: 5
       interval: 30s
       start_period: 10s
     environment:
-      KEYDB_PASSWORD: ${KEYDB_PASSWORD}
+      KEYDB_PASSWORD: ${KEYDB_PASSWORD:-secret}
 
   # OpenTelemetry Collector
   otel-collector:
@@ -128,14 +126,14 @@ services:
       - "9464"
       - "13133"
     ports:
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
-      - "9464:9464"   # Prometheus metrics
-      - "13133:13133" # Health check endpoint
+      - "4317:4317"
+      - "4318:4318"
+      - "9464:9464"
+      - "13133:13133"
     networks:
       - observability_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:13133/"]
+      test: ["CMD-SHELL", "curl -f http://localhost:13133/ || exit 1"]
       timeout: 20s
       retries: 10
       start_period: 30s
@@ -143,7 +141,7 @@ services:
     depends_on:
       - jaeger
 
-  # Jaeger for trace visualization
+  # Jaeger
   jaeger:
     image: jaegertracing/all-in-one:latest
     container_name: madrasa_jaeger
@@ -152,19 +150,19 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
       - COLLECTOR_OTLP_HTTP_ENABLED=true
     ports:
-      - "16686:16686"  # Jaeger UI
-      - "14268:14268"  # HTTP collector endpoint
-      - "14250:14250"  # gRPC collector endpoint
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
     networks:
       - observability_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686 || exit 1"]
       timeout: 20s
       retries: 10
       start_period: 20s
       interval: 15s
 
-  # Prometheus for metrics collection
+  # Prometheus
   prometheus:
     image: prom/prometheus:latest
     container_name: madrasa_prometheus
@@ -177,14 +175,14 @@ services:
       --storage.tsdb.retention.time=200h
       --web.enable-lifecycle
     ports:
-      - "9090:9090"  # Prometheus UI
+      - "9090:9090"
     volumes:
       - prometheus_data:/prometheus
       - ./config/otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - observability_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
       timeout: 20s
       retries: 10
       start_period: 20s

@@ -1014,7 +1014,6 @@ async def check_account_security_status(user_id: int) -> Dict[str, Any]: # TODO:
     """Check account security status and return security metrics"""
     try:
         # Get recent login attempts
-        from utils.helpers.helpers import get_cached_data
         login_attempts = await get_cached_data(f"login_attempts:{user_id}", default=0)
         
         # Get recent activities

@@ -278,7 +278,7 @@ async def login(
         async with get_traced_db_cursor() as cursor:
                 # Get user by phone and name
                 await cursor.execute(
-                    f"SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    "SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()

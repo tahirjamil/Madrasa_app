@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, Callable, Tuple
 from functools import wraps
 from collections import defaultdict
 
-from fastapi import Request, HTTPException, Depends, Header
+from fastapi import Request, HTTPException, Depends, Header, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_429_TOO_MANY_REQUESTS
@@ -24,35 +24,17 @@ from utils.keydb.keydb_utils import get_keydb_from_app
 
 
 # ─── API Key Authentication ───────────────────────────────────────────
-def get_api_key(request: Request) -> str:
-    api_key = request.headers.get("X-API-Key")
-    if not api_key:
-        auth_header = request.headers.get("Authorization", "")
-        if " " in auth_header:
-            api_key = auth_header.split(" ")[1]
-    if not api_key:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="API key required"
-        )
-    return api_key
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
 
-
-async def require_api_key(api_key: Optional[str] = Depends(get_api_key)) -> str:
+async def require_api_key(api_key: str = Security(api_key_header)) -> None:
     """FastAPI dependency for API key validation"""
-    if not api_key:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="API key required"
-        )
-    
     if api_key not in list(config.API_KEYS):
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="Invalid API key"
         )
     
-    return api_key
+    return
 
 
 # ─── Client Info Dependency ───────────────────────────────────────────
@@ -72,7 +54,7 @@ async def get_client_info(
     x_device_model: Optional[str] = Header(None),
     x_device_brand: Optional[str] = Header(None),
     x_device_os: Optional[str] = Header(None),
-    api_key: str = Depends(get_api_key)
+    api_key: str = Security(api_key_header)
 ) -> ClientInfo:
     """Extract client information from headers"""
     from .helpers import get_ip_address, validate_request_headers, validate_device_fingerprint

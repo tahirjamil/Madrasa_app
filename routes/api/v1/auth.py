@@ -552,7 +552,6 @@ async def reset_password(
 async def manage_account(
     page_type: ManageAccountPageType,
     data: ManageAccountRequest,
-    client_info: ClientInfo = Depends(validate_device_dependency)
 ) -> JSONResponse:
     """Manage account (deactivate/delete) with enhanced security"""
     try:

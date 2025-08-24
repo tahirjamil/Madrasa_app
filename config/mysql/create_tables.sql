@@ -26,14 +26,15 @@ CREATE TABLE IF NOT EXISTS users (
                 phone       VARCHAR(20)            NOT NULL,
                 phone_hash    CHAR(64)           NOT NULL,
                 phone_encrypted    VARCHAR(255)           NOT NULL,
-                password_hash    CHAR(64)           NOT NULL,
+                password_hash    VARCHAR(255)           NOT NULL,
                 email       VARCHAR(50),
-                email_hash    CHAR(64)           NOT NULL,
-                email_encrypted    VARCHAR(255)           NOT NULL,
+                email_hash    CHAR(64)           NULL,
+                email_encrypted    VARCHAR(255)           NULL,
                 ip_address  VARCHAR(45),
                 deactivated_at  DATETIME            NULL,
                 scheduled_deletion_at  DATETIME     NULL,
 
+                updated_at  TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at  TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
                 UNIQUE KEY unique_user (fullname, phone),

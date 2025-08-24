@@ -24,9 +24,21 @@ from utils.keydb.keydb_utils import get_keydb_from_app
 
 
 # ─── API Key Authentication ───────────────────────────────────────────
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+def get_api_key(request: Request) -> str:
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        auth_header = request.headers.get("Authorization", "")
+        if " " in auth_header:
+            api_key = auth_header.split(" ")[1]
+    if not api_key:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="API key required"
+        )
+    return api_key
 
-async def require_api_key(api_key: Optional[str] = Depends(api_key_header)) -> str:
+
+async def require_api_key(api_key: Optional[str] = Depends(get_api_key)) -> str:
     """FastAPI dependency for API key validation"""
     if not api_key:
         raise HTTPException(
@@ -56,11 +68,11 @@ class ClientInfo(BaseModel):
 
 async def get_client_info(
     request: Request,
-    x_device_id: Optional[str] = Header(None),
+    x_device_id: str = Header("unknown"),
     x_device_model: Optional[str] = Header(None),
     x_device_brand: Optional[str] = Header(None),
-    x_device_os: Optional[str] = Header(None),  # Made optional
-    api_key: Optional[str] = Depends(api_key_header)
+    x_device_os: Optional[str] = Header(None),
+    api_key: str = Depends(get_api_key)
 ) -> ClientInfo:
     """Extract client information from headers"""
     from .helpers import get_ip_address, validate_request_headers, validate_device_fingerprint
@@ -85,9 +97,9 @@ async def get_client_info(
     info = {
         "ip_address": ip_address,
         "device_id": x_device_id,
-        "device_model": x_device_model,
-        "device_brand": x_device_brand,
-        "device_os": x_device_os,  # Optional now
+        "device_model": x_device_model or "",
+        "device_brand": x_device_brand or "",
+        "device_os": x_device_os or "",
         "api_key": api_key
     }
 
@@ -187,48 +199,31 @@ async def validate_device_dependency(request: Request, client_info: ClientInfo =
     
     # Handle both ClientInfo object and dict for backward compatibility
     if isinstance(client_info, dict):
-        device_id = client_info.get('device_id', 'unknown')
-        ip_address = client_info.get('ip_address', 'unknown')
-        device_model = client_info.get('device_model', 'unknown')
-        device_brand = client_info.get('device_brand', 'unknown')
-        device_os = client_info.get('device_os')
+        log.info(action="device_dependency_validation", trace_info=client_info.get('ip_address', ''), message=f"Validating device dependency in client_info dict", secure=False)
+        device_id = client_info.get('device_id', '')
+        ip_address = client_info.get('ip_address', '')
     else:
+        log.info(action="device_dependency_validation", trace_info=client_info.ip_address, message=f"Validating device dependency in client_info object", secure=False)
         device_id = client_info.device_id
         ip_address = client_info.ip_address
-        device_model = client_info.device_model or "unknown"
-        device_brand = client_info.device_brand or "unknown"
-        device_os = client_info.device_os
-    
-    # Log the values being validated
-    log.info(action="device_dependency_validation", trace_info=ip_address, message=f"Validating device dependency - ID: {device_id}, Brand: {device_brand}, Model: {device_model}, OS: {device_os}", secure=False)
-    
+
     cache_key = f"device_valid:{device_id}:{ip_address}"
     
     cached = await redis.get(cache_key) if redis else None
     if cached is not None:
         if cached == b"1":
-            log.info(action="device_cache_hit", trace_info=ip_address, message="Device validation cache hit", secure=False)
             return client_info
-        else:
-            log.warning(action="device_cache_invalid", trace_info=ip_address, message="Device validation cache hit - invalid", secure=False)
-            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Invalid device (cached)")
+        log.warning(action="device_validation_cache_error", message="Cache is not valid in validate_device_dependency")
 
     # Validate device
-    is_valid, error = await validate_device_info(
+    await validate_device_info(
         device_id=device_id,
-        ip_address=ip_address,
-        device_model=device_model,
-        device_brand=device_brand,
-        device_os=device_os  # Optional now
+        ip_address=ip_address
     )
 
     # Cache the result for 5 minutes
     if redis:
-        await redis.set(cache_key, "1" if is_valid else "0", ex=300)
-
-    if not is_valid:
-        log.warning(action="device_validation_failed", trace_info=ip_address, message=f"Device validation failed: {error}", secure=False)
-        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=error)
+        await redis.set(cache_key, "1", ex=600)
 
     log.info(action="device_validation_success", trace_info=ip_address, message="Device validation successful", secure=False)
     return client_info

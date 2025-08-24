@@ -126,6 +126,7 @@ class MadrasaConfig:
     # Email and SMS Verification
     SERVICE_PHONE_URL = "https://textbelt.com/text"
     SERVICE_PHONE_API_KEY = get_env_var("SMS_API_KEY")
+    SERVICE_EMAIL_HOST = "smtp.gmail.com"
     SERVICE_EMAIL_PORT = 587
     SERVICE_EMAIL_PASSWORD = get_env_var("EMAIL_PASSWORD")
     

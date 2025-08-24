@@ -103,10 +103,8 @@ def invalidate_cache_pattern(pattern: str) -> int:
 
 # ---------- decorator for endpoint-level caching ----------
 def cache_with_invalidation(func: Optional[Callable] = None, *, ttl: int = 3600):
-    """
-    Decorator for endpoint-level caching backed by KeyDB.
-    Works cleanly with FastAPI (requires Request param in route).
-    """
+    """Decorator for endpoint-level caching backed by KeyDB.
+    Works cleanly with FastAPI (requires Request param in route)."""
 
     def _decorate(f: Callable[..., Awaitable[Any]]):
         @wraps(f)
@@ -375,7 +373,9 @@ def _send_smtp_email(msg: MIMEText, to_email: str) -> None:
     """Send email via SMTP (blocking)"""
     if not config.BUSINESS_EMAIL or not config.SERVICE_EMAIL_PASSWORD:
         raise ValueError("Business email or service password not configured")
-    server = smtplib.SMTP(config.BUSINESS_EMAIL or "", config.SERVICE_EMAIL_PORT)
+    
+    # Use Gmail SMTP server
+    server = smtplib.SMTP(config.SERVICE_EMAIL_HOST, config.SERVICE_EMAIL_PORT)
     server.starttls()
     server.login(config.BUSINESS_EMAIL, config.SERVICE_EMAIL_PASSWORD)
     server.sendmail(config.BUSINESS_EMAIL, to_email, msg.as_string())
@@ -1062,11 +1062,11 @@ async def check_code(user_code: int, phone: str) -> bool:
             now = datetime.now()
             
             # Check expiration
-            if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 60:
+            if (now - created_at).total_seconds() > config.CODE_EXPIRY_MINUTES * 6000: # TODO: the mysql and datetime now doesnt match
                 raise AppError("Verification code expired", error_code="400")
             
             # Constant-time comparison
-            if int(user_code) == db_code:
+            if int(user_code) == int(db_code):
                 await delete_code()
                 return True
             else:
@@ -1145,17 +1145,17 @@ def validate_fullname(fullname: str) -> bool:
         raise AppError("Fullname must be words starting with uppercase, followed by lowercase letters, apostrophes, or hyphens", error_code="400")
     return True
 
-async def validate_device_info(device_id: str, ip_address: str, device_brand: str, device_model: Optional[str] = None, device_os: Optional[str] = None) -> Tuple[bool, str]:
+async def validate_device_info(device_id: str, ip_address: str) -> bool:
     """Validate device information for security"""
     
     # Log device information for debugging
-    log.info(action="device_validation_start", trace_info=ip_address, message=f"Validating device - ID: {device_id}, Brand: {device_brand}, Model: {device_model}, OS: {device_os}", secure=False)
+    log.info(action="device_validation_start", trace_info=ip_address, message=f"Validating device - ID: {device_id}", secure=False)
     
     # Validate IP address format
     ip_pattern = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
     if not ip_pattern.match(ip_address):
         log.warning(action="invalid_ip_format", trace_info=ip_address, message=f"Invalid IP address format: {ip_address}", secure=False)
-        return False, f"Invalid IP address format: {ip_address}"
+        raise AppError(f"Invalid IP address format: {ip_address}", error_code="400")
     
     # Check for suspicious device patterns
     suspicious_patterns = [
@@ -1166,30 +1166,15 @@ async def validate_device_info(device_id: str, ip_address: str, device_brand: st
         r'<script'
     ]
     
-    # Check device_id, device_brand, and device_model (device_os is optional)
+    # Check device_id
     for pattern in suspicious_patterns:
         if re.search(pattern, device_id, re.IGNORECASE):
             log.warning(action="suspicious_device_id", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_id: {device_id}", secure=False)
             await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_id pattern: {pattern}")
-            return False, f"Suspicious device_id pattern: {pattern}"
-        
-        if re.search(pattern, device_brand, re.IGNORECASE):
-            log.warning(action="suspicious_device_brand", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_brand: {device_brand}", secure=False)
-            await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_brand pattern: {pattern}")
-            return False, f"Suspicious device_brand pattern: {pattern}"
-        
-        if device_model and re.search(pattern, device_model, re.IGNORECASE):
-            log.warning(action="suspicious_device_model", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_model: {device_model}", secure=False)
-            await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_model pattern: {pattern}")
-            return False, f"Suspicious device_model pattern: {pattern}"
-        
-        if device_os and re.search(pattern, device_os, re.IGNORECASE):
-            log.warning(action="suspicious_device_os", trace_info=ip_address, message=f"Suspicious pattern '{pattern}' found in device_os: {device_os}", secure=False)
-            await security_manager.track_suspicious_activity(ip_address, f"Suspicious device_os pattern: {pattern}")
-            return False, f"Suspicious device_os pattern: {pattern}"
-    
+            raise AppError(f"Suspicious device_id pattern: {pattern}", error_code="400")
+                    
     log.info(action="device_validation_passed", trace_info=ip_address, message=f"Device validation passed", secure=False)
-    return True, ""
+    return True
 
 # ─── Advanced Security Functions ────────────────────────────────────────────
 
@@ -1400,11 +1385,7 @@ async def validate_login_attempts(formatted_phone: str, fullname: str, request: 
 async def record_login_attempt(
     formatted_phone: str, fullname: str, success: bool, request: Optional[Request] = None
 ) -> None:
-    """
-    Record login attempt in KeyDB.
-    - On success: delete counter.
-    - On failure: increment counter with expiration.
-    """
+    """Record login attempt in KeyDB."""
     from utils.keydb.keydb_utils import get_keydb_from_app
     pool = get_keydb_from_app(request)
     if not pool:
@@ -1491,9 +1472,9 @@ def get_ip_address(request: Request) -> str:
 
     return request.client.host if request.client else "unknown"
 
-async def validate_device_fingerprint(device_data: Dict[str, Any], request: Request) -> bool:
+async def validate_device_fingerprint(device_data: Dict[str, Any], request: Request) -> bool: # TODO: cache this
     """Validate device fingerprint for security"""
-    required_device_fields = ['device_id', 'device_brand', 'ip_address', 'device_model']
+    required_device_fields = ['device_id', 'ip_address']
     
     for field in required_device_fields:
         if not device_data.get(field):

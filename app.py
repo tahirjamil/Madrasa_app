@@ -310,20 +310,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Log response details
         logger.debug(f"Response status: {response.status_code}")
         
-        # Capture response JSON if it's a JSON response
-        try:
-            if hasattr(response, 'body') and response.body:
-                # Try to parse as JSON
-                if isinstance(response.body, bytes):
-                    res_json = json.loads(response.body.decode('utf-8'))
-                elif isinstance(response.body, str):
-                    res_json = json.loads(response.body)
-                else:
-                    res_json = None
-                entry["res_json"] = res_json
-        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
-            # Not JSON or can't decode, leave as None
-            pass
+        # For other responses, we can't easily capture content without consuming the body
+        logger.debug(f"Response type {type(response)} - no captured content available")
         
         # Add error information if response indicates an error
         if response.status_code >= 400:

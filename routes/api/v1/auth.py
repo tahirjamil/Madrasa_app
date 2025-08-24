@@ -173,7 +173,6 @@ async def register(
         hashed_email = hash_sensitive_data(email) if email else None
                 
         # Insert user into database
-        
         try:
             async with get_traced_db_cursor() as cursor:
                 # Check if user already exists
@@ -279,7 +278,7 @@ async def login(
         async with get_traced_db_cursor() as cursor:
                 # Get user by phone and name
                 await cursor.execute(
-                    f"SELECT * FROM {madrasa_name}.peoples WHERE phone = %s AND LOWER(name) = LOWER(%s)",
+                    f"SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -373,13 +372,13 @@ async def send_verification_code(
         # Extract and sanitize data
         phone = data.phone
         fullname = data.fullname
-        password = data.password
         email = data.email
         ip_address = client_info.ip_address
         madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
 
         if not email:
             email = await get_email(phone=phone, fullname=fullname)
+
         
         # Check if user already exists
         async with get_traced_db_cursor() as cursor:
@@ -399,17 +398,24 @@ async def send_verification_code(
                 """, (phone,))
                 
                 result = await cursor.fetchone()
-                count = result[0] if result else 0
+                count = result["count"] if result else 0
                 
                 # Check rate limits
                 max_limit = max(config.SMS_LIMIT_PER_HOUR, config.EMAIL_LIMIT_PER_HOUR)
-                if count >= max_limit:
+                if int(count) >= int(max_limit):
                     log.warning(action="send_code_rate_limited", trace_info=ip_address, message=f"Rate limit exceeded for phone: {phone}", secure=False)
                     response, status = send_json_response(ERROR_MESSAGES['rate_limit_exceeded'], 429)
                     return JSONResponse(content=response, status_code=status)
                 
                 # Generate and send verification code
                 code = generate_code()
+
+                phone_hash = hash_sensitive_data(phone)
+                phone_encrypted = encrypt_sensitive_data(phone)
+
+                sql = """INSERT INTO global.verifications (phone, phone_hash, phone_encrypted, code, ip_address)
+                        VALUES (%s, %s, %s, %s, %s)"""
+                params = (phone, phone_hash, phone_encrypted, code, ip_address)
                 
                 # Try SMS first
                 if count < config.SMS_LIMIT_PER_HOUR:
@@ -423,11 +429,7 @@ async def send_verification_code(
                     
                     if sms_sent:
                         # Store in database
-                        await cursor.execute("""
-                            INSERT INTO global.verifications (phone, code, ip_address, expires_at)
-                            VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
-                        """, (phone, code, ip_address))
-                        
+                        await cursor.execute(sql, params)
                         log.info(action="verification_code_sent_sms", trace_info=ip_address, message=f"Verification code sent via SMS to: {phone}", secure=False)
                         
                         response, status = send_json_response(f"Verification code sent to {phone}", 200)
@@ -445,11 +447,7 @@ async def send_verification_code(
                     
                     if email_sent:
                         # Store in database
-                        await cursor.execute("""
-                            INSERT INTO global.verifications (phone, code, ip_address, expires_at)
-                            VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
-                        """, (phone, code, ip_address))
-                        
+                        await cursor.execute(sql, params)
                         log.info(action="verification_code_sent_email", trace_info=ip_address, message=f"Verification code sent via email to: {email}", secure=False)
                         
                         response, status = send_json_response(f"Verification code sent to {email}", 200)
@@ -495,7 +493,7 @@ async def reset_password(
         async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
-                    f"SELECT * FROM {madrasa_name}.peoples WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
+                    f"SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -528,8 +526,8 @@ async def reset_password(
                 
                 # Update password
                 await cursor.execute(
-                    "UPDATE people SET password_hash = %s, updated_at = %s WHERE user_id = %s",
-                    (hashed_password, datetime.now(timezone.utc), user['user_id'])
+                    "UPDATE global.users SET password_hash = %s WHERE user_id = %s",
+                    (hashed_password, user['user_id'])
                 )
                 
                 # TODO: Track password reset event
@@ -568,7 +566,7 @@ async def manage_account(
         async with get_traced_db_cursor() as cursor:
                 # Get user
                 await cursor.execute(
-                    f"SELECT * FROM s WHERE phone = %s AND fullname = %s",
+                    f"SELECT * FROM global.users WHERE phone = %s AND LOWER(fullname) = LOWER(%s)",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -610,7 +608,7 @@ async def manage_account(
                 scheduled_deletion = now + timedelta(days=deletion_days) if page_type == ManageAccountPageType.delete else None
                 
                 await cursor.execute(
-                    f"""UPDATE {madrasa_name}.peoples SET 
+                    f"""UPDATE global.users SET 
                     deactivated_at = %s, 
                     scheduled_deletion_at = %s,
                     updated_at = %s
@@ -659,8 +657,9 @@ async def reactivate_account(
         async with get_traced_db_cursor() as cursor:
                 # Get deactivated user
                 await cursor.execute(
-                    f"""SELECT * FROM {madrasa_name}.peoples 
-                    WHERE phone = %s AND fullname = %s AND deactivated_at IS NOT NULL""",
+                    f"""SELECT u.*, p.name FROM global.users u
+                    JOIN {madrasa_name}.peoples p ON p.user_id = u.user_id 
+                    WHERE u.phone = %s AND LOWER(u.fullname) = LOWER(%s) AND u.deactivated_at IS NOT NULL""",
                     (phone, fullname)
                 )
                 user = await cursor.fetchone()
@@ -679,7 +678,7 @@ async def reactivate_account(
                 
                 # Reactivate account
                 await cursor.execute(
-                    f"""UPDATE {madrasa_name}.peoples SET 
+                    f"""UPDATE global.users SET 
                     deactivated_at = NULL, 
                     scheduled_deletion_at = NULL,
                     updated_at = %s

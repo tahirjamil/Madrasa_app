@@ -1,13 +1,13 @@
 # ─── Enhanced File Serving Routes ───────────────────────────────────────────
-from fastapi import Request, HTTPException, Depends
+from fastapi import HTTPException, Depends
 from fastapi.responses import FileResponse
 from typing import Tuple
 import os
 import re
 
 # Local imports
-from utils.helpers.improved_functions import send_json_response
-from utils.helpers.fastapi_helpers import ClientInfo, validate_device_dependency, handle_async_errors, get_client_info
+from utils.helpers.helpers import handle_async_errors
+from utils.helpers.fastapi_helpers import ClientInfo, get_client_info
 from routes.api import api
 from utils.helpers.logger import log
 from config import config
@@ -58,7 +58,7 @@ def validate_folder_access(folder: str, allowed_folders: list) -> bool:
     # Check if folder is in allowed list
     return sanitized_folder in allowed_folders
 
-def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str] | Tuple[None, None]:
+def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str]:
     """Get safe file path and validate existence"""
     safe_filename = sanitize_filename(filename)
     file_path = os.path.join(base_path, safe_filename)
@@ -73,7 +73,7 @@ def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str] | Tuple
             
     except (OSError, ValueError) as e:
         log.critical(action="path_traversal_attempt", trace_info=filename, message=f"Path traversal attempt: {str(e)}", secure=False)
-        return None, None
+        raise HTTPException(status_code=404, detail=ERROR_MESSAGES['file_not_found'])
     
     return file_path, safe_filename
 
@@ -83,17 +83,12 @@ def get_safe_file_path(base_path: str, filename: str) -> Tuple[str, str] | Tuple
 @handle_async_errors
 async def uploaded_file(
     filename: str,
-    request: Request,
     client_info: ClientInfo = Depends(get_client_info)
 ) -> FileResponse:
     """Serve user profile images with enhanced security"""
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(config.PROFILE_IMG_UPLOAD_FOLDER, filename)
-    
-    if not file_path or not safe_filename:
-        log.warning(action="invalid_profile_image_request", trace_info=client_info.ip_address, message=f"Invalid filename: {filename}", secure=False)
-        raise HTTPException(status_code=404, detail=ERROR_MESSAGES['file_not_found'])
     
     # Check if file exists and is accessible
     if not os.path.isfile(file_path):
@@ -131,7 +126,6 @@ async def uploaded_file(
 @handle_async_errors
 async def notices_file(
     filename: str,
-    request: Request,
     client_info: ClientInfo = Depends(get_client_info)
 ) -> FileResponse:
     """Serve notice files with enhanced security"""
@@ -141,10 +135,6 @@ async def notices_file(
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
-    
-    if not file_path or not safe_filename:
-        log.warning(action="invalid_notice_request", trace_info=client_info.ip_address, message=f"Invalid filename: {filename}", secure=False)
-        raise HTTPException(status_code=404, detail=ERROR_MESSAGES['file_not_found'])
     
     # Check if file exists
     if not os.path.isfile(file_path):
@@ -177,7 +167,6 @@ async def notices_file(
 @handle_async_errors
 async def exam_results_file(
     filename: str,
-    request: Request,
     client_info: ClientInfo = Depends(get_client_info)
 ) -> FileResponse:
     """Serve exam result files with enhanced security"""
@@ -187,10 +176,6 @@ async def exam_results_file(
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
-    
-    if not file_path or not safe_filename:
-        log.warning(action="invalid_exam_result_request", trace_info=client_info.ip_address, message=f"Invalid filename: {filename}", secure=False)
-        raise HTTPException(status_code=404, detail=ERROR_MESSAGES['file_not_found'])
     
     # Check if file exists
     if not os.path.isfile(file_path):
@@ -225,7 +210,6 @@ async def gallery_file(
     gender: str,
     folder: str,
     filename: str,
-    request: Request,
     client_info: ClientInfo = Depends(get_client_info)
 ) -> FileResponse:
     """Serve gallery files with enhanced security and validation"""
@@ -242,16 +226,12 @@ async def gallery_file(
     
     # Get upload folder path
     upload_folder = os.path.join(
-        request.app.config['BASE_UPLOAD_FOLDER'], 
+        config.BASE_UPLOAD_FOLDER, 
         'gallery', gender, folder
     )
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
-    
-    if not file_path or not safe_filename:
-        log.warning(action="invalid_gallery_file_request", trace_info=client_info.ip_address, message=f"Invalid filename: {filename}", secure=False)
-        raise HTTPException(status_code=404, detail=ERROR_MESSAGES['file_not_found'])
     
     # Check if file exists
     if not os.path.isfile(file_path):
@@ -285,7 +265,6 @@ async def gallery_file(
 async def gallery_classes_file(
     folder: str,
     filename: str,
-    request: Request,
     client_info: ClientInfo = Depends(get_client_info)
 ) -> FileResponse:
     """Serve gallery class files with enhanced security and validation"""
@@ -297,16 +276,12 @@ async def gallery_classes_file(
     
     # Get upload folder path
     upload_folder = os.path.join(
-        request.app.config['BASE_UPLOAD_FOLDER'], 
+        config.BASE_UPLOAD_FOLDER, 
         'gallery', 'classes', folder
     )
     
     # Sanitize and validate filename
     file_path, safe_filename = get_safe_file_path(upload_folder, filename)
-    
-    if not file_path or not safe_filename:
-        log.warning(action="invalid_class_file_request", trace_info=client_info.ip_address, message=f"Invalid filename: {filename}", secure=False)
-        raise HTTPException(status_code=404, detail=ERROR_MESSAGES['file_not_found'])
     
     # Check if file exists
     if not os.path.isfile(file_path):

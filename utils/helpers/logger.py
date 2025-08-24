@@ -1,6 +1,6 @@
 import logging
 import sys
-import aiomysql, asyncio, json
+import asyncio, json
 from datetime import datetime
 from pathlib import Path
 
@@ -52,11 +52,8 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
         return
     # Check if we are in development mode
     if default_config.is_development:
-        logger = logging.getLogger("MadrashaServer")
-        logger.setLevel(getattr(logging, server_config.LOGGING_LEVEL.upper()))
-
-        logger.info(f"SERVER LOG {level.upper()}: {action}\ndetails: {message},")
-        return
+        await _log_to_file(action=action, trace_info=trace_info, secure=secure,
+                            message=message, level=level, metadata=metadata, error=True)
     
     try:
         from utils.mysql.database_utils import get_traced_db_cursor
@@ -130,6 +127,13 @@ async def _log_to_file(action : str, trace_info: str,  message : str, level, sec
         log_dir.mkdir(exist_ok=True)
         
         log_file = log_dir / f"app_{datetime.now().strftime('%Y%m%d')}.log"
+
+        from config import config as default_config
+        if default_config.is_development:
+            log_devlopment = f"{level.upper()}: {action}\ndetails: {message},\n"
+            with open(log_file, "w") as f:
+                f.write(f"{log_devlopment}\n")
+                return
         
         log_entry = {
             "timestamp": datetime.now().isoformat(),
@@ -149,6 +153,7 @@ async def _log_to_file(action : str, trace_info: str,  message : str, level, sec
         
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry) + "\n")
+            return
             
     except Exception as e:
         _log_error(f"File logging also failed: {type(e).__name__}")

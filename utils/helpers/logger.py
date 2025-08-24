@@ -130,7 +130,7 @@ async def _log_to_file(action : str, trace_info: str,  message : str, level, sec
 
         from config import config as default_config
         if default_config.is_development:
-            log_devlopment = f"{level.upper()}: {action}\ndetails: {message},\n"
+            log_devlopment = f"{level.upper()}: {action}\ndetails: {message}"
             with open(log_file, "w") as f:
                 f.write(f"{log_devlopment}\n")
                 return

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Account Management - Annur Madrasa{% endblock %}
+
+{% block extra_css %}
+<link href="/static/css/edit_account.css" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+      <div class="card shadow-lg border-0">
+        <div class="card-header bg-danger text-white text-center">
+          <h3 class="mb-0">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            Account Management
+          </h3>
+          <p class="mb-0 mt-2">Deactivate or Delete Your Account</p>
+        </div>
+        
+        <div class="card-body p-4">
+          <!-- Warning Message -->
+          <div class="alert alert-warning" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>Warning:</strong> This action affects your account access. Please read carefully before proceeding.
+          </div>
+
+          <!-- Account Management Form -->
+          <form id="accountForm">
+            <div class="mb-3">
+              <label for="phone" class="form-label">
+                <i class="bi bi-telephone me-1"></i>Phone Number
+              </label>
+              <input type="tel" class="form-control" id="phone" name="phone" required
+                     placeholder="Enter your phone number">
+              <div class="invalid-feedback" id="phone-error"></div>
+            </div>
+
+            <div class="mb-3">
+              <label for="fullname" class="form-label">
+                <i class="bi bi-person me-1"></i>Full Name
+              </label>
+              <input type="text" class="form-control" id="fullname" name="fullname" required
+                     placeholder="Enter your full name">
+              <div class="invalid-feedback" id="fullname-error"></div>
+            </div>
+
+            <div class="mb-4">
+              <label for="password" class="form-label">
+                <i class="bi bi-lock me-1"></i>Password
+              </label>
+              <input type="password" class="form-control" id="password" name="password" required
+                     placeholder="Enter your password">
+              <div class="invalid-feedback" id="password-error"></div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="d-grid gap-2">
+              <button type="button" class="btn btn-warning btn-lg" id="deactivateBtn">
+                <i class="bi bi-pause-circle me-2"></i>
+                Deactivate Account
+              </button>
+              <button type="button" class="btn btn-danger btn-lg" id="deleteBtn">
+                <i class="bi bi-trash me-2"></i>
+                Delete Account Permanently
+              </button>
+            </div>
+          </form>
+
+          <!-- Information Cards -->
+          <div class="mt-4">
+            <div class="row g-3">
+              <div class="col-12">
+                <div class="card bg-light border-warning">
+                  <div class="card-body p-3">
+                    <h6 class="card-title text-warning">
+                      <i class="bi bi-pause-circle me-1"></i>Deactivate Account
+                    </h6>
+                    <p class="card-text small mb-0">
+                      Temporarily disable your account. You can reactivate it anytime by logging in.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="card bg-light border-danger">
+                  <div class="card-body p-3">
+                    <h6 class="card-title text-danger">
+                      <i class="bi bi-trash me-1"></i>Delete Account
+                    </h6>
+                    <p class="card-text small mb-0">
+                      Permanently remove your account and all associated data. This action cannot be undone.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Response Display Area -->
+      <div id="responseArea" class="mt-4" style="display: none;">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">
+              <i class="bi bi-info-circle me-2"></i>Server Response
+            </h5>
+          </div>
+          <div class="card-body">
+            <div id="responseContent"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Back to Home -->
+      <div class="text-center mt-4">
+        <a href="{{ home_path | default('/') }}" class="btn btn-outline-primary">
+          <i class="bi bi-arrow-left me-1"></i>Back to Home
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmationModalLabel">Confirm Action</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmationMessage"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn" id="confirmActionBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body text-center p-4">
+        <div class="spinner-border text-primary mb-3" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mb-0">Processing your request...</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/edit_account.js"></script>
+{% endblock %}

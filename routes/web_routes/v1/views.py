@@ -180,6 +180,15 @@ async def terms(request: Request):
 
 # TODO: Add account Management routes
 
+@web_routes.get('/edit_account', response_class=HTMLResponse, name="edit_account")
+@handle_async_errors
+async def edit_account(request: Request):
+    """Account management page for deactivating or deleting accounts"""
+    return templates.TemplateResponse("edit_account.html", {
+        "request": request,
+        "current_year": datetime.now().year,
+    })
+
 
 @web_routes.get('/info', response_class=HTMLResponse, name="info")
 @handle_async_errors

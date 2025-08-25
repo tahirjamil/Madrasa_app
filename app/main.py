@@ -517,29 +517,6 @@ async def favicon():
         media_type='image/vnd.microsoft.icon'
     )
 
-# @app.get('/clear-device-cache')
-# async def clear_device_cache(request: Request):
-#     """Clear device validation cache for testing"""
-#     if not config.is_development():
-#         return JSONResponse({"error": "Not available in production"}, status_code=403)
-    
-#     try:
-#         from utils.keydb.keydb_utils import get_keydb_from_app
-#         from utils.helpers.helpers import clear_device_validation_cache
-        
-#         redis = get_keydb_from_app(request)
-#         if redis:
-#             success = await clear_device_validation_cache(redis)
-#             if success:
-#                 return JSONResponse({"message": "Device validation cache cleared successfully"}, status_code=200)
-#             else:
-#                 return JSONResponse({"error": "Failed to clear cache"}, status_code=500)
-#         else:
-#             return JSONResponse({"error": "Redis not available"}, status_code=500)
-#     except Exception as e:
-#         logger.error(f"Error clearing device cache: {e}")
-#         return JSONResponse({"error": f"Error clearing cache: {str(e)}"}, status_code=500)
-
 @app.get('/health')
 async def health_check(request: Request):
     """Health check endpoint for monitoring"""

@@ -7,5 +7,6 @@ api = APIRouter(dependencies=[Security(require_api_key)]) # Can add prefix here 
 from .v1 import auth  # noqa: F401
 from .v1 import payments  # noqa: F401
 from .v1 import core  # noqa: F401
+from .v1 import files  # noqa: F401
 
 __all__ = ["api"]

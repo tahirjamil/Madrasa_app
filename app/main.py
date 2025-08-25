@@ -3,7 +3,6 @@ import os, time, logging, json
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
-from fastapi.dependencies.utils import solve_dependencies
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +18,7 @@ from rich.logging import RichHandler
 from logging.handlers import RotatingFileHandler
 
 # ─── Import Configurations and Utilities ────────────────────────────
-from config import config, MadrasaConfig
+from config import config, server_config
 from utils import create_tables
 from utils.helpers.improved_functions import send_json_response, get_project_root
 from utils.keydb.keydb_utils import close_keydb
@@ -42,7 +41,7 @@ fh = RotatingFileHandler("debug.log", maxBytes=10*1024*1024, backupCount=5)
 level = logging.DEBUG if config.is_development() else logging.INFO
 logging.basicConfig(
     level=level,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format=server_config.LOGGING_FORMAT,
     handlers=[
         fh,                  # File logs
         RichHandler()        # Console logs with rich formatting
@@ -139,8 +138,8 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title=MadrasaConfig.APP_NAME,
-    version=MadrasaConfig.SERVER_VERSION,
+    title=config.APP_NAME,
+    version=config.SERVER_VERSION,
     lifespan=lifespan
 )
 
@@ -192,7 +191,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 # Add session middleware (needed for admin routes)
 # Ensure SECRET_KEY is set, especially for test mode
-secret_key = MadrasaConfig.SECRET_KEY
+secret_key = config.SECRET_KEY
 
 app.add_middleware(SessionMiddleware, secret_key=secret_key)
 
@@ -227,10 +226,6 @@ class XSSProtectionMiddleware(BaseHTTPMiddleware):
                 content_type_starts_with(request, "multipart/form-data")):
                 # read + recreate inside helper (enforces max body)
                 json_data, request = await read_json_and_recreate(request)  # uses MAX_JSON_BODY
-
-                # if you need form data, only parse after recreation:
-                # if ct.startswith("application/x-www-form-urlencoded") or ct.startswith("multipart/form-data"):
-                #     form = await request.form()
 
                 if json_data:
                     def _contains_xss(obj):
@@ -309,9 +304,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         
         # Log response details
         logger.debug(f"Response status: {response.status_code}")
-        
-        # For other responses, we can't easily capture content without consuming the body
-        logger.debug(f"Response type {type(response)} - no captured content available")
         
         # Add error information if response indicates an error
         if response.status_code >= 400:
@@ -525,28 +517,28 @@ async def favicon():
         media_type='image/vnd.microsoft.icon'
     )
 
-@app.get('/clear-device-cache')
-async def clear_device_cache(request: Request):
-    """Clear device validation cache for testing"""
-    if not config.is_development():
-        return JSONResponse({"error": "Not available in production"}, status_code=403)
+# @app.get('/clear-device-cache')
+# async def clear_device_cache(request: Request):
+#     """Clear device validation cache for testing"""
+#     if not config.is_development():
+#         return JSONResponse({"error": "Not available in production"}, status_code=403)
     
-    try:
-        from utils.keydb.keydb_utils import get_keydb_from_app
-        from utils.helpers.helpers import clear_device_validation_cache
+#     try:
+#         from utils.keydb.keydb_utils import get_keydb_from_app
+#         from utils.helpers.helpers import clear_device_validation_cache
         
-        redis = get_keydb_from_app(request)
-        if redis:
-            success = await clear_device_validation_cache(redis)
-            if success:
-                return JSONResponse({"message": "Device validation cache cleared successfully"}, status_code=200)
-            else:
-                return JSONResponse({"error": "Failed to clear cache"}, status_code=500)
-        else:
-            return JSONResponse({"error": "Redis not available"}, status_code=500)
-    except Exception as e:
-        logger.error(f"Error clearing device cache: {e}")
-        return JSONResponse({"error": f"Error clearing cache: {str(e)}"}, status_code=500)
+#         redis = get_keydb_from_app(request)
+#         if redis:
+#             success = await clear_device_validation_cache(redis)
+#             if success:
+#                 return JSONResponse({"message": "Device validation cache cleared successfully"}, status_code=200)
+#             else:
+#                 return JSONResponse({"error": "Failed to clear cache"}, status_code=500)
+#         else:
+#             return JSONResponse({"error": "Redis not available"}, status_code=500)
+#     except Exception as e:
+#         logger.error(f"Error clearing device cache: {e}")
+#         return JSONResponse({"error": f"Error clearing cache: {str(e)}"}, status_code=500)
 
 @app.get('/health')
 async def health_check(request: Request):
@@ -579,21 +571,13 @@ async def health_check(request: Request):
         }, status_code=500)
 
         
-# ─── Register Routers ────────────────────────────────────
-# ─── Static Files ────────────────────────────────────────────
-# Make sure static and uploads directories exist
-if not os.path.exists("static"):
-    os.makedirs("static")
-if not os.path.exists("uploads"):
-    os.makedirs("uploads")
-# Mount static files BEFORE routers to ensure they're available for url_for
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# ─── Static Files ──────────────────────────────────────────── 
+# Mount static files BEFORE routers
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+app.mount("/uploads", StaticFiles(directory=os.path.join(BASE_DIR, "uploads")), name="uploads")
 
-# Now include routers
+# ─── Register Routers ────────────────────────────────────
 app.include_router(web_routes)
 app.include_router(api)
 
-# ─── Note ───────────────────────────────────────────────────
-# This app should be run using: python run_server.py
-# health checking, and production-ready server configuration.
+# Note: This app should be run using: python run_server.py

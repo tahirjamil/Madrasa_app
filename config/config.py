@@ -12,20 +12,15 @@ Version: 1.0.0
 import os
 import logging
 from pathlib import Path
-from dotenv import load_dotenv
 from functools import lru_cache
-from typing import Optional, Union
-from aiomysql import Connection
-from redis.asyncio import Redis
+from typing import Optional
+import sys
 
-from utils.helpers.improved_functions import get_env_var
-
-# Load environment variables
-load_dotenv()
-
+from utils.helpers.improved_functions import get_env_var, get_project_root
 # Setup logger for configuration module
 logger = logging.getLogger(__name__)
 
+sys.path.append(str(get_project_root()))
 
 class MadrasaConfig:
     """ Configuration class for the Madrasha application. """
@@ -40,7 +35,7 @@ class MadrasaConfig:
     BASE_URL = "http://www.annurcomplex.com/"
     
     # CORS Configuration
-    ALLOWED_ORIGINS = get_env_var("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+    ALLOWED_ORIGINS = get_env_var("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080,http://localhost:8000").split(",")
     
     # ============================================================================
     # OBSERVABILITY / OPENTELEMETRY CONFIGURATION
@@ -65,41 +60,6 @@ class MadrasaConfig:
     ADMIN_KEY = get_env_var("ADMIN_KEY")
     API_KEYS = [MOBILE_CLIENT_KEY, WEB_CLIENT_KEY, ADMIN_KEY]
     
-    # Power Management
-    POWER_KEY = get_env_var("POWER_KEY")
-    
-    # Admin Credentials (with warnings)
-    # Use required=False to avoid errors when env vars are not set
-    ADMIN_USERNAME = get_env_var("ADMIN_USERNAME", required=False)
-    ADMIN_PASSWORD = get_env_var("ADMIN_PASSWORD", required=False)
-    
-    # Fallback to reading from .env file directly if not in environment
-    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
-        try:
-            env_path = Path(__file__).parent.parent / '.env'
-            if env_path.exists():
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, value = line.split('=', 1)
-                            # Remove quotes if present
-                            value = value.strip().strip('"').strip("'")
-                            if key == 'ADMIN_USERNAME' and not ADMIN_USERNAME:
-                                ADMIN_USERNAME = value
-                            elif key == 'ADMIN_PASSWORD' and not ADMIN_PASSWORD:
-                                ADMIN_PASSWORD = value
-        except Exception as e:
-            logger.warning(f"Failed to read .env file: {e}")
-    
-    # Final fallback for development/testing
-    if not ADMIN_USERNAME:
-        ADMIN_USERNAME = "admin"
-        logger.warning("ADMIN_USERNAME not set, using default 'admin'")
-    if not ADMIN_PASSWORD:
-        ADMIN_PASSWORD = "admin123"
-        logger.warning("ADMIN_PASSWORD not set, using default 'admin123'")
-    
     # ============================================================================
     # SESSION AND COOKIE SECURITY
     # ============================================================================
@@ -111,13 +71,6 @@ class MadrasaConfig:
     SESSION_COOKIE_SECURE = not get_env_var("FASTAPI_ENV") == "development"
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1 * 3600  # 1 hour session timeout
-    
-    # TODO: CSRF Protection Need to implement
-    # CSRF token expires in 1 hour
-    
-    # reCAPTCHA Configuration
-    RECAPTCHA_SITE_KEY = get_env_var("RECAPTCHA_SITE_KEY")
-    RECAPTCHA_SECRET_KEY = get_env_var("RECAPTCHA_SECRET_KEY")
     
     # ============================================================================
     # AUTHENTICATION AND USER MANAGEMENT
@@ -164,7 +117,6 @@ class MadrasaConfig:
 
     MADRASA_NAMES_LIST = ['annur']
     
-
     # ============================================================================
     # MYSQL CONFIGURATION
     # ============================================================================
@@ -189,7 +141,7 @@ class MadrasaConfig:
     # Redis Connection Settings
     KEYDB_HOST = get_env_var("KEYDB_HOST", "localhost")
     KEYDB_PORT = int(get_env_var("KEYDB_PORT", 6379))
-    KEYDB_PASSWORD = get_env_var("KEYDB_PASSWORD", None, required=False) # REMINDER: ADD THIS IN PRODUCTION
+    KEYDB_PASSWORD = get_env_var("KEYDB_PASSWORD")
     KEYDB_DB = int(get_env_var("KEYDB_DB", 0))
     KEYDB_SSL = get_env_var("KEYDB_SSL", "false")
     KEYDB_MINSIZE = 1
@@ -262,78 +214,13 @@ class MadrasaConfig:
     # Cache Configuration
     CACHE_TTL = 3600  # 1 hour
     SHORT_CACHE_TTL = 300  # 5 minutes
-    
-    # ============================================================================
-    # TESTING AND DEVELOPMENT
-    # ============================================================================
-    
-    # Dummy Data for Testing
-    DUMMY_FULLNAME = "Dummy User"
-    DUMMY_PHONE = "+8801712345678"
-    DUMMY_EMAIL = "dummy@example.com"
-    DUMMY_PASSWORD = "dummy123"
 
     # ============================================================================
     # CONFIGURATION VALIDATION AND WARNINGS
     # ============================================================================
     
-    def __init__(self):
-        """Initialize configuration and validate critical settings."""
-        self._validate_critical_settings()
-        self._print_security_warnings()
-    
-    def _validate_critical_settings(self) -> None:
-        """Validate critical configuration settings."""
-        critical_settings = {
-            'SECRET_KEY': self.SECRET_KEY,
-            'ENCRYPTION_KEY': self.ENCRYPTION_KEY,
-            'MYSQL_USER': self.MYSQL_USER,
-            'MYSQL_PASSWORD': self.MYSQL_PASSWORD,
-            'MYSQL_DB': self.MYSQL_DB
-        }
-        
-        missing_settings = [key for key, value in critical_settings.items() 
-                          if not value or value in ['admin', 'default']]
-        
-        if missing_settings:
-            logger.warning(f"Missing or default values for critical settings: {missing_settings}")
-    
-    def _print_security_warnings(self) -> None:
-        """Print security warnings for default or missing values."""
-        warnings = []
-        
-        # Database credentials warnings
-        if not self.MYSQL_USER or self.MYSQL_USER == "admin":
-            warnings.append("Using default MySQL username. Please set MYSQL_USER in .env")
-        
-        if not self.MYSQL_PASSWORD or self.MYSQL_PASSWORD == "admin":
-            warnings.append("Using default MySQL password. Please set MYSQL_PASSWORD in .env")
-        
-        if not self.MYSQL_DB or self.MYSQL_DB == "default":
-            warnings.append("Using default database name. Please set MYSQL_DB in .env")
-        
-        # Power management warning
-        if not self.POWER_KEY:
-            warnings.append("POWER_KEY not set. Power management will be disabled.")
-        
-        # Encryption key warning
-        if not self.ENCRYPTION_KEY:
-            warnings.append("ENCRYPTION_KEY not set. Data encryption may be compromised.")
-        
-        # Session security warning
-        if not self.SESSION_COOKIE_SECURE and not self.is_development():
-            warnings.append("SESSION_COOKIE_SECURE is False in non-development mode. This is a security risk!")
-            
-        # Redis password warning
-        if not self.KEYDB_PASSWORD and not self.is_development():
-            warnings.append("KEYDB_PASSWORD not set in non-development mode. Redis may be unsecured!")
-        
-        # Log warnings using logger instead of print
-        for warning in warnings:
-            logger.warning(warning)
-
     @lru_cache(maxsize=1)
-    def get_project_root(self, marker_files: tuple[str, ...] = ("pyproject.toml", "app.py")) -> Path:
+    def get_project_root(self, marker_files: tuple[str, ...] = ("pyproject.toml", ".env")) -> Path:
         """Return project root directory by searching upwards for a marker file."""
         current = Path(__file__).resolve()
         for parent in [current] + list(current.parents):
@@ -401,13 +288,6 @@ class ServerConfig:
     LOGGING_ROTATION = "1 day"
     LOGGING_RETENTION = "30 days"
     LOGGING_MAX_SIZE = "10MB"
-    
-    # Monitoring Configuration 
-    HEALTH_CHECK_INTERVAL = 30
-    MAX_MEMORY_USAGE = "512MB"
-    MAX_CPU_USAGE = 80
-    AUTO_RESTART = True
-    RESTART_THRESHOLD = 3
 
     # Security Configuration
     BIND_HOST = get_env_var("BIND_HOST", "127.0.0.1")  # Add default

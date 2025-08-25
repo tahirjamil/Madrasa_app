@@ -1549,28 +1549,28 @@ def validate_madrasa_name(madrasa_name: str, trace_info: str, secure: bool = Fal
         log.critical(action="invalid_madrasa_name", trace_info=trace_info, message=f"Invalid madrasa name configured: {madrasa_name}", secure=secure)
         raise AppError(f"Invalid madrasa name configured: {madrasa_name}", error_code="400")
 
-async def clear_device_validation_cache(redis_pool=None, device_id: Optional[str] = None, ip_address: Optional[str] = None):
-    """Clear device validation cache entries"""
-    try:
-        if not redis_pool:
-            from utils.keydb.keydb_utils import get_keydb_from_app
-            # This would need to be called with a request context
-            return False
+# async def clear_device_validation_cache(redis_pool=None, device_id: Optional[str] = None, ip_address: Optional[str] = None):
+#     """Clear device validation cache entries"""
+#     try:
+#         if not redis_pool:
+#             from utils.keydb.keydb_utils import get_keydb_from_app
+#             # This would need to be called with a request context
+#             return False
         
-        if device_id and ip_address:
-            # Clear specific device cache
-            cache_key = f"device_valid:{device_id}:{ip_address}"
-            await redis_pool.delete(cache_key)
-            log.info(action="device_cache_cleared", trace_info=ip_address, message=f"Cleared cache for device: {device_id}", secure=False)
-        else:
-            # Clear all device validation cache entries
-            pattern = "device_valid:*"
-            keys = await redis_pool.keys(pattern)
-            if keys:
-                await redis_pool.delete(*keys)
-                log.info(action="device_cache_cleared_all", trace_info="system", message=f"Cleared {len(keys)} device validation cache entries", secure=False)
+#         if device_id and ip_address:
+#             # Clear specific device cache
+#             cache_key = f"device_valid:{device_id}:{ip_address}"
+#             await redis_pool.delete(cache_key)
+#             log.info(action="device_cache_cleared", trace_info=ip_address, message=f"Cleared cache for device: {device_id}", secure=False)
+#         else:
+#             # Clear all device validation cache entries
+#             pattern = "device_valid:*"
+#             keys = await redis_pool.keys(pattern)
+#             if keys:
+#                 await redis_pool.delete(*keys)
+#                 log.info(action="device_cache_cleared_all", trace_info="system", message=f"Cleared {len(keys)} device validation cache entries", secure=False)
         
-        return True
-    except Exception as e:
-        log.error(action="device_cache_clear_error", trace_info="system", message=f"Error clearing device cache: {str(e)}", secure=False)
-        return False
+#         return True
+#     except Exception as e:
+#         log.error(action="device_cache_clear_error", trace_info="system", message=f"Error clearing device cache: {str(e)}", secure=False)
+#         return False

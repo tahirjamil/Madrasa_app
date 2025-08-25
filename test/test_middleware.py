@@ -9,7 +9,7 @@ from utils.helpers.improved_functions import get_project_root
 
 # Adjust this import to wherever your middleware classes are defined
 sys.path.append(str(get_project_root()))
-from app import XSSProtectionMiddleware, RequestLoggingMiddleware
+from app.main import XSSProtectionMiddleware, RequestLoggingMiddleware
 import utils.helpers.fastapi_helpers as ru
 
 MAX_JSON_BODY = ru.MAX_JSON_BODY

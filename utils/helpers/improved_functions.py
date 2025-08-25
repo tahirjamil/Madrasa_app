@@ -17,7 +17,7 @@ def get_env_var(var_name: str, default: Optional[Any] = None, required: bool = T
         return default
     return value
 
-def get_project_root(marker_files: Tuple[str, ...] = ("pyproject.toml", "app.py")) -> Path:
+def get_project_root(marker_files: Tuple[str, ...] = ("pyproject.toml", ".env")) -> Path:
     """Return project root directory by searching upwards for a marker file."""
     current = Path(__file__).resolve()
     for parent in [current] + list(current.parents):

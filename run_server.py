@@ -110,8 +110,8 @@ class DockerServerRunner:
     def validate_environment(self):
         """Basic environment validation for Docker"""
         try:
-            # Check if app.py exists
-            app_file = self.config.base_dir / "app.py"
+            # Check if main.py exists
+            app_file = self.config.base_dir / "app" /"main.py"
             if not app_file.exists():
                 self.logger.error("app.py not found")
                 return False
@@ -150,7 +150,7 @@ class DockerServerRunner:
             
             # Create uvicorn config
             uvicorn_config = {
-                "app": "app:app",
+                "app": "app.main:app",
                 "host": config["host"],
                 "port": config["port"],
                 "log_level": config["log_level"],

@@ -32,7 +32,7 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost:${SERVER_PORT:-8000}/health || exit 1"]
       timeout: 10s
       retries: 5
-      interval: 30s
+      interval: 60s
       start_period: 30s
 
   # Nginx Reverse Proxy
@@ -80,7 +80,7 @@ services:
     networks:
       - app_network
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u ${MYSQL_HOST} -p ${MYSQL_PASSWORD} || exit 1"]
+      test: ["CMD-SHELL", "mysqladmin -h localhost -u root --password=${MYSQL_ROOT_PASSWORD} ping || exit 1"]
       timeout: 10s
       retries: 10
       interval: 30s

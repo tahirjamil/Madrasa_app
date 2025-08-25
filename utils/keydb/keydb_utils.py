@@ -1,11 +1,11 @@
 import asyncio
-from typing import Any, Optional, Tuple, TypedDict, Union
+from typing import Optional, Tuple, TypedDict, Union
 from fastapi import Request
 import redis.asyncio as redis
 
 from utils.helpers.logger import log
 
-from config import config
+from config.config import MadrasaConfig
 from utils.otel.otel_utils import TracedRedisPool
 
 
@@ -26,7 +26,7 @@ class RedisConnectConfig(TypedDict, total=False):
 def get_keydb_config() -> RedisConnectConfig | None:
     """Build KeyDB/Redis connection config from config/env with sane defaults."""
     # Import config here to avoid circular imports
-    from config import config
+    from config.config import config
     
     # Check if Redis cache is enabled
     use_redis_cache = config.USE_KEYDB_CACHE or "true"
@@ -35,7 +35,7 @@ def get_keydb_config() -> RedisConnectConfig | None:
         return None
     
     # URL first (supports redis://, rediss://)
-    url = config.get_keydb_url(include_password=True)  # Only include password for actual connection
+    url = MadrasaConfig.get_keydb_url(include_password=True)  # Only include password for actual connection
     password = config.KEYDB_PASSWORD if config.KEYDB_PASSWORD else None
 
     # DB index

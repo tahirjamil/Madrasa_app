@@ -23,7 +23,7 @@
 
 # def get_sqlalchemy_config() -> Dict[str, Any]:
 #     """Get SQLAlchemy engine configuration"""
-#     from config import config
+#     from config.config import config
     
 #     return {
 #         "echo": False,  # Don't echo SQL queries
@@ -61,7 +61,7 @@
 
 # async def create_async_engine_instance() -> AsyncEngine:
 #     """Create a new async SQLAlchemy engine"""
-#     from config import config
+#     from config.config import config
 #     from utils.helpers.logger import log
 #     try:
 #         url = config.get_sqlalchemy_url()

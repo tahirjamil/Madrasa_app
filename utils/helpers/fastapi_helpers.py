@@ -16,7 +16,7 @@ from starlette.status import HTTP_403_FORBIDDEN, HTTP_429_TOO_MANY_REQUESTS
 from starlette.requests import Request as StarletteRequest
 
 # Local Imports
-from config import config
+from config.config import config
 from .helpers import security_manager, validate_madrasa_name, format_phone_number
 from .improved_functions import get_env_var
 from .logger import log

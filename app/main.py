@@ -18,8 +18,8 @@ from rich.logging import RichHandler
 from logging.handlers import RotatingFileHandler
 
 # ─── Import Configurations and Utilities ────────────────────────────
-from config import config, server_config
-from utils import create_tables
+from config.config import config, server_config
+from utils.mysql.database_utils import create_tables
 from utils.helpers.improved_functions import send_json_response, get_project_root
 from utils.keydb.keydb_utils import close_keydb
 from utils.otel.otel_utils import init_otel, RequestTracingMiddleware

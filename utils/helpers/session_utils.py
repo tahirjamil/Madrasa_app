@@ -11,7 +11,7 @@
 # from starlette.status import HTTP_403_FORBIDDEN, HTTP_401_UNAUTHORIZED
 # from starlette.middleware.base import BaseHTTPMiddleware
 
-# from config import config
+# from config.config import config
 # from .logger import log
 
 

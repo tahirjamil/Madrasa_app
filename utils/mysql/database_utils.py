@@ -14,7 +14,7 @@ AiomysqlConnectConfig = Dict[str, Any]
 # Centralized Async DB Connection
 def get_db_config() -> AiomysqlConnectConfig:
     # Import config here to avoid circular imports
-    from config import config
+    from config.config import config
     
     # Basic presence checks
     if not all([
@@ -83,7 +83,7 @@ async def get_db_pool() -> Any:
 
 async def create_db_pool() -> Any:
     """Create a new database connection pool"""
-    from config import config
+    from config.config import config
     if aiomysql is None:  # pragma: no cover
         raise RuntimeError("aiomysql is not installed. Please add 'aiomysql' to requirements.txt")
 
@@ -133,10 +133,7 @@ async def get_traced_db_cursor():
 
 
 # Table Creation
-async def create_tables():
-    # Import config here to avoid circular imports
-    from config import config
-    
+async def create_tables():    
     # Get the path to the create_tables.sql file
     config_dir = os.path.join(get_project_root(), 'config')
     sql_file_path = os.path.join(config_dir, 'mysql', 'create_tables.sql')

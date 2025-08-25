@@ -126,8 +126,8 @@ CREATE TABLE IF NOT EXISTS blocklist (
 
 
 CREATE TABLE IF NOT EXISTS acc_types (
-                user_id INT UNIQUE NOT NULL,
-                main_type VARCHAR(20) NOT NULL CHECK (main_type IN ('admins','students','teachers','staffs','others','badri_members','donors')),
+                user_id     INT     PRIMARY KEY,
+                main_type VARCHAR(20) NOT NULL CHECK (main_type IN ('admins', 'guest', 'student', 'teacher', 'staff', 'donor', 'badri_member', 'special_member' ,'others')),
                 teacher BOOLEAN NOT NULL DEFAULT 0,
                 student BOOLEAN NOT NULL DEFAULT 0,
                 staff BOOLEAN NOT NULL DEFAULT 0,
@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS acc_types (
                 INDEX idx_acc_types_donor (donor),
                 INDEX idx_acc_types_badri_member (badri_member),
 
+                FOREIGN KEY (main_type) REFERENCES annur.peoples(acc_type) ON DELETE CASCADE ON UPDATE CASCADE,
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE ON UPDATE CASCADE
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -200,6 +201,7 @@ CREATE TABLE IF NOT EXISTS peoples (
                     available          BOOLEAN         DEFAULT 1,
                     degree             VARCHAR(50),
                     image_path         VARCHAR(255),
+                    acc_type           VARCHAR(20)  NOT NULL CHECK (acc_type IN ('admins', 'guest', 'student', 'teacher', 'staff', 'donor', 'badri_member', 'special_member' ,'others')),
                     status             VARCHAR(50)  NOT NULL CHECK (status IN ('verified', 'pending', 'rejected')) DEFAULT 'pending',
 
                     INDEX idx_peoples_name_phone (name, phone),
@@ -207,6 +209,7 @@ CREATE TABLE IF NOT EXISTS peoples (
                     INDEX idx_peoples_status (status),
                     INDEX idx_peoples_gender (gender),
                     INDEX idx_peoples_class (class),
+                    INDEX idx_peoples_acc_type (acc_type),
 
                     updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     created_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,

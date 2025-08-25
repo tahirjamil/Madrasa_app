@@ -1,7 +1,7 @@
 import os, subprocess, glob
 from datetime import datetime, timezone, timedelta
 from utils.helpers.logger import log
-from config import config
+from config.config import config
 
 # ======= Configuration ========
 DB_NAME = config.MYSQL_DB

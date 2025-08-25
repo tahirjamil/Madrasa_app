@@ -46,7 +46,7 @@ async def log_event(action: str, message: str, trace_info: str= "system", secure
     trace_info = trace_info[:MAX_TRACE_LEN]
     message = message[:MAX_MESSAGE_LEN]
 
-    from config import config as default_config, server_config
+    from config.config import config as default_config, server_config
     if not server_config.LOGGING_ENABLED:
         _log_error("Logging is disabled in the configuration")
         return
@@ -128,7 +128,7 @@ async def _log_to_file(action : str, trace_info: str,  message : str, level, sec
         
         log_file = log_dir / f"app_{datetime.now().strftime('%Y%m%d')}.log"
 
-        from config import config as default_config
+        from config.config import config as default_config
         if default_config.is_development:
             log_devlopment = f"{level.upper()}: {action}\ndetails: {message}"
             with open(log_file, "a+", encoding="utf-8") as f:

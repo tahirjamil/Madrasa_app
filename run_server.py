@@ -11,7 +11,6 @@ import os
 import sys
 import signal
 import logging
-from datetime import datetime
 from pathlib import Path
 
 # Load environment variables from .env file before importing config
@@ -19,7 +18,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
-from config import server_config as default_config, config as global_config
+from config.config import server_config as default_config, config as global_config
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 
@@ -95,23 +94,6 @@ class DockerServerRunner:
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
     
-    def get_server_config(self):
-        """Get server configuration from environment"""
-        # Docker-friendly configuration via environment variables
-        host = os.getenv("HOST", default_config.SERVER_HOST)
-        port = int(os.getenv("PORT", default_config.SERVER_PORT))
-        workers = int(os.getenv("WORKERS", default_config.SERVER_WORKERS))
-        log_level = os.getenv("LOG_LEVEL", getattr(default_config, 'LOGGING_LEVEL', 'info')).lower()
-        reload = os.getenv("RELOAD", "false").lower() in ("true", "1", "yes")
-        
-        return {
-            "host": host,
-            "port": port,
-            "workers": workers,
-            "log_level": log_level,
-            "reload": reload
-        }
-    
     def validate_environment(self):
         """Basic environment validation for Docker"""
         try:
@@ -146,19 +128,15 @@ class DockerServerRunner:
             if not self.validate_environment():
                 return False
             
-            # Get configuration
-            config = self.get_server_config()
-            self.logger.info(f"Server config: {config}")
-            
             # Import and run uvicorn
             import uvicorn
             
             # Create uvicorn config
             uvicorn_config = {
                 "app": "app.main:app",
-                "host": config["host"],
-                "port": config["port"],
-                "log_level": config["log_level"],
+                "host": default_config.SERVER_HOST,
+                "port": default_config.SERVER_PORT,
+                "log_level": default_config.LOGGING_LEVEL.lower(),
                 "access_log": True,
                 "use_colors": False,  # Better for Docker logs
                 "server_header": False,  # Security
@@ -166,17 +144,17 @@ class DockerServerRunner:
             }
             
             # Add reload or workers based on environment
-            if config["reload"]:
+            if global_config.is_development():
                 self.logger.info("Starting in development mode with auto-reload")
                 uvicorn_config["reload"] = True
             else:
-                self.logger.info(f"Starting in production mode with {config['workers']} workers")
-                uvicorn_config["workers"] = config["workers"]
+                self.logger.info(f"Starting in production mode with {default_config.SERVER_WORKERS} workers")
+                uvicorn_config["workers"] = default_config.SERVER_WORKERS
             
             # Run the server
             server = uvicorn.Server(uvicorn.Config(**uvicorn_config))
             
-            self.logger.info(f"Server starting on {config['host']}:{config['port']}")
+            self.logger.info(f"Server starting on {default_config.SERVER_HOST}:{default_config.SERVER_PORT}")
             await server.serve()
             
             return True

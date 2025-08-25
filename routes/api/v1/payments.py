@@ -10,7 +10,6 @@ from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_
 from routes.api import api
 from utils.mysql.database_utils import get_traced_db_cursor
 from utils.helpers.helpers import calculate_fees, format_phone_number, cache_with_invalidation, validate_madrasa_name, handle_async_errors
-from config import config
 from utils.helpers.logger import log
 
 # ─── Pydantic Models ───────────────────────────────────────────

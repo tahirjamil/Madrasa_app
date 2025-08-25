@@ -15,7 +15,7 @@ from utils.helpers.fastapi_helpers import BaseAuthRequest, ClientInfo, validate_
 # Local imports
 from routes.api import api
 from utils.mysql.database_utils import get_traced_db_cursor
-from config import config
+from config.config import config
 from utils.helpers.helpers import (
     format_phone_number, get_global_id, insert_person, validate_timestamp_format,
     cache_with_invalidation, handle_async_errors,
@@ -158,7 +158,7 @@ async def add_person(
         phone = format_phone_number(phone)
         
         # Normalize account type
-        if not acc_type or not acc_type.endswith('s'):
+        if not not acc_type.endswith('s'):
             acc_type = f"{acc_type}s"
         
         VALID_ACCOUNT_TYPES = [
@@ -416,17 +416,17 @@ async def get_info(data: BaseRouteData, client_info: ClientInfo = Depends(valida
                 tfather.bn_text AS father_bn, 
                 tfather.ar_text AS father_ar,
                 p.degree, p.gender, p.blood_group,
-                p.phone, p.image_path AS picUrl, p.member_id, p.acc_type AS role,
+                p.phone, p.image_path AS picUrl, p.serial, p.acc_type AS role,
                 COALESCE(p.title1, p.title2, p.class) AS title,
                 a.main_type AS acc_type, 
                 a.teacher, a.student, a.staff, a.donor, 
                 a.badri_member, a.special_member
             FROM {madrasa_name}.peoples p
             JOIN global.acc_types a ON a.user_id = p.user_id
-            JOIN global.translations tname ON tname.translation_text = p.name
-            LEFT JOIN global.translations taddress ON taddress.translation_text = p.address
-            LEFT JOIN global.translations tfather ON tfather.translation_text = p.father_name
-            WHERE p.member_id IS NOT NULL
+            JOIN {madrasa_name}.translations tname ON tname.translation_text = p.name
+            LEFT JOIN {madrasa_name}.translations taddress ON taddress.translation_text = p.address
+            LEFT JOIN {madrasa_name}.translations tfather ON tfather.translation_text = p.father_name
+            WHERE p.serial IS NOT NULL
         """
         
         params = []
@@ -434,7 +434,7 @@ async def get_info(data: BaseRouteData, client_info: ClientInfo = Depends(valida
             sql += " AND p.updated_at > %s"
             params.append(corrected_time)
         
-        sql += " ORDER BY p.member_id"
+        sql += " ORDER BY p.serial"
         
         await cursor.execute(sql, params)
         members = await cursor.fetchall()

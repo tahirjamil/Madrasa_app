@@ -22,7 +22,7 @@ from typing import Any
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.helpers.improved_functions import get_env_var
-from config import config  # noqa: E402
+from config.config import config  # noqa: E402
 from utils.keydb.keydb_utils import (  # noqa: E402
     connect_to_keydb,
     close_keydb,

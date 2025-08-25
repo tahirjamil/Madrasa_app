@@ -2,7 +2,7 @@ import re
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from config import config
+from config.config import config
 from utils.helpers.fastapi_helpers import templates
 from utils.helpers.helpers import handle_async_errors
 import os

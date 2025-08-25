@@ -267,7 +267,7 @@
 #     __table_args__ = {"schema": "global"}
 
 #     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("global.users.user_id", ondelete="CASCADE", onupdate="CASCADE"), primary_key=True)
-#     main_type: Mapped[str] = mapped_column(SQLEnum(AccountTypeEnum), index=True, nullable=False)
+#     main_type: Mapped[str] = mapped_column(SQLEnum(AccountTypeEnum), ForeignKey("annur.peoples.acc_type", ondelete="CASCADE", onupdate="CASCADE"), nullable=False)
 #     teacher: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True, server_default=text("0"))
 #     student: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True, server_default=text("0"))
 #     staff: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True, server_default=text("0"))
@@ -277,7 +277,7 @@
 
 #     # Relationships
 #     user: Mapped["User"] = relationship("User", back_populates="account_type")
-
+#     acc_type: Mapped["People"] = relationship("People", back_populates="account_types")
 
 # # =============================================================================
 # # ANNUR DATABASE MODELS
@@ -346,10 +346,12 @@
 #     available: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("1"))
 #     degree: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 #     image_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+#     acc_type: Mapped[str] = mapped_column(SQLEnum(AccountTypeEnum), index=True, nullable=False)
 #     status: Mapped[str] = mapped_column(SQLEnum(VerificationStatus), index=True, nullable=False, server_default=text("'pending'"))
 
 #     # Relationships
 #     user: Mapped[Optional["User"]] = relationship("User", back_populates="peoples")
+#     account_types: Mapped[List["AccountType"]] = relationship("AccountType", back_populates="acc_type")
 #     name_translation: Mapped["Translation"] = relationship("Translation", foreign_keys=[name], back_populates="peoples_by_name")
 #     address_translation: Mapped[Optional["Translation"]] = relationship("Translation", foreign_keys=[address], back_populates="peoples_by_address")
 #     father_translation: Mapped[Optional["Translation"]] = relationship("Translation", foreign_keys=[father_name], back_populates="peoples_by_father")

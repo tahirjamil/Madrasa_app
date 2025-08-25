@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.helpers.improved_functions import get_env_var
-from config import config
+from config.config import config
 
 def test_config_loading():
     """Test if configuration is loaded correctly"""

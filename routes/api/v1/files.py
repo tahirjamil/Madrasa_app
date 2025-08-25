@@ -10,7 +10,7 @@ from utils.helpers.helpers import handle_async_errors
 from utils.helpers.fastapi_helpers import ClientInfo, get_client_info
 from routes.api import api
 from utils.helpers.logger import log
-from config import config
+from config.config import config
 
 ERROR_MESSAGES = {
         'file_not_found': "File not found",

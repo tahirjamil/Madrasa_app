@@ -14,7 +14,7 @@ from utils.helpers.improved_functions import get_env_var, send_json_response
 # Local imports
 from routes.api import api
 from utils.mysql.database_utils import get_traced_db_cursor
-from config import config
+from config.config import config
 from utils.helpers.helpers import (
     check_code, get_global_id, validate_device_limit, format_phone_number, generate_code, get_id, 
     record_login_attempt, send_sms, send_email, 
@@ -71,7 +71,7 @@ class ResetPasswordRequest(BaseAuthRequest):
 class AccountCheckRequest(BaseAuthRequest):
     """Account check request"""
     email: Optional[str] = None
-    member_id: Optional[int] = None
+    serial: Optional[int] = None
     student_id: str | int | None = None
     name_en: Optional[str] = None
     name_bn: Optional[str] = None
@@ -728,7 +728,7 @@ async def get_account_status(
         # Define fields to check
         checks = {
             "email": data.email,
-            "member_id": data.member_id,
+            "serial": data.serial,
             "student_id": data.student_id,
             "name_en": fullname,
             "name_bn": data.name_bn,

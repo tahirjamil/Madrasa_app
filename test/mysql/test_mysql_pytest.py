@@ -27,7 +27,7 @@ import json
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from utils.helpers.improved_functions import get_env_var
-from config import config
+from config.config import config
 
 
 class TestConfig:

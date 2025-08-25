@@ -12,8 +12,7 @@ Version: 1.0.0
 import os
 import logging
 from pathlib import Path
-from functools import lru_cache
-from typing import Optional
+from functools import cache
 import sys
 
 from utils.helpers.improved_functions import get_env_var, get_project_root
@@ -217,8 +216,9 @@ class MadrasaConfig:
     # CONFIGURATION VALIDATION AND WARNINGS
     # ============================================================================
     
-    @lru_cache(maxsize=1)
-    def get_project_root(self, marker_files: tuple[str, ...] = ("pyproject.toml", ".env")) -> Path:
+    @staticmethod
+    @cache
+    def get_project_root(marker_files: tuple[str, ...] = ("pyproject.toml", ".env")) -> Path:
         """Return project root directory by searching upwards for a marker file."""
         current = Path(__file__).resolve()
         for parent in [current] + list(current.parents):
@@ -226,39 +226,43 @@ class MadrasaConfig:
                 return parent
         raise FileNotFoundError("Project root not found")
     
-    @lru_cache(maxsize=1)
-    def get_keydb_url(self, include_password: bool = False) -> str:
+    @staticmethod
+    @cache
+    def get_keydb_url(include_password: bool = False) -> str:
         """Generate keydb connection URL."""
-        host: str = str(self.KEYDB_HOST)
-        port: int = int(self.KEYDB_PORT)
-        db: int = int(self.KEYDB_DB)
+        host: str = str(MadrasaConfig.KEYDB_HOST)
+        port: int = int(MadrasaConfig.KEYDB_PORT)
+        db: int = int(MadrasaConfig.KEYDB_DB)
         
-        if self.KEYDB_PASSWORD and include_password:
-            return f"redis://{self.KEYDB_PASSWORD}@{host}:{port}/{db}"
+        if MadrasaConfig.KEYDB_PASSWORD and include_password:
+            return f"redis://:{MadrasaConfig.KEYDB_PASSWORD}@{host}:{port}/{db}"
         else:
             return f"redis://{host}:{port}/{db}"
 
-    @lru_cache(maxsize=1)
-    def get_sqlalchemy_url(self) -> str:
+    @staticmethod
+    @cache
+    def get_sqlalchemy_url() -> str:
         """Get SQLAlchemy database URL from config"""
         # Build connection URL
-        host: str = str(self.MYSQL_HOST)
-        user: str = str(self.MYSQL_USER)
-        password: str = str(self.MYSQL_PASSWORD)
-        db: str = str(self.MYSQL_DB)
-        port: int = int(self.MYSQL_PORT)
+        host: str = str(MadrasaConfig.MYSQL_HOST)
+        user: str = str(MadrasaConfig.MYSQL_USER)
+        password: str = str(MadrasaConfig.MYSQL_PASSWORD)
+        db: str = str(MadrasaConfig.MYSQL_DB)
+        port: int = int(MadrasaConfig.MYSQL_PORT)
         
         # TCP connection
         return f"mysql+aiomysql://{user}:{password}@{host}:{port}/{db}?charset=utf8mb4"
     
-    @lru_cache(maxsize=1)
-    def is_maintenance(self) -> bool:
+    @staticmethod
+    @cache
+    def is_maintenance() -> bool:
         """Check if running in production environment."""
         verify = get_env_var("MAINTENANCE_MODE", "")
         return verify is True or (isinstance(verify, str) and verify.lower() in ("true", "yes", "on"))
     
-    @lru_cache(maxsize=1)
-    def is_development(self) -> bool:
+    @staticmethod
+    @cache
+    def is_development() -> bool:
         """Check if running in development environment."""
         return get_env_var("FASTAPI_ENV", "development") == "development"
 

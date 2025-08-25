@@ -14,6 +14,11 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+# Load environment variables from .env file before importing config
+from dotenv import load_dotenv
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env", override=True)
+
 from config import server_config as default_config, config as global_config
 
 # ─── Configuration ──────────────────────────────────────────────────────────────

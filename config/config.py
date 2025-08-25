@@ -92,8 +92,7 @@ class MadrasaConfig:
     # Account Management
     ACCOUNT_DELETION_DAYS = 30
     ACCOUNT_REACTIVATION_DAYS = 14
-    GLOBAL_REQUIRED_FIELDS = ["madrasa_name"]
-    
+        
     # Verification Settings
     CODE_EXPIRY_MINUTES = 10
     CODE_LENGTH = 6
@@ -128,7 +127,6 @@ class MadrasaConfig:
     MYSQL_ROOT_PASSWORD = get_env_var("MYSQL_ROOT_PASSWORD")
     MYSQL_DB = get_env_var("MYSQL_DB")
     MYSQL_PORT = int(get_env_var("MYSQL_PORT", 3306))
-    MYSQL_UNIX_SOCKET = get_env_var("MYSQL_UNIX_SOCKET", None, required=False)
     MYSQL_MIN_CONNECTIONS = 2
     MYSQL_MAX_CONNECTIONS = 10
     MYSQL_MAX_OVERFLOW = 5
@@ -149,7 +147,7 @@ class MadrasaConfig:
     KEYDB_TIMEOUT = 10.0
     KEYDB_ENCODING = "utf-8"
     KEYDB_PREFIX = "madrasa"
-    USE_KEYDB_CACHE = get_env_var("USE_KEYDB_CACHE", "false")
+    USE_KEYDB_CACHE = get_env_var("USE_KEYDB_CACHE", "true")
 
     # ============================================================================
     # FILE UPLOAD AND STORAGE
@@ -229,32 +227,29 @@ class MadrasaConfig:
         raise FileNotFoundError("Project root not found")
     
     @lru_cache(maxsize=1)
-    def get_database_url(self, include_password: bool = False) -> Optional[str]:
-        """Generate database connection URL."""
-        try:
-            if include_password:
-                return f"mysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}/{self.MYSQL_DB}"
-            else:
-                return f"mysql://{self.MYSQL_USER}:***@{self.MYSQL_HOST}/{self.MYSQL_DB}"
-        except Exception as e:
-            logger.error(f"Error generating database connection URL: {e}")
-            return None
+    def get_keydb_url(self, include_password: bool = False) -> str:
+        """Generate keydb connection URL."""
+        host: str = str(self.KEYDB_HOST)
+        port: int = int(self.KEYDB_PORT)
+        db: int = int(self.KEYDB_DB)
+        
+        if self.KEYDB_PASSWORD and include_password:
+            return f"redis://{self.KEYDB_PASSWORD}@{host}:{port}/{db}"
+        else:
+            return f"redis://{host}:{port}/{db}"
 
     @lru_cache(maxsize=1)
-    def get_keydb_url(self, include_password: bool = False) -> Optional[str]:
-        """Generate keydb connection URL."""
-        try:
-            url = "redis://"
-            if self.KEYDB_PASSWORD:
-                if include_password:
-                    url += f":{self.KEYDB_PASSWORD}@"
-                else:
-                    url += f":***@"
-            url += f"{self.KEYDB_HOST}:{self.KEYDB_PORT}/{self.KEYDB_DB}"
-            return url
-        except Exception as e:
-            logger.error(f"Error generating keydb connection URL: {e}")
-            return None
+    def get_sqlalchemy_url(self) -> str:
+        """Get SQLAlchemy database URL from config"""
+        # Build connection URL
+        host: str = str(self.MYSQL_HOST)
+        user: str = str(self.MYSQL_USER)
+        password: str = str(self.MYSQL_PASSWORD)
+        db: str = str(self.MYSQL_DB)
+        port: int = int(self.MYSQL_PORT)
+        
+        # TCP connection
+        return f"mysql+aiomysql://{user}:{password}@{host}:{port}/{db}?charset=utf8mb4"
     
     @lru_cache(maxsize=1)
     def is_maintenance(self) -> bool:
@@ -294,5 +289,15 @@ class ServerConfig:
     ALLOWED_HOSTS = list(get_env_var("ALLOWED_HOSTS", "*").split(","))
     RATE_LIMIT = 100
     TIMEOUT = 30
+
+    # =============================== Reminders ========================================================
+    if SERVER_PORT in [80, 443]:
+        logger.warning(
+            "Running on port 80 or 443. This is not recommended for production environments."
+        )
+    if SERVER_WORKERS < 2:
+        logger.warning(
+            "Running with less than 2 workers. This is not recommended for production environments."
+        )
 
 server_config = ServerConfig()

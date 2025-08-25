@@ -5,8 +5,7 @@ CREATE DATABASE IF NOT EXISTS global;
 USE global;
 
 CREATE TABLE IF NOT EXISTS global_translations (
-                translation_id      INT AUTO_INCREMENT PRIMARY KEY,
-                translation_text    VARCHAR(255)   UNIQUE    NOT NULL,
+                translation_text    VARCHAR(255)   PRIMARY KEY,
                 bn_text             VARCHAR(255)   NULL,
                 ar_text             VARCHAR(255)   NULL,
                 context             VARCHAR(50)    NOT NULL,
@@ -56,7 +55,6 @@ CREATE TABLE IF NOT EXISTS transactions (
                 INDEX idx_transactions_user_id (user_id),
                 INDEX idx_transactions_type (type),
                 INDEX idx_transactions_month (month),
-                INDEX idx_transactions_amount (amount),
                 INDEX idx_transactions_updated_at (updated_at),
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE ON UPDATE CASCADE
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -69,7 +67,7 @@ CREATE TABLE IF NOT EXISTS verifications (
                 phone       VARCHAR(20) NOT NULL,
                 phone_hash  CHAR(64) NOT NULL,
                 phone_encrypted VARCHAR(255) NOT NULL,
-                code        VARCHAR(10) NOT NULL  CHECK (code >= 1000 AND code <= 999999),
+                code        INT    NOT NULL  CHECK (code >= 1000 AND code <= 999999),
                 ip_address  VARCHAR(45),
 
                 INDEX idx_verifications_phone (phone),
@@ -157,8 +155,7 @@ CREATE DATABASE IF NOT EXISTS annur;
 USE annur;
 
 CREATE TABLE IF NOT EXISTS translations (
-                translation_id      INT AUTO_INCREMENT PRIMARY KEY,
-                translation_text    VARCHAR(255)   UNIQUE    NOT NULL,
+                translation_text    VARCHAR(255)   PRIMARY KEY,
                 bn_text             VARCHAR(255)   NULL,
                 ar_text             VARCHAR(255)   NULL,
                 context             VARCHAR(100)   NOT NULL,
@@ -167,8 +164,8 @@ CREATE TABLE IF NOT EXISTS translations (
                 updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-                INDEX idx_global_translations_context (context),
-                INDEX idx_global_translations_table_name (table_name)
+                INDEX idx_translations_context (context),
+                INDEX idx_translations_table_name (table_name)
                 ) ENGINE = InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -254,7 +251,7 @@ CREATE TABLE IF NOT EXISTS routines (
                 weekday      ENUM('saturday','sunday','monday','tuesday','wednesday','thursday','friday') NOT NULL,
                 subject      VARCHAR(255)           NOT NULL,
                 name         VARCHAR(255)           NOT NULL,
-                serial       INT                    NOT NULL CHECK (serial > 0),
+                serial       INT                    NOT NULL CHECK (serial => 0),
 
                 UNIQUE KEY unique_routine (class_group, class_level, weekday, serial),
                 INDEX idx_routines_class_group (class_group),

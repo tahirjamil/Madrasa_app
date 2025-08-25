@@ -870,6 +870,12 @@ async def get_account_status(
         response, status = send_json_response(ERROR_MESSAGES['internal_error'], 500)
         return JSONResponse(content=response, status_code=status)
 
+@api.get("/token", name="get_token")
+@handle_async_errors
+async def get_token():
+    """Get a new token for the user"""
+    pass
+
 # ─── Advanced Security and Monitoring Functions ─────────────────────────────────
 
 # TODO: Track user activity

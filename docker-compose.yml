@@ -19,7 +19,7 @@ services:
       - ./static:/app/static
       - ./templates:/app/templates
     expose:
-      - "8000"
+      - ${SERVER_PORT:-8000}
     networks:
       - app_network
       - observability_network
@@ -29,7 +29,7 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:${SERVER_PORT:-8000}/health || exit 1"]
       timeout: 10s
       retries: 5
       interval: 30s

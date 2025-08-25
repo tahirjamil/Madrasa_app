@@ -131,7 +131,7 @@ async def _log_to_file(action : str, trace_info: str,  message : str, level, sec
         from config import config as default_config
         if default_config.is_development:
             log_devlopment = f"{level.upper()}: {action}\ndetails: {message}"
-            with open(log_file, "w") as f:
+            with open(log_file, "a+", encoding="utf-8") as f:
                 f.write(f"{log_devlopment}\n")
                 return
         
@@ -151,7 +151,7 @@ async def _log_to_file(action : str, trace_info: str,  message : str, level, sec
                 "trace_info_encrypted": get_crypto_funcs(trace_info, "encrypt")
             })
         
-        with open(log_file, "a", encoding="utf-8") as f:
+        with open(log_file, "a+", encoding="utf-8") as f:
             f.write(json.dumps(log_entry) + "\n")
             return
             

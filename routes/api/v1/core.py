@@ -33,6 +33,34 @@ class BaseRouteData(BaseModel):
         validate_madrasa_name(v, "system", secure=False)
         return v
 
+class AdmissionRequest(BaseModel):
+    """Admission request model"""
+    phone: str
+    name: str
+    email: Optional[str] = None
+    birth_date: Optional[str] = None
+    blood_group: Optional[str] = None
+    gender: Optional[str] = None
+    address: Optional[str] = None
+    guardian_number: Optional[str] = None
+    class_name: Optional[str] = None
+    monthly_fee: Optional[float] = None
+    madrasa_name: str
+
+    @field_validator('madrasa_name')
+    def validate_madrasa_name(cls, v):
+        validate_madrasa_name(v, "system", secure=False)
+        return v
+
+    @field_validator('phone')
+    def format_phone(cls, v):
+        return format_phone_number(v)
+
+    @field_validator('name')
+    def validate_name(cls, v):
+        validate_fullname(v)
+        return v
+
 class PersonData(BaseAuthRequest):
     """Person data model for adding/updating people"""
     student_id: Optional[str] = None
@@ -581,6 +609,48 @@ async def get_exams(data: BaseRouteData, client_info: ClientInfo = Depends(valid
     }
     
     return JSONResponse(content=result_data, status_code=200)
+
+@api.post("/admission", name="admission")
+@handle_async_errors
+async def admission(data: AdmissionRequest, client_info: ClientInfo = Depends(validate_device_dependency)) -> JSONResponse:
+    """Get admission information with enhanced validation and error handling"""
+    madrasa_name = data.madrasa_name or get_env_var("MADRASA_NAME")
+
+    # if not data.name and not data.phone:
+    #     result = "config/madrasa_list/madrasa_name"
+    #     allow_teacher = result.get("allow_teacher")
+    #     allow_student = result.get("allow_student")
+    #     allow_staff = result.get["allow_staff"]
+    #     allow_badri_member = result.get["allow_badri_member"]
+        
+    #     response, status = send_json_response("Basic admission information requested", 200)
+    #     response.update({
+    #         "allow_teacher": allow_teacher,
+    #         "allow_student": allow_student,
+    #         "allow_staff": allow_staff,
+    #         "allow_badri_member": allow_badri_member,
+    #     })
+    #     return JSONResponse(content=response, status_code=status)
+    
+    name = data.name
+    phone = data.phone
+    email = data.email
+    birth_date = data.birth_date
+    blood_group = data.blood_group
+    gender = data.gender
+    address = data.address
+    guardian_number = data.guardian_number
+    class_name = data.class_name
+    monthly_fee = data.monthly_fee
+
+    async with get_traced_db_cursor() as cursor:
+        await cursor.execute(
+            f"INSERT INTO {madrasa_name}.admission (name, phone, email, birth_date, blood_group, gender, address, guardian_number, class_name, monthly_fee) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (name, phone, email, birth_date, blood_group, gender, address, guardian_number, class_name, monthly_fee)
+        )        
+        
+    response, status = send_json_response("Admission request received", 200)
+    return JSONResponse(content=response, status_code=status)
 
 
 # ─── Response Enhancement ─────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 python-multipart>=0.0.6
 aiomysql
+sqlalchemy[asyncio]
 redis[hiredis]>=5.0.0
 Babel
 werkzeug
@@ -27,6 +28,7 @@ opentelemetry-sdk
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-asgi
 opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-sqlalchemy
 
 # Docker
 docker

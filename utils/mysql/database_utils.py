@@ -52,21 +52,6 @@ def get_db_config() -> AiomysqlConnectConfig:
     autocommit: bool = True
     charset: str = "utf8mb4"
 
-    # Build unix-socket config
-    if hasattr(config, "MYSQL_UNIX_SOCKET") and config.MYSQL_UNIX_SOCKET:
-        unix_socket: str = str(config.MYSQL_UNIX_SOCKET)
-        unix_cfg: AiomysqlConnectConfig = {
-            "unix_socket": unix_socket,
-            "user": user,
-            "password": password,
-            "db": db,
-            "autocommit": autocommit,
-            "charset": charset,
-            "connect_timeout": timeout,
-            "auth_plugin": "caching_sha2_password",
-        }
-        return unix_cfg
-
     # Build TCP config
     tcp_cfg: AiomysqlConnectConfig = {
         "host": host,

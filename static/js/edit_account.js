@@ -15,12 +15,49 @@ document.addEventListener('DOMContentLoaded', function() {
     const responseContent = document.getElementById('responseContent');
     
     // Get modal elements
-    const confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
-    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    const confirmationModalElement = document.getElementById('confirmationModal');
+    const loadingModalElement = document.getElementById('loadingModal');
     const confirmationMessage = document.getElementById('confirmationMessage');
     const confirmActionBtn = document.getElementById('confirmActionBtn');
     
+    // Initialize modals with explicit options
+    const confirmationModal = new bootstrap.Modal(confirmationModalElement, {
+        backdrop: 'static',
+        keyboard: false
+    });
+    const loadingModal = new bootstrap.Modal(loadingModalElement, {
+        backdrop: 'static',
+        keyboard: false
+    });
+    
     let currentAction = null;
+    let loadingStartTime = null;
+    
+    // Emergency cleanup function to handle stuck modals
+    function emergencyModalCleanup() {
+        const now = Date.now();
+        const loadingModalEl = document.getElementById('loadingModal');
+        
+        // If loading modal has been visible for more than 35 seconds, force close it
+        if (loadingStartTime && (now - loadingStartTime > 35000)) {
+            console.warn('Emergency: Loading modal stuck for >35s, forcing cleanup...');
+            hideLoading();
+            loadingStartTime = null;
+        }
+        
+        // Check if there are orphaned modal backdrops
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        if (backdrops.length > 0 && !loadingModalEl?.classList.contains('show')) {
+            console.warn('Emergency: Found orphaned modal backdrops, removing...');
+            backdrops.forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        }
+    }
+    
+    // Run emergency cleanup every 5 seconds
+    setInterval(emergencyModalCleanup, 5000);
 
     // Form validation
     function validateForm() {
@@ -123,12 +160,61 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Show loading modal
     function showLoading() {
-        loadingModal.show();
+        try {
+            loadingStartTime = Date.now();
+            loadingModal.show();
+            console.log('Loading modal shown at:', new Date(loadingStartTime).toISOString());
+        } catch (error) {
+            console.error('Error showing loading modal:', error);
+        }
     }
     
-    // Hide loading modal
+    // Hide loading modal with aggressive cleanup
     function hideLoading() {
-        loadingModal.hide();
+        console.log('Attempting to hide loading modal...');
+        
+        try {
+            // Try Bootstrap modal hide first
+            if (loadingModal && typeof loadingModal.hide === 'function') {
+                loadingModal.hide();
+            }
+        } catch (error) {
+            console.error('Error with Bootstrap modal hide:', error);
+        }
+        
+        // Force cleanup regardless of Bootstrap modal state
+        setTimeout(() => {
+            try {
+                // Remove all modal backdrops
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                console.log(`Found ${backdrops.length} modal backdrops to remove`);
+                backdrops.forEach(backdrop => {
+                    backdrop.remove();
+                });
+                
+                // Force hide the modal element
+                const modalEl = document.getElementById('loadingModal');
+                if (modalEl) {
+                    modalEl.style.display = 'none';
+                    modalEl.classList.remove('show', 'd-block');
+                    modalEl.setAttribute('aria-hidden', 'true');
+                    modalEl.removeAttribute('aria-modal');
+                    modalEl.removeAttribute('role');
+                }
+                
+                // Clean up body classes and styles
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+                
+                console.log('Loading modal cleanup completed');
+            } catch (cleanupError) {
+                console.error('Error during modal cleanup:', cleanupError);
+            }
+        }, 50);
+        
+        // Reset loading timer
+        loadingStartTime = null;
     }
     
     // Show response
@@ -153,17 +239,41 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             showLoading();
             
-            const response = await fetch(`/api/v1/account/${action}`, {
+            // Create an AbortController for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                console.log('Request timeout reached, aborting...');
+                controller.abort();
+                hideLoading(); // Force hide loading modal on timeout
+            }, 30000); // 30 seconds
+            
+            const response = await fetch(`/account/${action}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
+                    'X-API-Key': 'madrasasecretwebkey'
                 },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(formData),
+                signal: controller.signal
             });
             
-            const responseData = await response.json();
+            // Clear timeout if request completes
+            clearTimeout(timeoutId);
             
+            let responseData;
+            try {
+                responseData = await response.json();
+            } catch (jsonError) {
+                console.error('Error parsing JSON response:', jsonError);
+                responseData = {
+                    error: 'parse_error',
+                    message: 'Server returned invalid response',
+                    details: jsonError.message
+                };
+            }
+            
+            // Always hide loading modal after getting response
             hideLoading();
             
             if (response.ok) {
@@ -176,16 +286,34 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
         } catch (error) {
+            // Always hide loading modal on any error
             hideLoading();
             console.error('API request failed:', error);
             
-            const errorResponse = {
-                error: 'network_error',
-                message: 'Failed to connect to server. Please check your internet connection and try again.',
-                details: error.message
-            };
+            let errorResponse;
+            
+            if (error.name === 'AbortError') {
+                // Request was aborted due to timeout
+                errorResponse = {
+                    error: 'timeout_error',
+                    message: 'Request timed out after 30 seconds. The server might be busy or experiencing issues.',
+                    details: 'Request aborted due to timeout'
+                };
+            } else {
+                // Other network errors
+                errorResponse = {
+                    error: 'network_error',
+                    message: 'Failed to connect to server. Please check your internet connection and try again.',
+                    details: error.message
+                };
+            }
             
             showResponse(errorResponse, false);
+        } finally {
+            // Extra safety: ensure loading modal is hidden
+            setTimeout(() => {
+                hideLoading();
+            }, 100);
         }
     }
     

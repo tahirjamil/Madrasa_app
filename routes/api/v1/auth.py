@@ -550,6 +550,7 @@ async def reset_password(
 @rate_limit(max_requests=10, window=60)
 @handle_async_errors
 async def manage_account(
+    request: Request,
     page_type: ManageAccountPageType,
     data: ManageAccountRequest,
 ) -> JSONResponse:
@@ -570,7 +571,7 @@ async def manage_account(
                 )
                 user = await cursor.fetchone()
                 
-                if not user or not check_password_hash(user["password_hash"], password or ""):
+                if not user or not check_password_hash(user["password_hash"], password):
                     log.error(action="manage_account_invalid_credentials", trace_info=phone, message="Invalid credentials for account management", secure=True)
                     response, status = send_json_response("Invalid login details", 401)
                     return JSONResponse(content=response, status_code=status)
